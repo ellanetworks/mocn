@@ -1,0 +1,43 @@
+name: ella-mocn
+base: bare
+build-base: ubuntu@26.04
+adopt-info: mocn-release-data
+summary: Ella MOCN connects your neutral-host radio network to multiple mobile operators.
+description: |
+ Ella MOCN connects your neutral-host radio network to multiple mobile operators.
+platforms:
+  amd64:
+  arm64:
+
+services:
+  ella-mocn:
+    override: replace
+    summary: Ella MOCN connects your neutral-host radio network to multiple mobile operators.
+    command: mocn --config /mocn.yaml
+    startup: enabled
+    on-failure: restart
+
+parts:
+  mocn:
+    plugin: go
+    source: .
+    source-type: local
+    build-packages:
+      - git
+    build-snaps:
+      - go/1.27/stable
+      - node/24/stable
+    stage-packages:
+      - libc6_libs
+    override-build: |
+      npm ci --prefix ui
+      npm run build --prefix ui
+      REVISION=`git rev-parse HEAD`
+      go build -v -o ${CRAFT_PART_INSTALL}/bin/mocn -ldflags "-s -w -X github.com/ellanetworks/mocn/version.GitCommit=${REVISION}" ./cmd/mocn
+
+  mocn-release-data:
+    plugin: nil
+    source: .
+    override-build: |
+      version="$(cat version/VERSION)"
+      craftctl set version="$version"
