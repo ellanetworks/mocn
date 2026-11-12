@@ -19,6 +19,7 @@ security:
 
 tags:
   - name: Auth
+  - name: Operators
   - name: Users
   - name: Status
   - name: Metrics
@@ -207,6 +208,127 @@ paths:
       summary: Delete an API token
       parameters:
         - $ref: "#/components/parameters/APITokenID"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/operators:
+    get:
+      tags: [Operators]
+      operationId: listOperators
+      summary: List operators
+      description: Lists the operators, sorted by name.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    $ref: "#/components/schemas/ListOperatorsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Operators]
+      operationId: createOperator
+      summary: Create operator
+      description: Needs the Admin or Network Manager role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Operator"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    $ref: "#/components/schemas/Operator"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/operators/{name}:
+    get:
+      tags: [Operators]
+      operationId: getOperator
+      summary: Get operator
+      parameters:
+        - $ref: "#/components/parameters/OperatorName"
+      responses:
+        "200":
+          $ref: "#/components/responses/Operator"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags: [Operators]
+      operationId: updateOperator
+      summary: Replace operator
+      description: Replaces the whole operator. A different name renames it. Needs the Admin or Network Manager role.
+      parameters:
+        - $ref: "#/components/parameters/OperatorName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Operator"
+      responses:
+        "200":
+          $ref: "#/components/responses/Operator"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [Operators]
+      operationId: deleteOperator
+      summary: Delete operator
+      description: Needs the Admin or Network Manager role.
+      parameters:
+        - $ref: "#/components/parameters/OperatorName"
       responses:
         "200":
           $ref: "#/components/responses/Success"
@@ -574,6 +696,12 @@ components:
       schema:
         type: string
         format: email
+    OperatorName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
     APITokenID:
       name: id
       in: path
@@ -835,6 +963,111 @@ components:
           type: string
           description: The token, ellamocn_ followed by its ID, an underscore and its secret.
 
+    PLMN:
+      type: object
+      required: [mcc, mnc]
+      additionalProperties: false
+      properties:
+        mcc:
+          type: string
+          pattern: "^[0-9]{3}$"
+        mnc:
+          type: string
+          pattern: "^[0-9]{2,3}$"
+
+    GlobalENBID:
+      type: object
+      required: [plmn, enb_id_type, enb_id]
+      additionalProperties: false
+      description: >-
+        The eNB ID is 20 bits for macro, 28 for home, 18 for short_macro and 21 for long_macro. The PLMN is one of the
+        operator's PLMNs.
+      properties:
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        enb_id_type:
+          type: string
+          enum: [macro, home, short_macro, long_macro]
+        enb_id:
+          type: integer
+          minimum: 0
+          maximum: 268435455
+
+    GlobalGNBID:
+      type: object
+      required: [plmn, gnb_id, gnb_id_length]
+      additionalProperties: false
+      description: The gNB ID is less than 2^gnb_id_length. The PLMN is one of the operator's PLMNs.
+      properties:
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        gnb_id:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+        gnb_id_length:
+          type: integer
+          minimum: 22
+          maximum: 32
+
+    Operator:
+      type: object
+      required: [name, plmns]
+      additionalProperties: false
+      description: >-
+        The responses have every property, with null for a missing global_enb_id or global_gnb_id and an empty list for
+        no MMEs or AMFs.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Leading and trailing spaces are removed.
+        pws_operator:
+          type: boolean
+          description: At most one operator is the PWS operator. Missing means false.
+        plmns:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/PLMN"
+        global_enb_id:
+          oneOf:
+            - $ref: "#/components/schemas/GlobalENBID"
+            - type: "null"
+        global_gnb_id:
+          oneOf:
+            - $ref: "#/components/schemas/GlobalGNBID"
+            - type: "null"
+        mmes:
+          type: array
+          uniqueItems: true
+          description: IPv4 or IPv6 addresses. Needs a global_enb_id.
+          items:
+            type: string
+            anyOf:
+              - format: ipv4
+              - format: ipv6
+        amfs:
+          type: array
+          uniqueItems: true
+          description: IPv4 or IPv6 addresses. Needs a global_gnb_id.
+          items:
+            type: string
+            anyOf:
+              - format: ipv4
+              - format: ipv6
+
+    ListOperatorsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Operator"
+
     Error:
       type: object
       required: [error]
@@ -893,6 +1126,16 @@ components:
             properties:
               result:
                 $ref: "#/components/schemas/SuccessResponse"
+    Operator:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [result]
+            properties:
+              result:
+                $ref: "#/components/schemas/Operator"
     User:
       description: OK
       content:

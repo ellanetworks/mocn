@@ -16,6 +16,7 @@ type Config struct {
 	Metrics      prometheus.Gatherer
 	Requests     *RequestMetrics
 	Auth         AuthStore
+	Operators    OperatorStore
 	JWTSecret    func() []byte
 	SecureCookie bool
 	BcryptCost   int
@@ -85,6 +86,12 @@ func routes(cfg Config, a *auth) []route {
 		{"GET /api/v1/users/me/api-tokens", PermSelf, ListAPITokens(a, myself(cfg))},
 		{"POST /api/v1/users/me/api-tokens", PermSelf, a.needsLogin(CreateAPIToken(a, myself(cfg)))},
 		{"DELETE /api/v1/users/me/api-tokens/{id}", PermSelf, DeleteAPIToken(a, myself(cfg))},
+
+		{"GET /api/v1/operators", PermReadOperators, ListOperators(cfg)},
+		{"POST /api/v1/operators", PermUpdateOperators, CreateOperator(a)},
+		{"GET /api/v1/operators/{name}", PermReadOperators, GetOperator(cfg)},
+		{"PUT /api/v1/operators/{name}", PermUpdateOperators, UpdateOperator(a)},
+		{"DELETE /api/v1/operators/{name}", PermUpdateOperators, DeleteOperator(a)},
 
 		{"GET /api/v1/users", PermManageUsers, a.needsLogin(ListUsers(a))},
 		{"POST /api/v1/users", PermManageUsers, a.needsLogin(CreateUser(a))},

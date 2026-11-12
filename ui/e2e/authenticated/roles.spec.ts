@@ -15,8 +15,7 @@ for (const [name, role] of Object.entries(ROLES)) {
       const links = page
         .getByRole("navigation", { name: "Main" })
         .getByRole("link");
-      await expect(links).toHaveCount(1);
-      await expect(links).toHaveText("Dashboard");
+      await expect(links).toHaveText(["Dashboard", "Operators"]);
 
       await page.goto("/users");
       await expect(page).toHaveURL(/\/dashboard$/);

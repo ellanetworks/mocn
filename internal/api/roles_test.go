@@ -26,6 +26,11 @@ func TestRoles(t *testing.T) {
 		"GET /api/v1/users/me/api-tokens":              all,
 		"POST /api/v1/users/me/api-tokens":             all,
 		"DELETE /api/v1/users/me/api-tokens/{id}":      all,
+		"GET /api/v1/operators":                        all,
+		"POST /api/v1/operators":                       admin | networkManager,
+		"GET /api/v1/operators/{name}":                 all,
+		"PUT /api/v1/operators/{name}":                 admin | networkManager,
+		"DELETE /api/v1/operators/{name}":              admin | networkManager,
 		"GET /api/v1/users":                            admin,
 		"POST /api/v1/users":                           admin,
 		"GET /api/v1/users/{email}":                    admin,
@@ -95,7 +100,7 @@ func TestRoles(t *testing.T) {
 		}
 	}
 
-	path := strings.NewReplacer("{id}", "1", "{email}", "nobody@example.com")
+	path := strings.NewReplacer("{id}", "1", "{email}", "nobody@example.com", "{name}", "nobody")
 
 	for route, allowedRoles := range want {
 		method, pattern, _ := strings.Cut(route, " ")

@@ -30,6 +30,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { errorMessage, useSnackbar } from "@/contexts/SnackbarContext";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { useTouched } from "@/hooks/useTouched";
 import EditDialog from "@/components/EditDialog";
 import {
   createAPIToken,
@@ -383,6 +384,7 @@ function CreateAPITokenDialog({
   const [noExpiry, setNoExpiry] = useState(false);
   const [expiry, setExpiry] = useState("");
   const [min] = useState(() => localDate(new Date()));
+  const { touch, shown } = useTouched();
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -398,10 +400,10 @@ function CreateAPITokenDialog({
   });
 
   const nameLength = name.trim().length;
-  const nameError =
-    name === "" || (nameLength >= 3 && nameLength <= 50)
-      ? undefined
-      : "3 to 50 characters.";
+  const nameError = shown(
+    "name",
+    nameLength >= 3 && nameLength <= 50 ? undefined : "3 to 50 characters.",
+  );
 
   return (
     <EditDialog
@@ -423,6 +425,7 @@ function CreateAPITokenDialog({
         label="Name"
         value={name}
         onChange={(e) => setName(e.target.value)}
+        onBlur={touch("name")}
         error={nameError !== undefined}
         helperText={nameError ?? "What uses it, such as your monitoring."}
         required

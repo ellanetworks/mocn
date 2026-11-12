@@ -5,6 +5,8 @@ import { AuthProvider, useAuth, type Permission } from "@/contexts/AuthContext";
 import Dashboard from "@/pages/Dashboard";
 import Initialize from "@/pages/Initialize";
 import Login from "@/pages/Login";
+import OperatorDetail from "@/pages/OperatorDetail";
+import Operators from "@/pages/Operators";
 import Profile from "@/pages/Profile";
 import UserDetail from "@/pages/UserDetail";
 import Users from "@/pages/Users";
@@ -31,6 +33,16 @@ export default function App() {
 const pages: { path: string; element: ReactElement; permission: Permission }[] =
   [
     { path: "/dashboard", element: <Dashboard />, permission: "user:self" },
+    {
+      path: "/operators",
+      element: <Operators />,
+      permission: "operator:read",
+    },
+    {
+      path: "/operators/:name",
+      element: <OperatorDetail />,
+      permission: "operator:read",
+    },
     { path: "/users", element: <Users />, permission: "user:admin" },
     {
       path: "/users/:email",

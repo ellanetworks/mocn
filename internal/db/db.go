@@ -20,6 +20,7 @@ var (
 	ErrLastPasswordAdmin = errors.New("the last admin with a password")
 	ErrTooManyUsers      = errors.New("too many users")
 	ErrNoPassword        = errors.New("the user has no password")
+	ErrForeignPLMN       = errors.New("the PLMN is not one of the operator's")
 )
 
 type DB struct {
@@ -101,7 +102,47 @@ var migrations = []string{
 		result BLOB NOT NULL,
 		applied_at INTEGER NOT NULL
 	) WITHOUT ROWID;
-	CREATE INDEX applied_requests_applied_at ON applied_requests (applied_at);`,
+	CREATE INDEX applied_requests_applied_at ON applied_requests (applied_at);
+	CREATE TABLE operators (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE CHECK (name != ''),
+		pws_operator INTEGER NOT NULL DEFAULT 0 CHECK (pws_operator IN (0, 1))
+	);
+	CREATE UNIQUE INDEX operators_pws_operator ON operators (pws_operator) WHERE pws_operator = 1;
+	CREATE TABLE operator_plmns (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		operator_id INTEGER NOT NULL REFERENCES operators (id) ON DELETE CASCADE,
+		mcc TEXT NOT NULL CHECK (length(mcc) = 3 AND mcc NOT GLOB '*[^0-9]*'),
+		mnc TEXT NOT NULL CHECK (length(mnc) IN (2, 3) AND mnc NOT GLOB '*[^0-9]*'),
+		UNIQUE (mcc, mnc)
+	);
+	CREATE INDEX operator_plmns_operator_id ON operator_plmns (operator_id);
+	CREATE TABLE global_enb_ids (
+		operator_id INTEGER PRIMARY KEY REFERENCES operators (id) ON DELETE CASCADE,
+		operator_plmn_id INTEGER NOT NULL REFERENCES operator_plmns (id),
+		enb_id_type TEXT NOT NULL CHECK (enb_id_type IN ('macro', 'home', 'short_macro', 'long_macro')),
+		enb_id INTEGER NOT NULL CHECK (enb_id >= 0 AND enb_id < CASE enb_id_type
+			WHEN 'macro' THEN 1 << 20 WHEN 'home' THEN 1 << 28 WHEN 'short_macro' THEN 1 << 18 ELSE 1 << 21 END)
+	);
+	CREATE TABLE global_gnb_ids (
+		operator_id INTEGER PRIMARY KEY REFERENCES operators (id) ON DELETE CASCADE,
+		operator_plmn_id INTEGER NOT NULL REFERENCES operator_plmns (id),
+		gnb_id INTEGER NOT NULL,
+		gnb_id_length INTEGER NOT NULL CHECK (gnb_id_length BETWEEN 22 AND 32),
+		CHECK (gnb_id >= 0 AND gnb_id < 1 << gnb_id_length)
+	);
+	CREATE TABLE mmes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		operator_id INTEGER NOT NULL REFERENCES operators (id) ON DELETE CASCADE,
+		address TEXT NOT NULL UNIQUE CHECK (address != '')
+	);
+	CREATE INDEX mmes_operator_id ON mmes (operator_id);
+	CREATE TABLE amfs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		operator_id INTEGER NOT NULL REFERENCES operators (id) ON DELETE CASCADE,
+		address TEXT NOT NULL UNIQUE CHECK (address != '')
+	);
+	CREATE INDEX amfs_operator_id ON amfs (operator_id);`,
 }
 
 func Open(ctx context.Context, path string) (*DB, error) {

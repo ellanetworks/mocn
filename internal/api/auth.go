@@ -74,16 +74,20 @@ type Permission string
 const public Permission = ""
 
 const (
-	PermSelf        Permission = "user:self"
-	PermManageUsers Permission = "user:admin"
+	PermReadOperators   Permission = "operator:read"
+	PermUpdateOperators Permission = "operator:update"
+	PermSelf            Permission = "user:self"
+	PermManageUsers     Permission = "user:admin"
 )
 
-var readPermissions = []Permission{PermSelf}
+var readPermissions = []Permission{PermReadOperators, PermSelf}
+
+var operatePermissions = []Permission{PermUpdateOperators}
 
 var permissions = map[db.Role][]Permission{
-	db.RoleAdmin:          slices.Concat(readPermissions, []Permission{PermManageUsers}),
+	db.RoleAdmin:          slices.Concat(readPermissions, operatePermissions, []Permission{PermManageUsers}),
 	db.RoleReadOnly:       readPermissions,
-	db.RoleNetworkManager: readPermissions,
+	db.RoleNetworkManager: slices.Concat(readPermissions, operatePermissions),
 }
 
 func allowed(role db.Role, perm Permission) bool {

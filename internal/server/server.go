@@ -60,6 +60,7 @@ func Run(ctx context.Context, cfg Config) (err error) {
 			Metrics:    newRegistry(database, requests),
 			Requests:   requests,
 			Auth:       database,
+			Operators:  database,
 			JWTSecret:  func() []byte { return secret },
 			BcryptCost: cfg.BcryptCost,
 			Now:        time.Now,
