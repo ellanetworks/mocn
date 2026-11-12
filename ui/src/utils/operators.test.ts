@@ -3,14 +3,17 @@ import { authFor } from "@/contexts/AuthContext";
 import type { Operator } from "@/queries/operators";
 import { RoleID } from "@/queries/users";
 import {
-  addressError,
+  addressErrors,
+  addressRow,
   enbIdError,
   formatGlobalENBID,
   formatGlobalGNBID,
   formatPLMN,
+  formatTNLAddresses,
   gnbIdError,
   gnbIdLengthError,
   isIPAddress,
+  isValidAddresses,
   isValidName,
   isValidPLMNs,
   nameError,
@@ -36,8 +39,8 @@ const operator: Operator = {
     gnb_id: 74565,
     gnb_id_length: 22,
   },
-  mmes: ["10.0.0.1"],
-  amfs: ["10.0.1.1", "2001:db8::1"],
+  mmes: [{ tnl_addresses: ["10.0.0.1", "10.0.0.2"] }],
+  amfs: [{ tnl_addresses: ["10.0.1.1"] }, { tnl_addresses: ["2001:db8::1"] }],
 };
 
 describe("operator formatting", () => {
@@ -56,6 +59,7 @@ describe("operator formatting", () => {
     expect(formatGlobalGNBID(operator.global_gnb_id!)).toBe(
       "001/01 · 74565 (22 bits)",
     );
+    expect(formatTNLAddresses(operator.mmes![0]!)).toBe("10.0.0.1, 10.0.0.2");
   });
 });
 
@@ -92,6 +96,12 @@ describe("operator validation", () => {
     expect(isValidPLMNs([plmnRow("001", "01"), plmnRow("315", "010")])).toBe(
       true,
     );
+    const many = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        plmnRow("001", String(i).padStart(2, "0")),
+      );
+    expect(isValidPLMNs(many(12))).toBe(true);
+    expect(isValidPLMNs(many(13))).toBe(false);
     expect(
       plmnErrors([
         plmnRow("01", "1"),
@@ -107,7 +117,6 @@ describe("operator validation", () => {
 
   it("bounds the eNB ID by its type", () => {
     expect(enbIdError("macro", "1048576")).toBe("0 to 1048575");
-    expect(enbIdError("home", "1048576")).toBeUndefined();
     expect(enbIdError("short_macro", "262144")).toBe("0 to 262143");
     expect(enbIdError("long_macro", "2097151")).toBeUndefined();
     expect(enbIdError("macro", "-1")).toBe("0 to 1048575");
@@ -122,13 +131,34 @@ describe("operator validation", () => {
     expect(gnbIdError("4294967295", "32")).toBeUndefined();
   });
 
-  it("rejects bad and already added addresses", () => {
-    expect(addressError("", [])).toBeUndefined();
-    expect(addressError("amf.example.com", [])).toBe(
+  it("rejects bad, already added and duplicate addresses", () => {
+    const existing = operator.mmes!;
+    expect(
+      addressErrors(
+        [
+          addressRow(""),
+          addressRow("amf.example.com"),
+          addressRow(" 10.0.0.2 "),
+          addressRow("2001:db8::1"),
+          addressRow("2001:db8::1"),
+        ],
+        existing,
+      ),
+    ).toEqual([
+      undefined,
       "Not an IPv4 or IPv6 address",
-    );
-    expect(addressError(" 10.0.0.1 ", ["10.0.0.1"])).toBe("Already added");
-    expect(addressError("2001:db8::1", ["10.0.0.1"])).toBeUndefined();
+      "Already added",
+      undefined,
+      "Duplicate address",
+    ]);
+    expect(isValidAddresses([], existing)).toBe(false);
+    expect(isValidAddresses([addressRow("")], existing)).toBe(false);
+    expect(
+      isValidAddresses(
+        [addressRow("10.0.0.3"), addressRow("2001:db8::1")],
+        existing,
+      ),
+    ).toBe(true);
   });
 });
 

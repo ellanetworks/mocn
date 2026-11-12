@@ -27,7 +27,9 @@ import {
   type PLMN,
 } from "@/queries/operators";
 import {
-  addressError,
+  addressErrors,
+  addressRow,
+  type AddressRow,
   ENB_ID_BITS,
   ENB_IDENTITY_LABEL,
   ENB_ID_TYPE_LABELS,
@@ -37,9 +39,11 @@ import {
   GNB_IDENTITY_LABEL,
   gnbIdError,
   gnbIdLengthError,
+  isValidAddresses,
   isValidName,
   isValidPLMNs,
   MAX_GNB_ID_LENGTH,
+  MAX_PLMNS,
   maxENBID,
   maxGNBID,
   MIN_GNB_ID_LENGTH,
@@ -153,9 +157,13 @@ function PLMNFields({
             size="small"
             startIcon={<AddIcon />}
             onClick={() => onChange([...rows, plmnRow()])}
+            disabled={rows.length >= MAX_PLMNS}
           >
             Add PLMN
           </Button>
+          {rows.length >= MAX_PLMNS && (
+            <FormHelperText>At most {MAX_PLMNS} PLMNs</FormHelperText>
+          )}
         </Box>
       </Stack>
     </FormControl>
@@ -503,7 +511,7 @@ export function EditGatewayIdentityDialog({
   );
 }
 
-export function AddAddressDialog({
+export function AddCoreNodeDialog({
   operator,
   kind,
   onClose,
@@ -512,7 +520,7 @@ export function AddAddressDialog({
   kind: "MME" | "AMF";
   onClose: () => void;
 }) {
-  const [address, setAddress] = useState("");
+  const [rows, setRows] = useState<AddressRow[]>(() => [addressRow()]);
   const existing = (kind === "MME" ? operator.mmes : operator.amfs) ?? [];
   const mutation = useOperatorUpdate(
     operator,
@@ -521,9 +529,13 @@ export function AddAddressDialog({
   );
 
   const { touch, shown } = useTouched();
-  const error = addressError(address, existing);
-  const fieldError = shown("address", requiredError(address, error));
-  const added = [...existing, address.trim()];
+  const errors = addressErrors(rows, existing);
+  const set = (index: number, address: string) =>
+    setRows(rows.map((row, i) => (i === index ? { ...row, address } : row)));
+  const added = [
+    ...existing,
+    { tnl_addresses: rows.map((row) => row.address.trim()) },
+  ];
 
   return (
     <EditDialog
@@ -531,7 +543,7 @@ export function AddAddressDialog({
       submitLabel="Add"
       pendingLabel="Adding…"
       failure={`Could not add the ${kind}`}
-      valid={address.trim() !== "" && error === undefined}
+      valid={isValidAddresses(rows, existing)}
       pending={mutation.isPending}
       error={mutation.error}
       onSubmit={() =>
@@ -539,15 +551,55 @@ export function AddAddressDialog({
       }
       onClose={onClose}
     >
-      <TextField
-        label="Address"
-        value={address}
-        onChange={(e) => setAddress(e.target.value)}
-        onBlur={touch("address")}
-        error={fieldError !== undefined}
-        helperText={fieldError ?? "IPv4 or IPv6 address"}
-        required
-      />
+      <FormControl component="fieldset" sx={fieldsetSx}>
+        <FormLabel component="legend" sx={{ mb: 1 }}>
+          TNL addresses
+        </FormLabel>
+        <Stack spacing={1.5}>
+          {rows.map((row, index) => {
+            const error = shown(
+              String(row.key),
+              requiredError(row.address, errors[index]),
+            );
+            return (
+              <Stack
+                key={row.key}
+                direction="row"
+                spacing={1}
+                sx={{ alignItems: "flex-start" }}
+              >
+                <TextField
+                  label={`Address ${index + 1}`}
+                  value={row.address}
+                  onChange={(e) => set(index, e.target.value)}
+                  onBlur={touch(String(row.key))}
+                  error={error !== undefined}
+                  helperText={error ?? "IPv4 or IPv6 address"}
+                  required
+                  sx={{ flex: 1 }}
+                />
+                <IconButton
+                  aria-label={`Remove address ${index + 1}`}
+                  onClick={() => setRows(rows.filter((_, i) => i !== index))}
+                  disabled={rows.length === 1}
+                  sx={{ mt: 1 }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            );
+          })}
+          <Box>
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => setRows([...rows, addressRow()])}
+            >
+              Add address
+            </Button>
+          </Box>
+        </Stack>
+      </FormControl>
     </EditDialog>
   );
 }

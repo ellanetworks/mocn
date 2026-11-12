@@ -23,7 +23,6 @@ type ENBIDType string
 
 const (
 	ENBIDMacro      ENBIDType = "macro"
-	ENBIDHome       ENBIDType = "home"
 	ENBIDShortMacro ENBIDType = "short_macro"
 	ENBIDLongMacro  ENBIDType = "long_macro"
 )
@@ -42,7 +41,22 @@ type GlobalGNBID struct {
 	Length int
 }
 
-// TS 23.251 clause 4.2.1
+// TS 36.412 clause 7
+// TS 38.412 clause 7
+type CoreNode struct {
+	TNLAddresses []string
+}
+
+// TS 38.413 clause 9.2.6.1
+const MaxOperatorPLMNs = 12
+
+// TS 38.413 clause 9.2.6.2
+const MaxAMFPLMNs = 12
+
+// TS 36.413 clause 9.1.8.5
+const MaxMMEPLMNs = 32
+
+// TS 23.501 clause 5.18.1
 type Operator struct {
 	ID          int64
 	Name        string
@@ -50,8 +64,8 @@ type Operator struct {
 	PLMNs       []PLMN
 	GlobalENBID *GlobalENBID
 	GlobalGNBID *GlobalGNBID
-	MMEs        []string
-	AMFs        []string
+	MMEs        []CoreNode
+	AMFs        []CoreNode
 }
 
 func (d *DB) CreateOperator(ctx context.Context, o Operator) (id int64, err error) {
@@ -152,16 +166,81 @@ func insertOperatorParts(ctx context.Context, tx *sql.Tx, id int64, o Operator) 
 	}
 
 	for _, n := range []struct {
-		query, what string
-		addresses   []string
+		nodeQuery, addressQuery, what string
+		nodes                         []CoreNode
 	}{
-		{`INSERT INTO mmes (operator_id, address) VALUES (?, ?)`, "MME", o.MMEs},
-		{`INSERT INTO amfs (operator_id, address) VALUES (?, ?)`, "AMF", o.AMFs},
+		{
+			`INSERT INTO mmes (operator_id) VALUES (?)`,
+			`INSERT INTO mme_tnl_addresses (mme_id, operator_id, address) VALUES (?, ?, ?)`, "MME", o.MMEs,
+		},
+		{
+			`INSERT INTO amfs (operator_id) VALUES (?)`,
+			`INSERT INTO amf_tnl_addresses (amf_id, operator_id, address) VALUES (?, ?, ?)`, "AMF", o.AMFs,
+		},
 	} {
-		for _, addr := range n.addresses {
-			if _, err := tx.ExecContext(ctx, n.query, id, addr); err != nil {
-				return operatorError(err, n.what+" "+addr)
+		if err := insertCoreNodes(ctx, tx, id, n.nodeQuery, n.addressQuery, n.what, n.nodes); err != nil {
+			return err
+		}
+	}
+
+	return checkPLMNLimits(ctx, tx, id)
+}
+
+func insertCoreNodes(ctx context.Context, tx *sql.Tx, operatorID int64, nodeQuery, addressQuery, what string,
+	nodes []CoreNode,
+) error {
+	for _, n := range nodes {
+		if len(n.TNLAddresses) == 0 {
+			return fmt.Errorf("%w: %s without a TNL address", ErrInvalid, what)
+		}
+
+		res, err := tx.ExecContext(ctx, nodeQuery, operatorID)
+		if err != nil {
+			return err
+		}
+
+		nodeID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+
+		for _, addr := range n.TNLAddresses {
+			if _, err := tx.ExecContext(ctx, addressQuery, nodeID, operatorID, addr); err != nil {
+				return operatorError(err, what+" "+addr)
 			}
+		}
+	}
+
+	return nil
+}
+
+func checkPLMNLimits(ctx context.Context, tx *sql.Tx, operatorID int64) error {
+	for _, l := range []struct {
+		query, message string
+		args           []any
+		limit          int
+	}{
+		{
+			`SELECT count(*) FROM operator_plmns WHERE operator_id = ?`, "An operator can have at most %d PLMNs",
+			[]any{operatorID},
+			MaxOperatorPLMNs,
+		},
+		{
+			`SELECT count(*) FROM operator_plmns WHERE operator_id IN (SELECT operator_id FROM amfs)`,
+			"Operators with AMFs can have at most %d PLMNs in total", nil, MaxAMFPLMNs,
+		},
+		{
+			`SELECT count(*) FROM operator_plmns WHERE operator_id IN (SELECT operator_id FROM mmes)`,
+			"Operators with MMEs can have at most %d PLMNs in total", nil, MaxMMEPLMNs,
+		},
+	} {
+		var n int
+		if err := tx.QueryRowContext(ctx, l.query, l.args...).Scan(&n); err != nil {
+			return err
+		}
+
+		if n > l.limit {
+			return fmt.Errorf("%w: "+l.message, ErrTooManyPLMNs, l.limit)
 		}
 	}
 
@@ -333,26 +412,48 @@ func loadOperatorParts(ctx context.Context, q querier, ops []Operator) error {
 		return err
 	}
 
+	return loadCoreNodes(ctx, q, byID)
+}
+
+func loadCoreNodes(ctx context.Context, q querier, byID map[int64]*Operator) error {
 	for _, n := range []struct {
 		query string
-		add   func(*Operator, string)
+		nodes func(*Operator) *[]CoreNode
 	}{
-		{`SELECT operator_id, address FROM mmes ORDER BY id`, func(o *Operator, a string) { o.MMEs = append(o.MMEs, a) }},
-		{`SELECT operator_id, address FROM amfs ORDER BY id`, func(o *Operator, a string) { o.AMFs = append(o.AMFs, a) }},
+		{
+			`SELECT m.operator_id, m.id, a.address FROM mmes m JOIN mme_tnl_addresses a ON a.mme_id = m.id ORDER BY m.id, a.id`,
+			func(o *Operator) *[]CoreNode { return &o.MMEs },
+		},
+		{
+			`SELECT f.operator_id, f.id, a.address FROM amfs f JOIN amf_tnl_addresses a ON a.amf_id = f.id ORDER BY f.id, a.id`,
+			func(o *Operator) *[]CoreNode { return &o.AMFs },
+		},
 	} {
+		last := int64(-1)
+
 		if err := each(ctx, q, n.query, func(s scanner) error {
 			var (
-				id   int64
-				addr string
+				id, nodeID int64
+				addr       string
 			)
 
-			if err := s.Scan(&id, &addr); err != nil {
+			if err := s.Scan(&id, &nodeID, &addr); err != nil {
 				return err
 			}
 
-			if o := byID[id]; o != nil {
-				n.add(o, addr)
+			o := byID[id]
+			if o == nil {
+				return nil
 			}
+
+			nodes := n.nodes(o)
+			if nodeID != last {
+				*nodes = append(*nodes, CoreNode{})
+				last = nodeID
+			}
+
+			node := &(*nodes)[len(*nodes)-1]
+			node.TNLAddresses = append(node.TNLAddresses, addr)
 
 			return nil
 		}); err != nil {

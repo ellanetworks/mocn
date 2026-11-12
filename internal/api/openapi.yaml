@@ -980,24 +980,24 @@ components:
       required: [plmn, enb_id_type, enb_id]
       additionalProperties: false
       description: >-
-        The eNB ID is 20 bits for macro, 28 for home, 18 for short_macro and 21 for long_macro. The PLMN is one of the
+        The eNB ID is 20 bits for macro, 18 for short_macro and 21 for long_macro. The PLMN must be one of the
         operator's PLMNs.
       properties:
         plmn:
           $ref: "#/components/schemas/PLMN"
         enb_id_type:
           type: string
-          enum: [macro, home, short_macro, long_macro]
+          enum: [macro, short_macro, long_macro]
         enb_id:
           type: integer
           minimum: 0
-          maximum: 268435455
+          maximum: 2097151
 
     GlobalGNBID:
       type: object
       required: [plmn, gnb_id, gnb_id_length]
       additionalProperties: false
-      description: The gNB ID is less than 2^gnb_id_length. The PLMN is one of the operator's PLMNs.
+      description: The gNB ID is less than 2^gnb_id_length. The PLMN must be one of the operator's PLMNs.
       properties:
         plmn:
           $ref: "#/components/schemas/PLMN"
@@ -1025,11 +1025,16 @@ components:
           description: Leading and trailing spaces are removed.
         pws_operator:
           type: boolean
-          description: At most one operator is the PWS operator. Missing means false.
+          description: >-
+            The operator whose core connects the common CBC. Its emergency warnings (PWS) are broadcast to every cell.
+            At most one operator is the PWS operator. Missing means false.
         plmns:
           type: array
           minItems: 1
+          maxItems: 12
           uniqueItems: true
+          description: >-
+            Operators with AMFs have at most 12 PLMNs in total. Operators with MMEs have at most 32 PLMNs in total.
           items:
             $ref: "#/components/schemas/PLMN"
         global_enb_id:
@@ -1042,17 +1047,28 @@ components:
             - type: "null"
         mmes:
           type: array
-          uniqueItems: true
-          description: IPv4 or IPv6 addresses. Needs a global_enb_id.
+          description: >-
+            Needs a global_enb_id. An address appears at most once across the operator's MMEs.
           items:
-            type: string
-            anyOf:
-              - format: ipv4
-              - format: ipv6
+            $ref: "#/components/schemas/CoreNode"
         amfs:
           type: array
+          description: >-
+            Needs a global_gnb_id. An address appears at most once across the operator's AMFs.
+          items:
+            $ref: "#/components/schemas/CoreNode"
+
+    CoreNode:
+      type: object
+      required: [tnl_addresses]
+      additionalProperties: false
+      description: An MME or AMF, reached over one SCTP association.
+      properties:
+        tnl_addresses:
+          type: array
+          minItems: 1
           uniqueItems: true
-          description: IPv4 or IPv6 addresses. Needs a global_gnb_id.
+          description: IPv4 or IPv6 addresses, returned in canonical form.
           items:
             type: string
             anyOf:

@@ -1,6 +1,6 @@
 import { apiFetch } from "@/queries/utils";
 
-export type ENBIDType = "macro" | "home" | "short_macro" | "long_macro";
+export type ENBIDType = "macro" | "short_macro" | "long_macro";
 
 export interface PLMN {
   mcc: string;
@@ -19,14 +19,18 @@ export interface GlobalGNBID {
   gnb_id_length: number;
 }
 
+export interface CoreNode {
+  tnl_addresses: string[];
+}
+
 export interface Operator {
   name: string;
   pws_operator: boolean;
   plmns: PLMN[];
   global_enb_id?: GlobalENBID | null;
   global_gnb_id?: GlobalGNBID | null;
-  mmes?: string[] | null;
-  amfs?: string[] | null;
+  mmes?: CoreNode[] | null;
+  amfs?: CoreNode[] | null;
 }
 
 const operatorUrl = (name: string) =>

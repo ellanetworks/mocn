@@ -112,6 +112,7 @@ var resultCodes = []struct {
 	{"no_password", ErrNoPassword},
 	{"duplicate", ErrDuplicate},
 	{"foreign_plmn", ErrForeignPLMN},
+	{"too_many_plmns", ErrTooManyPLMNs},
 	{"invalid", ErrInvalid},
 	{"constraint_check", ErrConstraintCheck},
 	{"constraint_unique", ErrConstraintUnique},

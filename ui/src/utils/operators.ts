@@ -1,4 +1,5 @@
 import type {
+  CoreNode,
   ENBIDType,
   GlobalENBID,
   GlobalGNBID,
@@ -9,23 +10,22 @@ import type {
 export const MAX_NAME_LENGTH = 64;
 export const MIN_GNB_ID_LENGTH = 22;
 export const MAX_GNB_ID_LENGTH = 32;
+export const MAX_PLMNS = 12;
 
 export const ENB_ID_BITS: Record<ENBIDType, number> = {
   macro: 20,
-  home: 28,
   short_macro: 18,
   long_macro: 21,
 };
 
 export const ENB_ID_TYPE_LABELS: Record<ENBIDType, string> = {
   macro: "Macro",
-  home: "Home",
   short_macro: "Short macro",
   long_macro: "Long macro",
 };
 
 export const PWS_HELP =
-  "Broadcasts this operator's emergency warnings (PWS) to every cell.";
+  "The operator whose core connects the common CBC. Its emergency warnings (PWS) are broadcast to every cell.";
 
 export const GATEWAY_IDENTITY_HELP =
   "Assigned by the operator. Ella MOCN uses it to identify itself to this operator's core: the Global eNB ID to its MMEs (4G) and the Global gNB ID to its AMFs (5G).";
@@ -128,6 +128,7 @@ export const plmnErrors = (rows: PLMNRow[]): PLMNErrors[] => {
 
 export const isValidPLMNs = (rows: PLMNRow[]) =>
   rows.length > 0 &&
+  rows.length <= MAX_PLMNS &&
   rows.every((p) => p.mcc !== "" && p.mnc !== "") &&
   plmnErrors(rows).every((e) => e.mcc === undefined && e.mnc === undefined);
 
@@ -154,13 +155,37 @@ export const gnbIdError = (id: string, length: string) => {
     : undefined;
 };
 
-export const addressError = (address: string, existing: string[]) => {
-  const trimmed = address.trim();
-  if (trimmed === "") return undefined;
-  if (!isIPAddress(trimmed)) return "Not an IPv4 or IPv6 address";
-  if (existing.includes(trimmed)) return "Already added";
-  return undefined;
+export interface AddressRow {
+  key: number;
+  address: string;
+}
+
+export const addressRow = (address = ""): AddressRow => ({
+  key: nextKey++,
+  address,
+});
+
+export const formatTNLAddresses = ({ tnl_addresses }: CoreNode) =>
+  tnl_addresses.join(", ");
+
+export const addressErrors = (rows: AddressRow[], existing: CoreNode[]) => {
+  const taken = new Set(existing.flatMap((n) => n.tnl_addresses));
+  const seen = new Set<string>();
+  return rows.map(({ address }) => {
+    const trimmed = address.trim();
+    if (trimmed === "") return undefined;
+    if (!isIPAddress(trimmed)) return "Not an IPv4 or IPv6 address";
+    if (taken.has(trimmed)) return "Already added";
+    if (seen.has(trimmed)) return "Duplicate address";
+    seen.add(trimmed);
+    return undefined;
+  });
 };
+
+export const isValidAddresses = (rows: AddressRow[], existing: CoreNode[]) =>
+  rows.length > 0 &&
+  rows.every((r) => r.address.trim() !== "") &&
+  addressErrors(rows, existing).every((e) => e === undefined);
 
 export const operatorBody = (
   operator: Operator,

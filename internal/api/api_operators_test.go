@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
@@ -13,7 +14,8 @@ import (
 const operatorA = `{"name": "Operator A", "pws_operator": true, "plmns": [{"mcc": "001", "mnc": "01"}, {"mcc": "001", "mnc": "002"}],
 	"global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "macro", "enb_id": 703710},
 	"global_gnb_id": {"plmn": {"mcc": "001", "mnc": "002"}, "gnb_id": 74565, "gnb_id_length": 22},
-	"mmes": ["10.0.0.1", "::ffff:10.0.0.2"], "amfs": ["2001:db8::1"]}`
+	"mmes": [{"tnl_addresses": ["10.0.0.1", "::ffff:10.0.0.2"]}, {"tnl_addresses": ["10.0.0.3"]}],
+	"amfs": [{"tnl_addresses": ["2001:db8::1"]}]}`
 
 func TestOperators(t *testing.T) {
 	a := newTestAPI(t)
@@ -28,8 +30,8 @@ func TestOperators(t *testing.T) {
 		PLMNs:       []api.PLMN{{MCC: "001", MNC: "01"}, {MCC: "001", MNC: "002"}},
 		GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: db.ENBIDMacro, ID: 703710},
 		GlobalGNBID: &api.GlobalGNBID{PLMN: api.PLMN{MCC: "001", MNC: "002"}, ID: 74565, Length: 22},
-		MMEs:        []string{"10.0.0.1", "10.0.0.2"},
-		AMFs:        []string{"2001:db8::1"},
+		MMEs:        []api.CoreNode{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
+		AMFs:        []api.CoreNode{{TNLAddresses: []string{"2001:db8::1"}}},
 	}
 
 	if got := decode[api.Operator](t, result); !reflect.DeepEqual(got, want) {
@@ -66,7 +68,6 @@ func TestOperators(t *testing.T) {
 		"duplicate name":     {http.MethodPost, "/api/v1/operators", `{"name": "Operator A", "plmns": [{"mcc": "003", "mnc": "01"}]}`, http.StatusConflict, "Another operator already has name Operator A"},
 		"duplicate PLMN":     {http.MethodPost, "/api/v1/operators", `{"name": "C", "plmns": [{"mcc": "001", "mnc": "01"}]}`, http.StatusConflict, "Another operator already has PLMN 00101"},
 		"duplicate PWS":      {http.MethodPost, "/api/v1/operators", `{"name": "C", "pws_operator": true, "plmns": [{"mcc": "003", "mnc": "01"}]}`, http.StatusConflict, "Another operator is already the PWS operator"},
-		"duplicate MME":      {http.MethodPut, "/api/v1/operators/Operator%20B", `{"name": "Operator B", "plmns": [{"mcc": "002", "mnc": "01"}], "global_enb_id": {"plmn": {"mcc": "002", "mnc": "01"}, "enb_id_type": "home", "enb_id": 1}, "mmes": ["10.0.0.1"]}`, http.StatusConflict, "Another operator already has MME 10.0.0.1"},
 		"rename to existing": {http.MethodPut, "/api/v1/operators/Operator%20B", `{"name": "Operator A", "plmns": [{"mcc": "002", "mnc": "01"}]}`, http.StatusConflict, "Another operator already has name Operator A"},
 		"get unknown":        {http.MethodGet, "/api/v1/operators/C", "", http.StatusNotFound, "Operator not found"},
 		"update unknown":     {http.MethodPut, "/api/v1/operators/C", `{"name": "C", "plmns": [{"mcc": "003", "mnc": "01"}]}`, http.StatusNotFound, "Operator not found"},
@@ -78,8 +79,14 @@ func TestOperators(t *testing.T) {
 		}
 	}
 
+	code, _, msg = a.do(t, http.MethodPut, "/api/v1/operators/Operator%20B",
+		`{"name": "Operator B", "plmns": [{"mcc": "002", "mnc": "01"}], "global_enb_id": {"plmn": {"mcc": "002", "mnc": "01"}, "enb_id_type": "long_macro", "enb_id": 1}, "mmes": [{"tnl_addresses": ["10.0.0.1"]}]}`)
+	if code != http.StatusOK {
+		t.Fatalf("same MME address as another operator = %d %q", code, msg)
+	}
+
 	code, result, msg = a.do(t, http.MethodPut, "/api/v1/operators/Operator%20B",
-		`{"name": "Operator C", "plmns": [{"mcc": "002", "mnc": "01"}], "global_gnb_id": {"plmn": {"mcc": "002", "mnc": "01"}, "gnb_id": 4294967295, "gnb_id_length": 32}, "amfs": ["10.0.1.1"]}`)
+		`{"name": "Operator C", "plmns": [{"mcc": "002", "mnc": "01"}], "global_gnb_id": {"plmn": {"mcc": "002", "mnc": "01"}, "gnb_id": 4294967295, "gnb_id_length": 32}, "amfs": [{"tnl_addresses": ["10.0.1.1"]}]}`)
 	if code != http.StatusOK || decode[api.Operator](t, result).Name != "Operator C" {
 		t.Fatalf("rename = %d %q %s", code, msg, result)
 	}
@@ -90,7 +97,7 @@ func TestOperators(t *testing.T) {
 
 	code, result, _ = a.do(t, http.MethodGet, "/api/v1/operators/Operator%20C", "")
 	if got := decode[api.Operator](t, result); code != http.StatusOK || got.GlobalGNBID == nil || got.GlobalGNBID.ID != 4294967295 ||
-		!reflect.DeepEqual(got.AMFs, []string{"10.0.1.1"}) {
+		!reflect.DeepEqual(got.AMFs, []api.CoreNode{{TNLAddresses: []string{"10.0.1.1"}}}) {
 		t.Fatalf("GET renamed = %d %s", code, result)
 	}
 
@@ -128,9 +135,10 @@ func TestOperatorValidation(t *testing.T) {
 		"short MNC":          {`{"name": "A", "plmns": [{"mcc": "001", "mnc": "1"}]}`, "plmns: mnc must be 2 or 3 digits"},
 		"long MNC":           {`{"name": "A", "plmns": [{"mcc": "001", "mnc": "0001"}]}`, "plmns: mnc must be 2 or 3 digits"},
 		"duplicate PLMN":     {`{"name": "A", "plmns": [{"mcc": "001", "mnc": "01"}, {"mcc": "001", "mnc": "01"}]}`, "PLMN 00101 is listed twice"},
-		"eNB type":           {`{"name": "A", ` + plmn + `, "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "pico", "enb_id": 1}}`, "global_enb_id.enb_id_type must be macro, home, short_macro or long_macro"},
+		"eNB type":           {`{"name": "A", ` + plmn + `, "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "pico", "enb_id": 1}}`, "global_enb_id.enb_id_type must be macro, short_macro or long_macro"},
+		"home eNB ID":        {`{"name": "A", ` + plmn + `, "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "home", "enb_id": 1}}`, "global_enb_id.enb_id_type must be macro, short_macro or long_macro"},
+		"13 PLMNs":           {`{"name": "A", "plmns": [` + strings.TrimSuffix(strings.Repeat(`{"mcc": "001", "mnc": "01"},`, 13), ",") + `]}`, "an operator can have at most 12 PLMNs"},
 		"macro eNB ID":       {`{"name": "A", ` + plmn + `, "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "macro", "enb_id": 1048576}}`, "global_enb_id.enb_id must be between 0 and 1048575 for a macro eNB ID"},
-		"home eNB ID":        {`{"name": "A", ` + plmn + `, "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "home", "enb_id": 268435456}}`, "global_enb_id.enb_id must be between 0 and 268435455 for a home eNB ID"},
 		"short macro eNB ID": {`{"name": "A", ` + plmn + `, "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "short_macro", "enb_id": 262144}}`, "global_enb_id.enb_id must be between 0 and 262143 for a short_macro eNB ID"},
 		"long macro eNB ID":  {`{"name": "A", ` + plmn + `, "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "long_macro", "enb_id": 2097152}}`, "global_enb_id.enb_id must be between 0 and 2097151 for a long_macro eNB ID"},
 		"negative eNB ID":    {`{"name": "A", ` + plmn + `, "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "macro", "enb_id": -1}}`, "global_enb_id.enb_id must be between 0 and 1048575 for a macro eNB ID"},
@@ -140,13 +148,16 @@ func TestOperatorValidation(t *testing.T) {
 		"long gNB ID":        {`{"name": "A", ` + plmn + `, "global_gnb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "gnb_id": 1, "gnb_id_length": 33}}`, "global_gnb_id.gnb_id_length must be between 22 and 32"},
 		"gNB ID range":       {`{"name": "A", ` + plmn + `, "global_gnb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "gnb_id": 4194304, "gnb_id_length": 22}}`, "global_gnb_id.gnb_id must be between 0 and 4194303 for a 22-bit gNB ID"},
 		"foreign gNB PLMN":   {`{"name": "A", ` + plmn + `, "global_gnb_id": {"plmn": {"mcc": "001", "mnc": "02"}, "gnb_id": 1, "gnb_id_length": 22}}`, "global_gnb_id.plmn must be one of the operator's plmns"},
-		"MME without eNB":    {`{"name": "A", ` + plmn + `, "mmes": ["10.0.0.1"]}`, "mmes require a global_enb_id"},
-		"AMF without gNB":    {`{"name": "A", ` + plmn + `, "amfs": ["10.0.0.1"]}`, "amfs require a global_gnb_id"},
-		"MME hostname":       {`{"name": "A", ` + plmn + `, ` + enb + `, "mmes": ["mme.example.com"]}`, `mmes must be IPv4 or IPv6 addresses, not "mme.example.com"`},
-		"MME zone":           {`{"name": "A", ` + plmn + `, ` + enb + `, "mmes": ["fe80::1%eth0"]}`, `mmes must be IPv4 or IPv6 addresses, not "fe80::1%eth0"`},
-		"duplicate MME":      {`{"name": "A", ` + plmn + `, ` + enb + `, "mmes": ["10.0.0.1", "::ffff:10.0.0.1"]}`, "mmes lists 10.0.0.1 twice"},
-		"AMF CIDR":           {`{"name": "A", ` + plmn + `, ` + gnb + `, "amfs": ["10.0.0.0/24"]}`, `amfs must be IPv4 or IPv6 addresses, not "10.0.0.0/24"`},
-		"duplicate AMF":      {`{"name": "A", ` + plmn + `, ` + gnb + `, "amfs": ["2001:db8::1", "2001:DB8::1"]}`, "amfs lists 2001:db8::1 twice"},
+		"MME without eNB":    {`{"name": "A", ` + plmn + `, "mmes": [{"tnl_addresses": ["10.0.0.1"]}]}`, "mmes require a global_enb_id"},
+		"AMF without gNB":    {`{"name": "A", ` + plmn + `, "amfs": [{"tnl_addresses": ["10.0.0.1"]}]}`, "amfs require a global_gnb_id"},
+		"MME no address":     {`{"name": "A", ` + plmn + `, ` + enb + `, "mmes": [{"tnl_addresses": []}]}`, "mmes: each MME needs at least one TNL address"},
+		"AMF no address":     {`{"name": "A", ` + plmn + `, ` + gnb + `, "amfs": [{}]}`, "amfs: each AMF needs at least one TNL address"},
+		"MME hostname":       {`{"name": "A", ` + plmn + `, ` + enb + `, "mmes": [{"tnl_addresses": ["mme.example.com"]}]}`, `mmes: tnl_addresses must be IPv4 or IPv6 addresses, not "mme.example.com"`},
+		"MME zone":           {`{"name": "A", ` + plmn + `, ` + enb + `, "mmes": [{"tnl_addresses": ["fe80::1%eth0"]}]}`, `mmes: tnl_addresses must be IPv4 or IPv6 addresses, not "fe80::1%eth0"`},
+		"duplicate MME":      {`{"name": "A", ` + plmn + `, ` + enb + `, "mmes": [{"tnl_addresses": ["10.0.0.1", "::ffff:10.0.0.1"]}]}`, "mmes list 10.0.0.1 twice"},
+		"MME across nodes":   {`{"name": "A", ` + plmn + `, ` + enb + `, "mmes": [{"tnl_addresses": ["10.0.0.1"]}, {"tnl_addresses": ["10.0.0.2", "10.0.0.1"]}]}`, "mmes list 10.0.0.1 twice"},
+		"AMF CIDR":           {`{"name": "A", ` + plmn + `, ` + gnb + `, "amfs": [{"tnl_addresses": ["10.0.0.0/24"]}]}`, `amfs: tnl_addresses must be IPv4 or IPv6 addresses, not "10.0.0.0/24"`},
+		"duplicate AMF":      {`{"name": "A", ` + plmn + `, ` + gnb + `, "amfs": [{"tnl_addresses": ["2001:db8::1"]}, {"tnl_addresses": ["2001:DB8::1"]}]}`, "amfs list 2001:db8::1 twice"},
 	} {
 		for _, method := range []string{http.MethodPost, http.MethodPut} {
 			path := "/api/v1/operators"
@@ -207,5 +218,40 @@ func TestOperatorPermissions(t *testing.T) {
 	if code, _, msg := a.do(t, http.MethodPost, "/api/v1/operators",
 		`{"name": "A", "plmns": [{"mcc": "001", "mnc": "01"}]}`); code != http.StatusCreated {
 		t.Fatalf("create as admin = %d %q", code, msg)
+	}
+}
+
+func TestOperatorPLMNTotals(t *testing.T) {
+	a := newTestAPI(t)
+
+	operator := func(name, mcc string, n int, amf bool) string {
+		plmns := make([]string, 0, n)
+		for i := range n {
+			plmns = append(plmns, fmt.Sprintf(`{"mcc": %q, "mnc": "%02d"}`, mcc, i))
+		}
+
+		body := fmt.Sprintf(`{"name": %q, "plmns": [%s]`, name, strings.Join(plmns, ", "))
+		if amf {
+			body += fmt.Sprintf(`, "global_gnb_id": {"plmn": {"mcc": %q, "mnc": "00"}, "gnb_id": 1, "gnb_id_length": 22}, "amfs": [{"tnl_addresses": ["10.0.0.1"]}]`, mcc)
+		}
+
+		return body + "}"
+	}
+
+	if code, _, msg := a.do(t, http.MethodPost, "/api/v1/operators", operator("A", "001", 8, true)); code != http.StatusCreated {
+		t.Fatalf("create A = %d %q", code, msg)
+	}
+
+	if code, _, msg := a.do(t, http.MethodPost, "/api/v1/operators", operator("B", "002", 5, false)); code != http.StatusCreated {
+		t.Fatalf("create B = %d %q", code, msg)
+	}
+
+	code, _, msg := a.do(t, http.MethodPut, "/api/v1/operators/B", operator("B", "002", 5, true))
+	if code != http.StatusBadRequest || msg != "Operators with AMFs can have at most 12 PLMNs in total" {
+		t.Fatalf("AMF total over 12 = %d %q", code, msg)
+	}
+
+	if code, _, msg := a.do(t, http.MethodPut, "/api/v1/operators/B", operator("B", "002", 4, true)); code != http.StatusOK {
+		t.Fatalf("AMF total of 12 = %d %q", code, msg)
 	}
 }

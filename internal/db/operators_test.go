@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,8 +16,8 @@ func operatorA() Operator {
 		PLMNs:       []PLMN{{MCC: "001", MNC: "01"}, {MCC: "001", MNC: "001"}},
 		GlobalENBID: &GlobalENBID{PLMN: PLMN{MCC: "001", MNC: "01"}, Type: ENBIDMacro, ID: 0xABCDE},
 		GlobalGNBID: &GlobalGNBID{PLMN: PLMN{MCC: "001", MNC: "001"}, ID: 0x12345, Length: 22},
-		MMEs:        []string{"10.0.0.1", "10.0.0.2"},
-		AMFs:        []string{"10.0.1.1"},
+		MMEs:        []CoreNode{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
+		AMFs:        []CoreNode{{TNLAddresses: []string{"10.0.1.1"}}},
 	}
 }
 
@@ -24,7 +25,7 @@ func operatorB() Operator {
 	return Operator{
 		Name:  "Operator B",
 		PLMNs: []PLMN{{MCC: "999", MNC: "70"}},
-		MMEs:  []string{"10.0.2.1"},
+		MMEs:  []CoreNode{{TNLAddresses: []string{"10.0.2.1"}}},
 	}
 }
 
@@ -65,9 +66,9 @@ func TestOperatorLifecycle(t *testing.T) {
 	a.Name = "Operator A2"
 	a.PWSOperator = false
 	a.PLMNs = []PLMN{{MCC: "001", MNC: "02"}}
-	a.GlobalENBID = &GlobalENBID{PLMN: PLMN{MCC: "001", MNC: "02"}, Type: ENBIDHome, ID: 1<<28 - 1}
+	a.GlobalENBID = &GlobalENBID{PLMN: PLMN{MCC: "001", MNC: "02"}, Type: ENBIDShortMacro, ID: 1<<18 - 1}
 	a.GlobalGNBID = nil
-	a.MMEs = []string{"10.0.0.2"}
+	a.MMEs = []CoreNode{{TNLAddresses: []string{"10.0.0.2"}}}
 	a.AMFs = nil
 
 	if err := d.UpdateOperator(ctx, a); err != nil {
@@ -129,9 +130,17 @@ func TestOperatorDuplicates(t *testing.T) {
 		"name":         {edit: func(o *Operator) { o.Name = "Operator A" }, want: "name Operator A"},
 		"PWS operator": {edit: func(o *Operator) { o.PWSOperator = true }, want: "PWS operator"},
 		"PLMN":         {edit: func(o *Operator) { o.PLMNs = append(o.PLMNs, PLMN{MCC: "001", MNC: "01"}) }, want: "PLMN 00101"},
-		"MME":          {edit: func(o *Operator) { o.MMEs = []string{"10.0.0.1"} }, want: "MME 10.0.0.1"},
-		"AMF":          {edit: func(o *Operator) { o.AMFs = []string{"10.0.1.1"} }, want: "AMF 10.0.1.1"},
 		"PLMN in list": {edit: func(o *Operator) { o.PLMNs = append(o.PLMNs, o.PLMNs[0]) }, want: "PLMN 99970"},
+		"MME address in another MME": {edit: func(o *Operator) {
+			o.MMEs = append(o.MMEs, CoreNode{TNLAddresses: []string{"10.0.3.1", "10.0.2.1"}})
+		}, want: "MME 10.0.2.1"},
+		"MME address in the same MME": {edit: func(o *Operator) {
+			o.MMEs = []CoreNode{{TNLAddresses: []string{"10.0.2.1", "10.0.2.1"}}}
+		}, want: "MME 10.0.2.1"},
+		"AMF address": {edit: func(o *Operator) {
+			o.GlobalGNBID = &GlobalGNBID{PLMN: o.PLMNs[0], ID: 1, Length: 22}
+			o.AMFs = []CoreNode{{TNLAddresses: []string{"10.0.1.1"}}, {TNLAddresses: []string{"10.0.1.1"}}}
+		}, want: "AMF 10.0.1.1"},
 	}
 
 	for name, tc := range tests {
@@ -163,7 +172,11 @@ func TestOperatorInvalid(t *testing.T) {
 		"short MCC":            {edit: func(o *Operator) { o.PLMNs[0].MCC = "01" }, want: ErrConstraintCheck},
 		"long MNC":             {edit: func(o *Operator) { o.PLMNs[0].MNC = "0011" }, want: ErrConstraintCheck},
 		"letters in MCC":       {edit: func(o *Operator) { o.PLMNs[0].MCC = "0a1" }, want: ErrConstraintCheck},
-		"empty MME address":    {edit: func(o *Operator) { o.MMEs = []string{""} }, want: ErrConstraintCheck},
+		"empty MME address":    {edit: func(o *Operator) { o.MMEs[0].TNLAddresses[0] = "" }, want: ErrConstraintCheck},
+		"MME without address":  {edit: func(o *Operator) { o.MMEs[1].TNLAddresses = nil }, want: ErrInvalid},
+		"AMF without address":  {edit: func(o *Operator) { o.AMFs = []CoreNode{{}} }, want: ErrInvalid},
+		"home eNB ID":          {edit: func(o *Operator) { o.GlobalENBID.Type = "home" }, want: ErrConstraintCheck},
+		"13 PLMNs":             {edit: func(o *Operator) { o.PLMNs = append(o.PLMNs, plmns("002", 11)...) }, want: ErrTooManyPLMNs},
 		"macro eNB ID too big": {edit: func(o *Operator) { o.GlobalENBID.ID = 1 << 20 }, want: ErrConstraintCheck},
 		"short macro too big": {edit: func(o *Operator) {
 			o.GlobalENBID.Type, o.GlobalENBID.ID = ENBIDShortMacro, 1<<18
@@ -171,7 +184,6 @@ func TestOperatorInvalid(t *testing.T) {
 		"long macro too big": {edit: func(o *Operator) {
 			o.GlobalENBID.Type, o.GlobalENBID.ID = ENBIDLongMacro, 1<<21
 		}, want: ErrConstraintCheck},
-		"home eNB ID too big":  {edit: func(o *Operator) { o.GlobalENBID.Type, o.GlobalENBID.ID = ENBIDHome, 1<<28 }, want: ErrConstraintCheck},
 		"unknown eNB ID type":  {edit: func(o *Operator) { o.GlobalENBID.Type = "pico" }, want: ErrConstraintCheck},
 		"gNB ID too short":     {edit: func(o *Operator) { o.GlobalGNBID.Length = 21 }, want: ErrConstraintCheck},
 		"gNB ID too long":      {edit: func(o *Operator) { o.GlobalGNBID.Length = 33 }, want: ErrConstraintCheck},
@@ -219,7 +231,7 @@ func TestOperatorUpdateRollsBack(t *testing.T) {
 	createTestOperator(t, d, operatorB())
 
 	broken := a
-	broken.MMEs = []string{"10.0.2.1"}
+	broken.MMEs = []CoreNode{{TNLAddresses: []string{"10.0.2.1"}}, {TNLAddresses: []string{"10.0.2.1"}}}
 
 	if err := d.UpdateOperator(ctx, broken); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("UpdateOperator: %v, want ErrDuplicate", err)
@@ -227,5 +239,89 @@ func TestOperatorUpdateRollsBack(t *testing.T) {
 
 	if got, err := d.GetOperator(ctx, a.Name); err != nil || !reflect.DeepEqual(got, a) {
 		t.Fatalf("after the failed update: %+v, %v, want %+v", got, err, a)
+	}
+}
+
+func plmns(mcc string, n int) []PLMN {
+	out := make([]PLMN, 0, n)
+	for i := range n {
+		out = append(out, PLMN{MCC: mcc, MNC: fmt.Sprintf("%02d", i)})
+	}
+
+	return out
+}
+
+func TestOperatorAddressesArePerOperator(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	a := createTestOperator(t, d, operatorA())
+
+	b := operatorB()
+	b.GlobalENBID = &GlobalENBID{PLMN: b.PLMNs[0], Type: ENBIDMacro, ID: 1}
+	b.GlobalGNBID = &GlobalGNBID{PLMN: b.PLMNs[0], ID: 1, Length: 22}
+	b.MMEs = []CoreNode{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}}
+	b.AMFs = []CoreNode{{TNLAddresses: []string{"10.0.1.1"}}}
+	b = createTestOperator(t, d, b)
+
+	ops, err := d.ListOperators(ctx)
+	if err != nil || !reflect.DeepEqual(ops, []Operator{a, b}) {
+		t.Fatalf("ListOperators = %+v, %v, want %+v", ops, err, []Operator{a, b})
+	}
+
+	if err := d.DeleteOperator(ctx, a.ID); err != nil {
+		t.Fatalf("DeleteOperator: %v", err)
+	}
+
+	if got, err := d.GetOperator(ctx, b.Name); err != nil || !reflect.DeepEqual(got, b) {
+		t.Fatalf("GetOperator = %+v, %v, want %+v", got, err, b)
+	}
+}
+
+func TestOperatorPLMNLimits(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	a := operatorA()
+	a.PLMNs = append(plmns("005", 10), a.PLMNs...)
+	a = createTestOperator(t, d, a)
+
+	b := operatorB()
+	b.MMEs = nil
+	b.PLMNs = plmns("002", 12)
+	b = createTestOperator(t, d, b)
+
+	b.GlobalGNBID = &GlobalGNBID{PLMN: b.PLMNs[0], ID: 1, Length: 22}
+	b.AMFs = []CoreNode{{TNLAddresses: []string{"10.0.1.1"}}}
+
+	err := d.UpdateOperator(ctx, b)
+	if !errors.Is(err, ErrTooManyPLMNs) || !strings.HasSuffix(err.Error(), ": Operators with AMFs can have at most 12 PLMNs in total") {
+		t.Fatalf("UpdateOperator over the AMF total: %v", err)
+	}
+
+	b.AMFs = nil
+	b.GlobalENBID = &GlobalENBID{PLMN: b.PLMNs[0], Type: ENBIDMacro, ID: 1}
+	b.MMEs = []CoreNode{{TNLAddresses: []string{"10.0.0.1"}}}
+
+	if err := d.UpdateOperator(ctx, b); err != nil {
+		t.Fatalf("UpdateOperator within the MME total: %v", err)
+	}
+
+	c := Operator{Name: "Operator C", PLMNs: plmns("003", 9), GlobalENBID: &GlobalENBID{
+		PLMN: PLMN{MCC: "003", MNC: "00"}, Type: ENBIDMacro, ID: 1,
+	}, MMEs: []CoreNode{{TNLAddresses: []string{"10.0.0.1"}}}}
+
+	if _, err := d.CreateOperator(ctx, c); !errors.Is(err, ErrTooManyPLMNs) ||
+		!strings.HasSuffix(err.Error(), ": Operators with MMEs can have at most 32 PLMNs in total") {
+		t.Fatalf("CreateOperator over the MME total: %v", err)
+	}
+
+	c.PLMNs, c.GlobalENBID.PLMN = c.PLMNs[:8], c.PLMNs[0]
+	if _, err := d.CreateOperator(ctx, c); err != nil {
+		t.Fatalf("CreateOperator at the MME total: %v", err)
+	}
+
+	if got, err := d.GetOperator(ctx, a.Name); err != nil || !reflect.DeepEqual(got, a) {
+		t.Fatalf("GetOperator = %+v, %v, want %+v", got, err, a)
 	}
 }

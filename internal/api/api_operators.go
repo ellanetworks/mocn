@@ -50,8 +50,12 @@ type Operator struct {
 	PLMNs       []PLMN       `json:"plmns"`
 	GlobalENBID *GlobalENBID `json:"global_enb_id"`
 	GlobalGNBID *GlobalGNBID `json:"global_gnb_id"`
-	MMEs        []string     `json:"mmes"`
-	AMFs        []string     `json:"amfs"`
+	MMEs        []CoreNode   `json:"mmes"`
+	AMFs        []CoreNode   `json:"amfs"`
+}
+
+type CoreNode struct {
+	TNLAddresses []string `json:"tnl_addresses"`
 }
 
 type ListOperatorsResponse struct {
@@ -60,7 +64,6 @@ type ListOperatorsResponse struct {
 
 var enbIDBits = map[db.ENBIDType]uint{
 	db.ENBIDMacro:      20,
-	db.ENBIDHome:       28,
 	db.ENBIDShortMacro: 18,
 	db.ENBIDLongMacro:  21,
 }
@@ -187,13 +190,18 @@ func writeOperatorError(w http.ResponseWriter, r *http.Request, cfg Config, err 
 		msg := "Another operator already has " + what
 		if what == "PWS operator" {
 			msg = "Another operator is already the PWS operator"
+		} else if strings.HasPrefix(what, "MME ") || strings.HasPrefix(what, "AMF ") {
+			msg = "The operator lists " + what + " twice"
 		}
 
 		writeError(r.Context(), w, http.StatusConflict, msg, err, cfg.Logger)
 	case errors.Is(err, db.ErrForeignPLMN):
 		writeError(r.Context(), w, http.StatusBadRequest, "The Global eNB and gNB IDs must use one of the operator's PLMNs",
 			err, cfg.Logger)
-	case errors.Is(err, db.ErrConstraintCheck):
+	case errors.Is(err, db.ErrTooManyPLMNs):
+		_, msg, _ := strings.Cut(err.Error(), db.ErrTooManyPLMNs.Error()+": ")
+		writeError(r.Context(), w, http.StatusBadRequest, msg, err, cfg.Logger)
+	case errors.Is(err, db.ErrConstraintCheck), errors.Is(err, db.ErrInvalid):
 		writeError(r.Context(), w, http.StatusBadRequest, "Invalid operator", err, cfg.Logger)
 	default:
 		writeError(r.Context(), w, http.StatusInternalServerError, message, err, cfg.Logger)
@@ -228,6 +236,10 @@ func operatorOf(params Operator) (db.Operator, error) {
 
 	if len(params.PLMNs) == 0 {
 		return db.Operator{}, errors.New("at least one PLMN is required")
+	}
+
+	if len(params.PLMNs) > db.MaxOperatorPLMNs {
+		return db.Operator{}, fmt.Errorf("an operator can have at most %d PLMNs", db.MaxOperatorPLMNs)
 	}
 
 	plmns := map[db.PLMN]bool{}
@@ -274,11 +286,11 @@ func operatorOf(params Operator) (db.Operator, error) {
 
 	var err error
 
-	if o.MMEs, err = addressesOf(params.MMEs, "mmes"); err != nil {
+	if o.MMEs, err = coreNodesOf(params.MMEs, "mmes", "MME"); err != nil {
 		return db.Operator{}, err
 	}
 
-	if o.AMFs, err = addressesOf(params.AMFs, "amfs"); err != nil {
+	if o.AMFs, err = coreNodesOf(params.AMFs, "amfs", "AMF"); err != nil {
 		return db.Operator{}, err
 	}
 
@@ -319,7 +331,7 @@ func globalENBIDOf(e GlobalENBID, plmns map[db.PLMN]bool) (db.GlobalENBID, error
 
 	bits, ok := enbIDBits[e.Type]
 	if !ok {
-		return db.GlobalENBID{}, errors.New("global_enb_id.enb_id_type must be macro, home, short_macro or long_macro")
+		return db.GlobalENBID{}, errors.New("global_enb_id.enb_id_type must be macro, short_macro or long_macro")
 	}
 
 	if e.ID < 0 || e.ID >= 1<<bits {
@@ -353,32 +365,51 @@ func globalGNBIDOf(g GlobalGNBID, plmns map[db.PLMN]bool) (db.GlobalGNBID, error
 	return db.GlobalGNBID{PLMN: plmn, ID: uint32(g.ID), Length: g.Length}, nil
 }
 
-func addressesOf(in []string, field string) ([]string, error) {
-	out := make([]string, 0, len(in))
+func coreNodesOf(in []CoreNode, field, what string) ([]db.CoreNode, error) {
+	out := make([]db.CoreNode, 0, len(in))
 	seen := map[netip.Addr]bool{}
 
-	for _, s := range in {
-		addr, err := netip.ParseAddr(s)
-		if err != nil || addr.Zone() != "" {
-			return nil, fmt.Errorf("%s must be IPv4 or IPv6 addresses, not %q", field, s)
+	for _, n := range in {
+		if len(n.TNLAddresses) == 0 {
+			return nil, fmt.Errorf("%s: each %s needs at least one TNL address", field, what)
 		}
 
-		addr = addr.Unmap()
-		if seen[addr] {
-			return nil, fmt.Errorf("%s lists %s twice", field, addr)
+		node := db.CoreNode{TNLAddresses: make([]string, 0, len(n.TNLAddresses))}
+
+		for _, s := range n.TNLAddresses {
+			addr, err := netip.ParseAddr(s)
+			if err != nil || addr.Zone() != "" {
+				return nil, fmt.Errorf("%s: tnl_addresses must be IPv4 or IPv6 addresses, not %q", field, s)
+			}
+
+			addr = addr.Unmap()
+			if seen[addr] {
+				return nil, fmt.Errorf("%s list %s twice", field, addr)
+			}
+
+			seen[addr] = true
+			node.TNLAddresses = append(node.TNLAddresses, addr.String())
 		}
 
-		seen[addr] = true
-		out = append(out, addr.String())
+		out = append(out, node)
 	}
 
 	return out, nil
 }
 
+func coreNodesResponse(in []db.CoreNode) []CoreNode {
+	out := make([]CoreNode, 0, len(in))
+	for _, n := range in {
+		out = append(out, CoreNode{TNLAddresses: append([]string{}, n.TNLAddresses...)})
+	}
+
+	return out
+}
+
 func operatorResponse(o db.Operator) Operator {
 	resp := Operator{
 		Name: o.Name, PWSOperator: o.PWSOperator, PLMNs: make([]PLMN, 0, len(o.PLMNs)),
-		MMEs: append([]string{}, o.MMEs...), AMFs: append([]string{}, o.AMFs...),
+		MMEs: coreNodesResponse(o.MMEs), AMFs: coreNodesResponse(o.AMFs),
 	}
 
 	for _, p := range o.PLMNs {

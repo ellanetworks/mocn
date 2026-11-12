@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import {
-  AddAddressDialog,
+  AddCoreNodeDialog,
   EditPLMNsDialog,
   EditGatewayIdentityDialog,
   EditPWSOperatorDialog,
@@ -27,6 +27,7 @@ import SettingsTable, { SubFields } from "@/components/SettingsTable";
 import { useAuth } from "@/contexts/AuthContext";
 import { errorMessage, useSnackbar } from "@/contexts/SnackbarContext";
 import {
+  type CoreNode,
   deleteOperator,
   getOperator,
   type Operator,
@@ -37,6 +38,7 @@ import {
   formatGlobalENBID,
   formatGlobalGNBID,
   formatPLMN,
+  formatTNLAddresses,
   GATEWAY_IDENTITY_HELP,
   GNB_IDENTITY_LABEL,
   operatorPath,
@@ -63,10 +65,11 @@ type Editing =
   | { type: "pws" }
   | { type: "identity" }
   | { type: "add"; kind: Kind }
-  | { type: "remove"; kind: Kind; address: string };
+  | { type: "remove"; kind: Kind; index: number };
 
-interface AddressRow {
-  address: string;
+interface NodeRow {
+  index: number;
+  addresses: string;
 }
 
 function NotSet() {
@@ -93,24 +96,29 @@ function PLMNList({ plmns }: { plmns: string[] }) {
 
 const KIND_RAT: Record<Kind, string> = { MME: "4G", AMF: "5G" };
 
-function Addresses({
+function CoreNodes({
   kind,
-  addresses,
+  nodes,
   identitySet,
   editable,
   onAdd,
   onRemove,
 }: {
   kind: Kind;
-  addresses: string[];
+  nodes: CoreNode[];
   identitySet: boolean;
   editable: boolean;
   onAdd: () => void;
-  onRemove: (address: string) => void;
+  onRemove: (index: number) => void;
 }) {
   const id = `${kind.toLowerCase()}s-title`;
-  const columns: GridColDef<AddressRow>[] = [
-    { field: "address", headerName: "Address", flex: 1, minWidth: 180 },
+  const columns: GridColDef<NodeRow>[] = [
+    {
+      field: "addresses",
+      headerName: "TNL addresses",
+      flex: 1,
+      minWidth: 180,
+    },
   ];
   if (editable) {
     columns.push({
@@ -122,8 +130,8 @@ function Addresses({
       renderCell: ({ row }) => (
         <IconButton
           size="small"
-          aria-label={`Remove ${kind} ${row.address}`}
-          onClick={() => onRemove(row.address)}
+          aria-label={`Remove ${kind} ${row.addresses}`}
+          onClick={() => onRemove(row.index)}
         >
           <DeleteIcon fontSize="small" color="primary" />
         </IconButton>
@@ -135,8 +143,8 @@ function Addresses({
     <>
       <SectionHeader
         id={id}
-        title={`${KIND_RAT[kind]} ${kind}s (${addresses.length})`}
-        description={`The addresses of this operator's ${kind}s, its ${KIND_RAT[kind]} core.`}
+        title={`${KIND_RAT[kind]} ${kind}s (${nodes.length})`}
+        description={`The ${kind}s of this operator's ${KIND_RAT[kind]} core, each with its TNL addresses.`}
       >
         {editable && (
           <Tooltip
@@ -157,11 +165,14 @@ function Addresses({
           </Tooltip>
         )}
       </SectionHeader>
-      <DataGrid<AddressRow>
+      <DataGrid<NodeRow>
         aria-labelledby={id}
-        rows={addresses.map((address) => ({ address }))}
+        rows={nodes.map((node, index) => ({
+          index,
+          addresses: formatTNLAddresses(node),
+        }))}
         columns={columns}
-        getRowId={(row) => row.address}
+        getRowId={(row) => row.addresses}
         disableColumnSorting
         disableColumnFilter
         disableColumnMenu
@@ -194,6 +205,10 @@ function OperatorSections({
   const gnb = operator.global_gnb_id ?? undefined;
   const mmes = operator.mmes ?? [];
   const amfs = operator.amfs ?? [];
+  const removing =
+    editing?.type === "remove"
+      ? (editing.kind === "MME" ? mmes : amfs)[editing.index]
+      : undefined;
 
   return (
     <>
@@ -246,26 +261,22 @@ function OperatorSections({
         ]}
       />
 
-      <Addresses
+      <CoreNodes
         kind="MME"
-        addresses={mmes}
+        nodes={mmes}
         identitySet={enb !== undefined}
         editable={editable}
         onAdd={() => setEditing({ type: "add", kind: "MME" })}
-        onRemove={(address) =>
-          setEditing({ type: "remove", kind: "MME", address })
-        }
+        onRemove={(index) => setEditing({ type: "remove", kind: "MME", index })}
       />
 
-      <Addresses
+      <CoreNodes
         kind="AMF"
-        addresses={amfs}
+        nodes={amfs}
         identitySet={gnb !== undefined}
         editable={editable}
         onAdd={() => setEditing({ type: "add", kind: "AMF" })}
-        onRemove={(address) =>
-          setEditing({ type: "remove", kind: "AMF", address })
-        }
+        onRemove={(index) => setEditing({ type: "remove", kind: "AMF", index })}
       />
 
       {editing?.type === "name" && (
@@ -285,21 +296,21 @@ function OperatorSections({
         <EditGatewayIdentityDialog operator={operator} onClose={close} />
       )}
       {editing?.type === "add" && (
-        <AddAddressDialog
+        <AddCoreNodeDialog
           operator={operator}
           kind={editing.kind}
           onClose={close}
         />
       )}
-      {editing?.type === "remove" && (
+      {editing?.type === "remove" && removing && (
         <RemoveDialog
           operator={operator}
           title={`Remove ${editing.kind}`}
-          description={`Remove ${editing.kind} ${editing.address}?`}
+          description={`Remove ${editing.kind} ${formatTNLAddresses(removing)}?`}
           change={
             editing.kind === "MME"
-              ? { mmes: mmes.filter((a) => a !== editing.address) }
-              : { amfs: amfs.filter((a) => a !== editing.address) }
+              ? { mmes: mmes.filter((_, i) => i !== editing.index) }
+              : { amfs: amfs.filter((_, i) => i !== editing.index) }
           }
           message={`${editing.kind} removed successfully.`}
           onClose={close}

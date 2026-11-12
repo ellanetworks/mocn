@@ -190,8 +190,8 @@ func TestUsersOverHTTP(t *testing.T) {
 		Name:        "Operator A",
 		PLMNs:       []api.PLMN{{MCC: "001", MNC: "01"}},
 		GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: "macro", ID: 703710},
-		MMEs:        []string{"10.0.0.1"},
-		AMFs:        []string{},
+		MMEs:        []api.CoreNode{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
+		AMFs:        []api.CoreNode{},
 	}
 
 	if code, result := r.call(t, client, http.MethodPost, "/api/v1/operators", token, operator); code != http.StatusCreated {

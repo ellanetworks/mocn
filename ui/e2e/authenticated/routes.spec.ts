@@ -38,8 +38,8 @@ const createOperator = async (request: APIRequestContext) => {
         gnb_id: 74565,
         gnb_id_length: 22,
       },
-      mmes: ["10.0.0.1"],
-      amfs: ["10.0.1.1"],
+      mmes: [{ tnl_addresses: ["10.0.0.1"] }],
+      amfs: [{ tnl_addresses: ["10.0.1.1"] }],
     },
   });
   return () => removeOperator(request, token);

@@ -37,8 +37,11 @@ const operatorA = (): Operator => ({
     gnb_id: 74565,
     gnb_id_length: 22,
   },
-  mmes: ["10.0.0.1", "10.0.0.2"],
-  amfs: ["10.0.1.1"],
+  mmes: [
+    { tnl_addresses: ["10.0.0.1", "10.0.0.2"] },
+    { tnl_addresses: ["10.0.0.3"] },
+  ],
+  amfs: [{ tnl_addresses: ["10.0.1.1"] }],
 });
 
 const operatorB = (): Operator => ({
@@ -147,20 +150,13 @@ const cells = (row: HTMLElement) =>
 const rowOf = async (text: string) =>
   (await screen.findByText(text)).closest('[role="row"]') as HTMLElement;
 
-const choose = (label: string, option: string) => {
-  fireEvent.mouseDown(
-    within(screen.getByRole("dialog")).getByRole("combobox", { name: label }),
-  );
-  fireEvent.click(screen.getByRole("option", { name: option }));
-};
-
 const click = async (name: string) =>
   fireEvent.click(await screen.findByRole("button", { name }));
 
-const submit = (name: string) =>
-  fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name }),
-  );
+const submitButton = (name: string) =>
+  within(screen.getByRole("dialog")).getByRole("button", { name });
+
+const submit = (name: string) => fireEvent.click(submitButton(name));
 
 const put = (name: string, body: Operator) => ({
   method: "PUT",
@@ -180,6 +176,29 @@ afterEach(() => {
 });
 
 const table = (name: string) => within(screen.getByRole("table", { name }));
+
+const part = (name: string) =>
+  within(within(screen.getByRole("dialog")).getByRole("group", { name }));
+
+const LTE = "4G (Global eNB ID)";
+const NR = "5G (Global gNB ID)";
+
+const toggle = (name: string) =>
+  fireEvent.click(part(name).getByRole("switch", { name: "Set" }));
+
+const partField = (name: string, label: string) =>
+  part(name).getByRole("textbox", { name: label });
+
+const fillIn = (name: string, label: string, value: string) =>
+  fireEvent.change(partField(name, label), { target: { value } });
+
+const blurIn = (name: string, label: string) =>
+  fireEvent.blur(partField(name, label));
+
+const chooseIn = (name: string, label: string, option: string) => {
+  fireEvent.mouseDown(part(name).getByRole("combobox", { name: label }));
+  fireEvent.click(screen.getByRole("option", { name: option }));
+};
 
 const valueOf = (name: string, label: string) =>
   table(name).getByText(label).closest("tr")!.querySelectorAll("td")[1]
@@ -384,8 +403,14 @@ describe("OperatorDetail", () => {
     expect(document.title).toBe("Operators / Operator A · Ella MOCN");
     for (const [name, description] of [
       ["Overview", "How Ella MOCN identifies this operator."],
-      ["4G MMEs (2)", "The addresses of this operator's MMEs, its 4G core."],
-      ["5G AMFs (1)", "The addresses of this operator's AMFs, its 5G core."],
+      [
+        "4G MMEs (2)",
+        "The MMEs of this operator's 4G core, each with its TNL addresses.",
+      ],
+      [
+        "5G AMFs (1)",
+        "The AMFs of this operator's 5G core, each with its TNL addresses.",
+      ],
     ]) {
       expect(
         await screen.findByRole("heading", { level: 2, name }),
@@ -400,17 +425,13 @@ describe("OperatorDetail", () => {
         .map((li) => li.textContent),
     ).toEqual(["001/01", "001/02"]);
     expect(valueOf("Overview", "PWS operator")).toBe("Yes");
-    expect(valueOf("Overview", "Gateway identity, 4G (Global eNB ID)")).toBe(
-      "001/01 · Macro (20 bits) · 703710",
-    );
-    expect(valueOf("Overview", "Gateway identity, 5G (Global gNB ID)")).toBe(
-      "001/02 · 74565 (22 bits)",
-    );
-    expect(addresses(/^4G MMEs/)).toEqual(["10.0.0.1", "10.0.0.2"]);
+    expect(valueOf("Overview", LTE)).toBe("001/01 · Macro (20 bits) · 703710");
+    expect(valueOf("Overview", NR)).toBe("001/02 · 74565 (22 bits)");
+    expect(addresses(/^4G MMEs/)).toEqual(["10.0.0.1, 10.0.0.2", "10.0.0.3"]);
     expect(addresses(/^5G AMFs/)).toEqual(["10.0.1.1"]);
     expect(
       screen.queryByText(
-        "Broadcasts this operator's emergency warnings (PWS) to every cell.",
+        "The operator whose core connects the common CBC. Its emergency warnings (PWS) are broadcast to every cell.",
       ),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("switch")).not.toBeInTheDocument();
@@ -425,15 +446,13 @@ describe("OperatorDetail", () => {
     fireEvent.mouseOver(screen.getByText("PWS operator"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "Broadcasts this operator's emergency warnings (PWS) to every cell.",
+        name: "The operator whose core connects the common CBC. Its emergency warnings (PWS) are broadcast to every cell.",
       }),
     ).toBeInTheDocument();
-    fireEvent.mouseOver(
-      screen.getByText("Gateway identity, 5G (Global gNB ID)"),
-    );
+    fireEvent.mouseOver(screen.getByText("Gateway identity"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "Assigned by the operator. Ella MOCN uses it to identify itself to this operator's AMFs, its 5G core.",
+        name: "Assigned by the operator. Ella MOCN uses it to identify itself to this operator's core: the Global eNB ID to its MMEs (4G) and the Global gNB ID to its AMFs (5G).",
       }),
     ).toBeInTheDocument();
   });
@@ -444,21 +463,15 @@ describe("OperatorDetail", () => {
     renderAt("/operators/Operator%20B");
 
     await screen.findByRole("heading", { level: 2, name: "Overview" });
-    expect(valueOf("Overview", "Gateway identity, 4G (Global eNB ID)")).toBe(
-      "Not set",
-    );
-    expect(valueOf("Overview", "Gateway identity, 5G (Global gNB ID)")).toBe(
-      "Not set",
-    );
+    expect(valueOf("Overview", LTE)).toBe("Not set");
+    expect(valueOf("Overview", NR)).toBe("Not set");
     expect(valueOf("Overview", "PWS operator")).toBe("No");
     expect(screen.getByText("No MMEs.")).toBeInTheDocument();
     expect(screen.getByText("No AMFs.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add MME" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Add AMF" })).toBeDisabled();
     expect(
-      screen.getByRole("button", {
-        name: "Edit Gateway identity, 4G (Global eNB ID)",
-      }),
+      screen.getByRole("button", { name: "Edit Gateway identity" }),
     ).toBeEnabled();
     expect(
       screen.queryByRole("button", { name: /^Remove Gateway identity/ }),
@@ -473,25 +486,22 @@ describe("OperatorDetail", () => {
     ).toBeInTheDocument();
   });
 
-  it("asks to remove the MMEs and AMFs before the gateway identity", async () => {
+  it("asks to remove the MMEs and AMFs before clearing the gateway identity", async () => {
     serve();
 
     renderAt("/operators/Operator%20A");
+    await click("Edit Gateway identity");
 
-    const remove = await screen.findByRole("button", {
-      name: "Remove Gateway identity, 4G (Global eNB ID)",
-    });
-    expect(remove).toBeDisabled();
-    expect(
-      screen.getByRole("button", {
-        name: "Remove Gateway identity, 5G (Global gNB ID)",
-      }),
-    ).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Add MME" })).toBeEnabled();
-    fireEvent.mouseOver(remove.parentElement!);
-    expect(
-      await screen.findByRole("tooltip", { name: "Remove the MMEs first" }),
-    ).toBeInTheDocument();
+    for (const [name, hint] of [
+      [LTE, "Remove the MMEs first"],
+      [NR, "Remove the AMFs first"],
+    ]) {
+      const set = part(name).getByRole("switch", { name: "Set" });
+      expect(set).toBeChecked();
+      expect(set).toBeDisabled();
+      expect(set).toHaveAccessibleDescription(hint);
+    }
+    expect(partField(LTE, "eNB ID")).toHaveValue("703710");
   });
 
   it("shows when the operator does not exist", async () => {
@@ -519,10 +529,10 @@ describe("OperatorDetail", () => {
     await screen.findByRole("heading", { level: 2, name: "Overview" });
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(valueOf("Overview", "PWS operator")).toBe("Yes");
-    expect(addresses(/^4G MMEs/)).toEqual(["10.0.0.1", "10.0.0.2"]);
+    expect(addresses(/^4G MMEs/)).toEqual(["10.0.0.1, 10.0.0.2", "10.0.0.3"]);
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
-    ).toEqual(["Address", "Address"]);
+    ).toEqual(["TNL addresses", "TNL addresses"]);
   });
 
   it("lets a Network Manager change the operator", async () => {
@@ -584,6 +594,18 @@ describe("OperatorDetail", () => {
     blur("MNC", 1);
     expect(within(dialog).getByText("Duplicate PLMN")).toBeInTheDocument();
     fill("MNC", "011", 1);
+    for (let i = 2; i < 12; i++) {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Add PLMN" }));
+    }
+    expect(
+      within(dialog).getByRole("button", { name: "Add PLMN" }),
+    ).toBeDisabled();
+    expect(within(dialog).getByText("At most 12 PLMNs")).toBeInTheDocument();
+    for (let i = 12; i > 2; i--) {
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: `Remove PLMN ${i}` }),
+      );
+    }
     submit("Update");
 
     await saved("PLMNs updated successfully.");
@@ -629,7 +651,7 @@ describe("OperatorDetail", () => {
     ]);
   });
 
-  it("sets the Global eNB ID", async () => {
+  it("sets both IDs of the gateway identity in one dialog", async () => {
     const requests = serve({
       operators: [
         {
@@ -640,23 +662,54 @@ describe("OperatorDetail", () => {
     });
 
     renderAt("/operators/Operator%20B");
-    await click("Edit Gateway identity, 4G (Global eNB ID)");
+    await click("Edit Gateway identity");
 
-    const dialog = screen.getByRole("dialog", { name: "Set Global eNB ID" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Edit Gateway Identity",
+    });
     const save = within(dialog).getByRole("button", { name: "Save" });
+    expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+    for (const name of [LTE, NR]) {
+      const set = part(name).getByRole("switch", { name: "Set" });
+      expect(set).not.toBeChecked();
+      expect(set).toBeEnabled();
+    }
+
+    toggle(LTE);
     expect(save).toBeDisabled();
-    choose("PLMN", "001/01");
-    choose("eNB ID type", "Short macro (18 bits)");
-    fill("eNB ID", "262144");
+    chooseIn(LTE, "PLMN", "001/01");
+    fireEvent.mouseDown(
+      part(LTE).getByRole("combobox", { name: "eNB ID type" }),
+    );
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual([
+      "Macro (20 bits)",
+      "Short macro (18 bits)",
+      "Long macro (21 bits)",
+    ]);
+    fireEvent.click(
+      screen.getByRole("option", { name: "Short macro (18 bits)" }),
+    );
+    expect(part(LTE).getByText("0 to 262143")).toBeInTheDocument();
+    fillIn(LTE, "eNB ID", "262144");
     expect(save).toBeDisabled();
-    expect(field("eNB ID")).not.toHaveAttribute("aria-invalid", "true");
-    blur("eNB ID");
-    expect(field("eNB ID")).toHaveAttribute("aria-invalid", "true");
-    expect(within(dialog).getByText("0 to 262143")).toBeInTheDocument();
-    fill("eNB ID", "1234");
+    expect(partField(LTE, "eNB ID")).not.toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    blurIn(LTE, "eNB ID");
+    expect(partField(LTE, "eNB ID")).toHaveAttribute("aria-invalid", "true");
+    fillIn(LTE, "eNB ID", "1234");
+    expect(save).toBeEnabled();
+
+    toggle(NR);
+    expect(save).toBeDisabled();
+    fillIn(NR, "gNB ID", "74565");
+    expect(save).toBeEnabled();
     fireEvent.click(save);
 
-    await saved("Global eNB ID saved successfully.");
+    await saved("Gateway identity saved successfully.");
     expect(requests).toEqual([
       put("Operator B", {
         ...operatorB(),
@@ -669,39 +722,44 @@ describe("OperatorDetail", () => {
           enb_id_type: "short_macro",
           enb_id: 1234,
         },
+        global_gnb_id: {
+          plmn: { mcc: "315", mnc: "010" },
+          gnb_id: 74565,
+          gnb_id_length: 22,
+        },
       }),
     ]);
-    expect(
-      await screen.findByRole("button", {
-        name: "Remove Gateway identity, 4G (Global eNB ID)",
-      }),
-    ).toBeEnabled();
+    await waitFor(() =>
+      expect(valueOf("Overview", LTE)).toBe(
+        "001/01 · Short macro (18 bits) · 1234",
+      ),
+    );
+    expect(valueOf("Overview", NR)).toBe("315/010 · 74565 (22 bits)");
     expect(screen.getByRole("button", { name: "Add MME" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add AMF" })).toBeEnabled();
   });
 
   it("edits the Global gNB ID", async () => {
     const requests = serve();
 
     renderAt("/operators/Operator%20A");
-    await click("Edit Gateway identity, 5G (Global gNB ID)");
+    await click("Edit Gateway identity");
 
-    const dialog = screen.getByRole("dialog", { name: "Edit Global gNB ID" });
-    expect(within(dialog).getByRole("textbox", { name: "gNB ID" })).toHaveValue(
-      "74565",
-    );
-    fill("gNB ID length", "40");
-    expect(within(dialog).queryByText("22 to 32")).not.toBeInTheDocument();
-    blur("gNB ID length");
-    expect(within(dialog).getByText("22 to 32")).toBeInTheDocument();
-    fill("gNB ID length", "24");
-    fill("gNB ID", "16777216");
-    blur("gNB ID");
-    expect(within(dialog).getByText("0 to 16777215")).toBeInTheDocument();
-    fill("gNB ID", "99");
-    choose("PLMN", "001/01");
+    expect(partField(NR, "gNB ID")).toHaveValue("74565");
+    fillIn(NR, "gNB ID length", "40");
+    expect(part(NR).queryByText("22 to 32")).not.toBeInTheDocument();
+    blurIn(NR, "gNB ID length");
+    expect(part(NR).getByText("22 to 32")).toBeInTheDocument();
+    expect(submitButton("Save")).toBeDisabled();
+    fillIn(NR, "gNB ID length", "24");
+    fillIn(NR, "gNB ID", "16777216");
+    blurIn(NR, "gNB ID");
+    expect(part(NR).getByText("0 to 16777215")).toBeInTheDocument();
+    fillIn(NR, "gNB ID", "99");
+    chooseIn(NR, "PLMN", "001/01");
     submit("Save");
 
-    await saved("Global gNB ID saved successfully.");
+    await saved("Gateway identity saved successfully.");
     expect(requests).toEqual([
       put("Operator A", {
         ...operatorA(),
@@ -714,26 +772,46 @@ describe("OperatorDetail", () => {
     ]);
   });
 
-  it("removes a Global gNB ID once its AMFs are gone", async () => {
+  it("clears the Global gNB ID once its AMFs are gone", async () => {
     const requests = serve({ operators: [{ ...operatorA(), amfs: [] }] });
 
     renderAt("/operators/Operator%20A");
-    await click("Remove Gateway identity, 5G (Global gNB ID)");
+    await click("Edit Gateway identity");
+    expect(part(LTE).getByRole("switch", { name: "Set" })).toBeDisabled();
     expect(
-      within(
-        screen.getByRole("dialog", { name: "Remove Global gNB ID" }),
-      ).getByText("Remove the Global gNB ID of Operator A?"),
-    ).toBeInTheDocument();
-    submit("Remove");
+      part(NR).queryByText("Remove the AMFs first"),
+    ).not.toBeInTheDocument();
+    toggle(NR);
+    expect(part(NR).queryByRole("textbox")).not.toBeInTheDocument();
+    submit("Save");
 
-    await saved("Global gNB ID removed successfully.");
+    await saved("Gateway identity saved successfully.");
     expect(requests).toEqual([
       put("Operator A", { ...operatorA(), amfs: [], global_gnb_id: null }),
     ]);
-    expect(await screen.findAllByText("Not set")).toHaveLength(1);
+    await waitFor(() => expect(valueOf("Overview", NR)).toBe("Not set"));
+    expect(valueOf("Overview", LTE)).toBe("001/01 · Macro (20 bits) · 703710");
   });
 
-  it("adds an MME", async () => {
+  it("shows the server's error in the gateway identity dialog", async () => {
+    serve({ answer: () => json(500, { error: "database is locked" }) });
+
+    renderAt("/operators/Operator%20A");
+    await click("Edit Gateway identity");
+    fillIn(LTE, "eNB ID", "1");
+    submit("Save");
+
+    expect(
+      await screen.findByText(
+        "Could not save the gateway identity: database is locked",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Edit Gateway Identity" }),
+    ).toBeInTheDocument();
+  });
+
+  it("adds an MME with several addresses", async () => {
     const requests = serve();
 
     renderAt("/operators/Operator%20A");
@@ -742,25 +820,47 @@ describe("OperatorDetail", () => {
     const dialog = screen.getByRole("dialog", { name: "Add MME" });
     const add = within(dialog).getByRole("button", { name: "Add" });
     expect(add).toBeDisabled();
-    fill("Address", "mme.example.com");
+    expect(
+      within(dialog).getByRole("button", { name: "Remove address 1" }),
+    ).toBeDisabled();
+    fill("Address 1", "mme.example.com");
     expect(
       within(dialog).queryByText("Not an IPv4 or IPv6 address"),
     ).not.toBeInTheDocument();
-    blur("Address");
+    blur("Address 1");
     expect(
       within(dialog).getByText("Not an IPv4 or IPv6 address"),
     ).toBeInTheDocument();
-    fill("Address", "10.0.0.1");
+    fill("Address 1", "10.0.0.3");
     expect(within(dialog).getByText("Already added")).toBeInTheDocument();
     expect(add).toBeDisabled();
-    fill("Address", "2001:db8::1");
+    fill("Address 1", "2001:db8::1");
+    expect(add).toBeEnabled();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add address" }),
+    );
+    expect(add).toBeDisabled();
+    fill("Address 2", "2001:db8::1");
+    blur("Address 2");
+    expect(within(dialog).getByText("Duplicate address")).toBeInTheDocument();
+    fill("Address 2", "10.0.0.4");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Add address" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Remove address 3" }),
+    );
     fireEvent.click(add);
 
     await saved("MME added successfully.");
     expect(requests).toEqual([
       put("Operator A", {
         ...operatorA(),
-        mmes: ["10.0.0.1", "10.0.0.2", "2001:db8::1"],
+        mmes: [
+          ...operatorA().mmes!,
+          { tnl_addresses: ["2001:db8::1", "10.0.0.4"] },
+        ],
       }),
     ]);
   });
@@ -770,12 +870,18 @@ describe("OperatorDetail", () => {
 
     renderAt("/operators/Operator%20A");
     await click("Add AMF");
-    fill("Address", "10.0.1.2");
+    fill("Address 1", "10.0.1.2");
     submit("Add");
 
     await saved("AMF added successfully.");
     expect(requests).toEqual([
-      put("Operator A", { ...operatorA(), amfs: ["10.0.1.1", "10.0.1.2"] }),
+      put("Operator A", {
+        ...operatorA(),
+        amfs: [
+          { tnl_addresses: ["10.0.1.1"] },
+          { tnl_addresses: ["10.0.1.2"] },
+        ],
+      }),
     ]);
   });
 
@@ -783,16 +889,19 @@ describe("OperatorDetail", () => {
     const requests = serve();
 
     renderAt("/operators/Operator%20A");
-    await click("Remove MME 10.0.0.1");
+    await click("Remove MME 10.0.0.1, 10.0.0.2");
     const dialog = screen.getByRole("dialog", { name: "Remove MME" });
     expect(
-      within(dialog).getByText("Remove MME 10.0.0.1?"),
+      within(dialog).getByText("Remove MME 10.0.0.1, 10.0.0.2?"),
     ).toBeInTheDocument();
     submit("Remove");
 
     await saved("MME removed successfully.");
     expect(requests).toEqual([
-      put("Operator A", { ...operatorA(), mmes: ["10.0.0.2"] }),
+      put("Operator A", {
+        ...operatorA(),
+        mmes: [{ tnl_addresses: ["10.0.0.3"] }],
+      }),
     ]);
   });
 

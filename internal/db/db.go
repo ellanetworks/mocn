@@ -21,6 +21,7 @@ var (
 	ErrTooManyUsers      = errors.New("too many users")
 	ErrNoPassword        = errors.New("the user has no password")
 	ErrForeignPLMN       = errors.New("the PLMN is not one of the operator's")
+	ErrTooManyPLMNs      = errors.New("too many PLMNs")
 )
 
 type DB struct {
@@ -120,9 +121,9 @@ var migrations = []string{
 	CREATE TABLE global_enb_ids (
 		operator_id INTEGER PRIMARY KEY REFERENCES operators (id) ON DELETE CASCADE,
 		operator_plmn_id INTEGER NOT NULL REFERENCES operator_plmns (id),
-		enb_id_type TEXT NOT NULL CHECK (enb_id_type IN ('macro', 'home', 'short_macro', 'long_macro')),
+		enb_id_type TEXT NOT NULL CHECK (enb_id_type IN ('macro', 'short_macro', 'long_macro')),
 		enb_id INTEGER NOT NULL CHECK (enb_id >= 0 AND enb_id < CASE enb_id_type
-			WHEN 'macro' THEN 1 << 20 WHEN 'home' THEN 1 << 28 WHEN 'short_macro' THEN 1 << 18 ELSE 1 << 21 END)
+			WHEN 'macro' THEN 1 << 20 WHEN 'short_macro' THEN 1 << 18 ELSE 1 << 21 END)
 	);
 	CREATE TABLE global_gnb_ids (
 		operator_id INTEGER PRIMARY KEY REFERENCES operators (id) ON DELETE CASCADE,
@@ -134,15 +135,33 @@ var migrations = []string{
 	CREATE TABLE mmes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		operator_id INTEGER NOT NULL REFERENCES operators (id) ON DELETE CASCADE,
-		address TEXT NOT NULL UNIQUE CHECK (address != '')
+		UNIQUE (id, operator_id)
 	);
 	CREATE INDEX mmes_operator_id ON mmes (operator_id);
+	CREATE TABLE mme_tnl_addresses (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		mme_id INTEGER NOT NULL,
+		operator_id INTEGER NOT NULL,
+		address TEXT NOT NULL CHECK (address != ''),
+		FOREIGN KEY (mme_id, operator_id) REFERENCES mmes (id, operator_id) ON DELETE CASCADE,
+		UNIQUE (operator_id, address)
+	);
+	CREATE INDEX mme_tnl_addresses_mme_id ON mme_tnl_addresses (mme_id, operator_id);
 	CREATE TABLE amfs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		operator_id INTEGER NOT NULL REFERENCES operators (id) ON DELETE CASCADE,
-		address TEXT NOT NULL UNIQUE CHECK (address != '')
+		UNIQUE (id, operator_id)
 	);
-	CREATE INDEX amfs_operator_id ON amfs (operator_id);`,
+	CREATE INDEX amfs_operator_id ON amfs (operator_id);
+	CREATE TABLE amf_tnl_addresses (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		amf_id INTEGER NOT NULL,
+		operator_id INTEGER NOT NULL,
+		address TEXT NOT NULL CHECK (address != ''),
+		FOREIGN KEY (amf_id, operator_id) REFERENCES amfs (id, operator_id) ON DELETE CASCADE,
+		UNIQUE (operator_id, address)
+	);
+	CREATE INDEX amf_tnl_addresses_amf_id ON amf_tnl_addresses (amf_id, operator_id);`,
 }
 
 func Open(ctx context.Context, path string) (*DB, error) {
