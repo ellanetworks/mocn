@@ -1,0 +1,16 @@
+import { RoleID } from "./api";
+
+export const ROLE_PASSWORD = "E2eRolePassw0rd!";
+
+export const ROLES = {
+  "Read Only": {
+    email: "e2e-readonly@ellanetworks.com",
+    roleId: RoleID.ReadOnly,
+    session: "e2e/.auth/readonly.json",
+  },
+  "Network Manager": {
+    email: "e2e-netmanager@ellanetworks.com",
+    roleId: RoleID.NetworkManager,
+    session: "e2e/.auth/network-manager.json",
+  },
+} as const;

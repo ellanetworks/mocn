@@ -1,0 +1,949 @@
+openapi: "3.1.0"
+info:
+  title: Ella MOCN API
+  version: "1.0.0"
+  description: |
+    Success: `{"result": <payload>}`. Error: `{"error": "message"}`.
+
+servers:
+  - url: "{scheme}://{host}"
+    variables:
+      scheme:
+        default: http
+        enum: [http, https]
+      host:
+        default: localhost:5030
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Status
+  - name: Metrics
+  - name: Specification
+
+paths:
+  /api/v1/init:
+    post:
+      tags: [Auth]
+      operationId: initialize
+      security: []
+      summary: Create the first user
+      description: >-
+        Creates the first user, an admin, and logs it in. Until it is called, anyone who can reach the API can call it.
+        It fails once a user exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InitializeParams"
+      responses:
+        "201":
+          $ref: "#/components/responses/Login"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      security: []
+      summary: Log in
+      description: >-
+        Returns an access token, valid for 15 minutes, and sets the session cookie with which
+        POST /api/v1/auth/refresh issues new ones. At most 20 attempts per minute per client address (IPv6 /64), and
+        100 wrong passwords per hour per account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginParams"
+      responses:
+        "200":
+          $ref: "#/components/responses/Login"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refresh
+      security:
+        - SessionCookie: []
+      summary: Refresh the access token
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    $ref: "#/components/schemas/RefreshResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      security: []
+      summary: Log out
+      description: Ends the session of the cookie, if any, and clears the cookie.
+      responses:
+        "204":
+          description: Logged out
+
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      operationId: getMyUser
+      summary: Get my user
+      responses:
+        "200":
+          $ref: "#/components/responses/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/users/me/password:
+    put:
+      tags: [Users]
+      operationId: updateMyPassword
+      summary: Change my password
+      description: >-
+        Ends the other sessions of the user. A wrong current password counts as a failed login of the account. A user
+        without a password gets a conflict.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMyPasswordParams"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/users/me/api-tokens:
+    get:
+      tags: [Users]
+      operationId: listMyAPITokens
+      summary: List my API tokens
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          $ref: "#/components/responses/APITokens"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Users]
+      operationId: createMyAPIToken
+      summary: Create an API token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPITokenParams"
+      responses:
+        "201":
+          $ref: "#/components/responses/CreatedAPIToken"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/users/me/api-tokens/{id}:
+    delete:
+      tags: [Users]
+      operationId: deleteMyAPIToken
+      summary: Delete an API token
+      parameters:
+        - $ref: "#/components/parameters/APITokenID"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: List users
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    $ref: "#/components/schemas/ListUsersResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Users]
+      operationId: createUser
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserParams"
+      responses:
+        "201":
+          $ref: "#/components/responses/Success"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/users/{email}:
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: Get user
+      parameters:
+        - $ref: "#/components/parameters/Email"
+      responses:
+        "200":
+          $ref: "#/components/responses/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags: [Users]
+      operationId: updateUser
+      summary: Change the role of a user
+      description: >-
+        A role change ends the sessions of the user. An admin cannot change its own role.
+      parameters:
+        - $ref: "#/components/parameters/Email"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserParams"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [Users]
+      operationId: deleteUser
+      summary: Delete user
+      description: >-
+        Deletes the user with its sessions and API tokens. An admin cannot delete itself, and the last admin with
+        a password cannot be deleted.
+      parameters:
+        - $ref: "#/components/parameters/Email"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/users/{email}/password:
+    put:
+      tags: [Users]
+      operationId: updateUserPassword
+      summary: Set the password of a user
+      description: Ends the sessions of the user.
+      parameters:
+        - $ref: "#/components/parameters/Email"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePasswordParams"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      tags: [Users]
+      operationId: deleteUserPassword
+      summary: Remove the password of a user
+      description: >-
+        The user can then no longer sign in with a password. Ends the sessions of the user. The last admin with a
+        password keeps it. 409 when the user has no password.
+      parameters:
+        - $ref: "#/components/parameters/Email"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/users/{email}/api-tokens:
+    get:
+      tags: [Users]
+      operationId: listUserAPITokens
+      summary: List the API tokens of a user
+      parameters:
+        - $ref: "#/components/parameters/Email"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          $ref: "#/components/responses/APITokens"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Users]
+      operationId: createUserAPIToken
+      summary: Create an API token for a user
+      parameters:
+        - $ref: "#/components/parameters/Email"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPITokenParams"
+      responses:
+        "201":
+          $ref: "#/components/responses/CreatedAPIToken"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/users/{email}/api-tokens/{id}:
+    delete:
+      tags: [Users]
+      operationId: deleteUserAPIToken
+      summary: Delete an API token of a user
+      parameters:
+        - $ref: "#/components/parameters/Email"
+        - $ref: "#/components/parameters/APITokenID"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/livez:
+    get:
+      tags: [Status]
+      operationId: getLivez
+      security: []
+      summary: Check liveness
+      description: >-
+        Answers while the process serves HTTP.
+      responses:
+        "204":
+          description: Live.
+
+  /api/v1/readyz:
+    get:
+      tags: [Status]
+      operationId: getReadyz
+      security: []
+      summary: Check readiness
+      description: >-
+        Answers whether the MOCN should receive traffic, with the result of each check.
+      responses:
+        "200":
+          description: Every check passes.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResult"
+        "503":
+          description: A check fails.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResult"
+
+  /api/v1/status:
+    get:
+      tags: [Status]
+      operationId: getStatus
+      security: []
+      summary: Get the status of the MOCN
+      description: The version of the MOCN, and whether it is initialized.
+      responses:
+        "200":
+          description: The version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    $ref: "#/components/schemas/Status"
+
+  /api/v1/metrics:
+    get:
+      tags: [Metrics]
+      operationId: getMetrics
+      security: []
+      summary: Get the metrics of the MOCN in the Prometheus formats
+      responses:
+        "200":
+          description: The metrics, in the format the request's Accept header negotiates
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [Specification]
+      operationId: getOpenAPISpec
+      security: []
+      summary: Get this specification
+      responses:
+        "200":
+          description: The specification
+          content:
+            application/openapi+yaml: {}
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        An access token from POST /api/v1/auth/login, or an API token, which starts with ellamocn_. An access token
+        ends with its session. An API token cannot create API tokens, change a password, or manage users: those
+        operations answer 403 to it.
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: mocn_session
+      description: >-
+        The session that a login or the initialization starts, for POST /api/v1/auth/refresh. Over TLS, the cookie is
+        __Host-mocn_session.
+
+  parameters:
+    Email:
+      name: email
+      in: path
+      required: true
+      schema:
+        type: string
+        format: email
+    APITokenID:
+      name: id
+      in: path
+      required: true
+      description: The ID of the token, the part of it between ellamocn_ and the next underscore.
+      schema:
+        type: string
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+  schemas:
+    ReadinessCheck:
+      type: object
+      required: [name, ok, detail]
+      properties:
+        name:
+          type: string
+          enum: [database]
+          description: >-
+            database: the database answers.
+        ok:
+          type: boolean
+        detail:
+          type: string
+          description: Why the check fails. Empty when it passes.
+    ReadinessResult:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: object
+          required: [ready, checks]
+          properties:
+            ready:
+              type: boolean
+              description: Whether every check passes.
+            checks:
+              type: array
+              items:
+                $ref: "#/components/schemas/ReadinessCheck"
+    Status:
+      type: object
+      required: [version, revision, initialized]
+      properties:
+        version:
+          type: string
+          examples: [v0.0.1]
+        revision:
+          type: string
+          description: Git commit of the build, empty in development builds.
+        initialized:
+          type: boolean
+          description: Whether the first user exists. Until then, POST /api/v1/init creates it.
+    LoginParams:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    InitializeParams:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          $ref: "#/components/schemas/Password"
+
+    LoginResponse:
+      type: object
+      required: [message, token]
+      properties:
+        message:
+          type: string
+        token:
+          type: string
+          description: The access token, valid for 15 minutes.
+
+    RefreshResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    Password:
+      type: string
+      description: 8 to 72 bytes.
+      minLength: 8
+      maxLength: 72
+
+    RoleID:
+      type: integer
+      enum: [1, 2, 3]
+      description: >-
+        1 Admin: everything. 2 Read Only: reads the settings and the state of the MOCN. 3 Network Manager: also changes
+        the settings, but does not manage users.
+
+    User:
+      type: object
+      required: [email, role_id, role_pinned, password_set, oidc_linked]
+      properties:
+        email:
+          type: string
+          format: email
+        role_id:
+          $ref: "#/components/schemas/RoleID"
+        role_pinned:
+          type: boolean
+          description: The role was set by an admin and is not updated from identity provider groups.
+        password_set:
+          type: boolean
+          description: The user can sign in with a password.
+        oidc_linked:
+          type: boolean
+          description: The user is linked to an account at the current identity provider.
+
+    ListUsersResponse:
+      type: object
+      required: [items, page, per_page, total_count]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total_count:
+          type: integer
+
+    CreateUserParams:
+      type: object
+      required: [email, role_id]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          $ref: "#/components/schemas/Password"
+          description: Empty or missing for a user without a password.
+        role_id:
+          $ref: "#/components/schemas/RoleID"
+        role_pinned:
+          type: boolean
+          description: Keeps the role from being updated from identity provider groups. Missing means false.
+
+    UpdateUserParams:
+      type: object
+      required: [role_id]
+      additionalProperties: false
+      properties:
+        role_id:
+          $ref: "#/components/schemas/RoleID"
+        role_pinned:
+          type: boolean
+          description: Keeps the role from being updated from identity provider groups. Missing keeps the current value.
+
+    UpdatePasswordParams:
+      type: object
+      required: [password]
+      additionalProperties: false
+      properties:
+        password:
+          $ref: "#/components/schemas/Password"
+
+    UpdateMyPasswordParams:
+      type: object
+      required: [current_password, password]
+      additionalProperties: false
+      properties:
+        current_password:
+          type: string
+        password:
+          $ref: "#/components/schemas/Password"
+
+    APIToken:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          description: Absent for a token that does not expire.
+        last_used_at:
+          type: string
+          format: date-time
+          description: Absent for a token never used. Updated at most once a minute.
+
+    ListAPITokensResponse:
+      type: object
+      required: [items, page, per_page, total_count]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/APIToken"
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total_count:
+          type: integer
+
+    CreateAPITokenParams:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 50
+        expires_at:
+          type: string
+          format: date-time
+          description: When the token expires. Without it, the token does not expire.
+
+    CreateAPITokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: The token, ellamocn_ followed by its ID, an underscore and its secret.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Too Many Requests
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Login:
+      description: Logged in. The response sets the mocn_session cookie.
+      headers:
+        Set-Cookie:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [result]
+            properties:
+              result:
+                $ref: "#/components/schemas/LoginResponse"
+    Success:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [result]
+            properties:
+              result:
+                $ref: "#/components/schemas/SuccessResponse"
+    User:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [result]
+            properties:
+              result:
+                $ref: "#/components/schemas/User"
+    APITokens:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [result]
+            properties:
+              result:
+                $ref: "#/components/schemas/ListAPITokensResponse"
+    CreatedAPIToken:
+      description: Created. The response is the only time the token is shown.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [result]
+            properties:
+              result:
+                $ref: "#/components/schemas/CreateAPITokenResponse"
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflicts with other settings
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Internal error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
