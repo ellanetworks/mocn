@@ -18,12 +18,18 @@ import {
 } from "@/queries/utils";
 import { decodeAccessToken } from "@/utils/jwt";
 
-export type Permission = "user:self" | "user:admin";
+export type Permission =
+  "user:self" | "user:admin" | "operator:read" | "operator:update";
 
 const permissions: Record<RoleID, Permission[]> = {
-  [RoleID.Admin]: ["user:self", "user:admin"],
-  [RoleID.ReadOnly]: ["user:self"],
-  [RoleID.NetworkManager]: ["user:self"],
+  [RoleID.Admin]: [
+    "user:self",
+    "user:admin",
+    "operator:read",
+    "operator:update",
+  ],
+  [RoleID.ReadOnly]: ["user:self", "operator:read"],
+  [RoleID.NetworkManager]: ["user:self", "operator:read", "operator:update"],
 };
 
 export interface Auth {

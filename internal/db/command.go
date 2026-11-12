@@ -27,6 +27,9 @@ const (
 	cmdCreateAPIToken
 	cmdDeleteAPIToken
 	cmdTouchAPIToken
+	cmdCreateOperator
+	cmdUpdateOperator
+	cmdDeleteOperator
 )
 
 const entryBatch uint16 = 1
@@ -108,6 +111,8 @@ var resultCodes = []struct {
 	{"too_many_users", ErrTooManyUsers},
 	{"no_password", ErrNoPassword},
 	{"duplicate", ErrDuplicate},
+	{"foreign_plmn", ErrForeignPLMN},
+	{"too_many_plmns", ErrTooManyPLMNs},
 	{"invalid", ErrInvalid},
 	{"constraint_check", ErrConstraintCheck},
 	{"constraint_unique", ErrConstraintUnique},

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -183,6 +184,33 @@ func TestUsersOverHTTP(t *testing.T) {
 	users := decode[api.ListUsersResponse](t, result)
 	if users.TotalCount != 2 || len(users.Items) != 2 || users.Items[0] != want[0] || users.Items[1] != want[1] {
 		t.Fatalf("users = %+v, want %+v", users, want)
+	}
+
+	operator := api.Operator{
+		Name:        "Operator A",
+		PLMNs:       []api.PLMN{{MCC: "001", MNC: "01"}},
+		GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: "macro", ID: 703710},
+		MMEs:        []api.CoreNode{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
+		AMFs:        []api.CoreNode{},
+	}
+
+	if code, result := r.call(t, client, http.MethodPost, "/api/v1/operators", token, operator); code != http.StatusCreated {
+		t.Fatalf("create operator = %d %s", code, result)
+	}
+
+	code, result = r.call(t, client, http.MethodGet, "/api/v1/operators", token, nil)
+	if ops := decode[api.ListOperatorsResponse](t, result).Items; code != http.StatusOK || len(ops) != 1 ||
+		!reflect.DeepEqual(ops[0], operator) {
+		t.Fatalf("list operators = %d %s", code, result)
+	}
+
+	if code, result := r.call(t, client, http.MethodDelete, "/api/v1/operators/Operator%20A", token, nil); code != http.StatusOK {
+		t.Fatalf("delete operator = %d %s", code, result)
+	}
+
+	code, result = r.call(t, client, http.MethodGet, "/api/v1/operators", token, nil)
+	if ops := decode[api.ListOperatorsResponse](t, result).Items; code != http.StatusOK || len(ops) != 0 {
+		t.Fatalf("list operators after delete = %d %s", code, result)
 	}
 
 	if code, _ := r.call(t, client, http.MethodPost, "/api/v1/auth/refresh", "", nil); code != http.StatusOK {

@@ -300,7 +300,11 @@ func Initialize(a *auth) http.Handler {
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, v any, cfg Config) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxAuthBody))
+	return decodeLimited(w, r, v, cfg, maxAuthBody)
+}
+
+func decodeLimited(w http.ResponseWriter, r *http.Request, v any, cfg Config, limit int64) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 
 	if err := dec.Decode(v); err != nil {

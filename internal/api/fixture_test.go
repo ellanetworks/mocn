@@ -39,6 +39,7 @@ func testConfig(t *testing.T, store *db.DB) api.Config {
 
 	return api.Config{
 		Auth:       store,
+		Operators:  store,
 		JWTSecret:  func() []byte { return testJWTSecret },
 		BcryptCost: bcrypt.MinCost,
 		Now:        func() time.Time { return testNow },

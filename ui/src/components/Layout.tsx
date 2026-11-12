@@ -26,6 +26,7 @@ import {
   Dashboard as DashboardIcon,
   Check as CheckIcon,
   DarkMode as DarkModeIcon,
+  Hub as HubIcon,
   Info as InfoIcon,
   LightMode as LightModeIcon,
   Logout as LogoutIcon,
@@ -89,6 +90,12 @@ const navSections: { title?: string; items: NavItem[] }[] = [
         label: "Dashboard",
         icon: <DashboardIcon color="primary" />,
         permission: "user:self",
+      },
+      {
+        to: "/operators",
+        label: "Operators",
+        icon: <HubIcon color="primary" />,
+        permission: "operator:read",
       },
       {
         to: "/users",

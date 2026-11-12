@@ -120,6 +120,39 @@ describe("Users", () => {
       },
     ]);
   });
+
+  it("shows a field's error after it loses focus, not while typing", async () => {
+    serve();
+    renderAt("/users");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+    const dialog = screen.getByRole("dialog");
+    const email = within(dialog).getByLabelText("Email", { exact: false });
+    const password = within(dialog).getByLabelText("Password", {
+      exact: false,
+      selector: "input",
+    });
+    fireEvent.change(email, { target: { value: "nm" } });
+    fireEvent.change(password, { target: { value: "short" } });
+    expect(
+      within(dialog).queryByText("Enter an email address."),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("At least 8 characters."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.blur(email);
+    fireEvent.blur(password);
+    expect(
+      within(dialog).getByText("Enter an email address."),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("At least 8 characters."),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Create" }),
+    ).toBeDisabled();
+  });
 });
 
 describe("UserDetail", () => {

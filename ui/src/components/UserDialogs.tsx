@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import EditDialog from "@/components/EditDialog";
 import { useSnackbar } from "@/contexts/SnackbarContext";
 import PasswordField from "@/components/PasswordField";
+import { useTouched } from "@/hooks/useTouched";
 import RoleField from "@/components/RoleField";
 import {
   createUser,
@@ -33,10 +34,12 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const emailError =
-    email === "" || EMAIL.test(email) ? undefined : "Enter an email address.";
-  const newPasswordError =
-    password === "" ? undefined : passwordError(password);
+  const { touch, shown } = useTouched();
+  const emailError = shown(
+    "email",
+    EMAIL.test(email) ? undefined : "Enter an email address.",
+  );
+  const newPasswordError = shown("password", passwordError(password));
 
   return (
     <EditDialog
@@ -55,6 +58,7 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value.trim())}
+        onBlur={touch("email")}
         error={emailError !== undefined}
         helperText={emailError}
         required
@@ -64,6 +68,7 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
         label="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
+        onBlur={touch("password")}
         error={newPasswordError !== undefined}
         helperText={newPasswordError ?? "8 to 72 characters."}
         required
@@ -131,8 +136,8 @@ export function PasswordDialog({
     },
   });
 
-  const newPasswordError =
-    password === "" ? undefined : passwordError(password);
+  const { touch, shown } = useTouched();
+  const newPasswordError = shown("password", passwordError(password));
 
   return (
     <EditDialog
@@ -161,6 +166,7 @@ export function PasswordDialog({
         label="New password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
+        onBlur={touch("password")}
         error={newPasswordError !== undefined}
         helperText={
           newPasswordError ??

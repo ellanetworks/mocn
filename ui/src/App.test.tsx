@@ -33,6 +33,7 @@ const serve = (role: RoleID | null = RoleID.Admin) => {
           json(200, { result: { email: "user@example.com", role_id: role } }),
         "/api/v1/users/me/api-tokens": () => json(200, { result: page([]) }),
         "/api/v1/metrics": () => new Response("", { status: 200 }),
+        "/api/v1/operators": () => json(200, { result: { items: [] } }),
       }),
     ),
   );
@@ -64,6 +65,7 @@ describe("App", () => {
         .map((link) => [link.textContent, link.getAttribute("href")]),
     ).toEqual([
       ["Dashboard", "/dashboard"],
+      ["Operators", "/operators"],
       ["Users", "/users"],
     ]);
     expect(screen.getByRole("main")).toBeInTheDocument();
@@ -115,7 +117,20 @@ describe("App", () => {
       within(screen.getByRole("navigation", { name: "Main" }))
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Dashboard"]);
+    ).toEqual(["Dashboard", "Operators"]);
+  });
+
+  it("shows a Read Only user the Operators", async () => {
+    serve(RoleID.ReadOnly);
+    renderAt("/operators");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Operators (0)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Operators" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("opens the profile from the account menu", async () => {
