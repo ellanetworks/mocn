@@ -1,7 +1,7 @@
-import { Box, Skeleton } from "@mui/material";
+import { Box, Link, Skeleton } from "@mui/material";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router-dom";
 import OneLine from "@/components/OneLine";
 import PageHeader from "@/components/PageHeader";
 import QueryAlert from "@/components/QueryAlert";
@@ -11,12 +11,13 @@ import StateChip from "@/components/StateChip";
 import {
   getRadio,
   radioLabel,
+  type OperatorUEConnections,
   type Radio,
   type SupportedTA,
 } from "@/queries/radios";
 import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
-import { formatGlobalENBID, formatPLMN } from "@/utils/operators";
+import { formatGlobalENBID, formatPLMN, operatorPath } from "@/utils/operators";
 
 export const RADIO_REFRESH_MS = 5000;
 
@@ -31,23 +32,40 @@ const gridSx = {
   },
 };
 
-const TA_COLUMNS: GridColDef<SupportedTA>[] = [
+const formatSupportedTAs = (tas: SupportedTA[]) =>
+  tas
+    .map(
+      ({ tac, broadcast_plmns }) =>
+        `TAC ${tac}: ${broadcast_plmns.map(formatPLMN).join(", ")}`,
+    )
+    .join("; ");
+
+const OPERATOR_COLUMNS: GridColDef<OperatorUEConnections>[] = [
   {
-    field: "tac",
-    headerName: "TAC",
-    description: "The tracking area code.",
-    flex: 0.3,
-    minWidth: 100,
+    field: "operator",
+    headerName: "Operator",
+    description:
+      "An operator that owns a PLMN the radio broadcasts, or that has UE connections from it.",
+    flex: 1,
+    minWidth: 160,
+    renderCell: ({ row }) => (
+      <Link
+        component={RouterLink}
+        to={operatorPath(row.operator)}
+        variant="body2"
+        sx={{ color: "link", textDecoration: "underline" }}
+      >
+        {row.operator}
+      </Link>
+    ),
   },
   {
-    field: "broadcast_plmns",
-    headerName: "Broadcast PLMNs",
-    description: "The PLMNs the radio broadcasts in this tracking area.",
-    flex: 1,
-    minWidth: 200,
-    renderCell: ({ row }) => (
-      <OneLine title={row.broadcast_plmns.map(formatPLMN).join(", ")} />
-    ),
+    field: "ue_connections",
+    headerName: "UE connections",
+    description:
+      "The UE-associated logical S1-connections Ella MOCN relays from the radio to the operator, one per UE in ECM-CONNECTED.",
+    flex: 0.5,
+    minWidth: 140,
   },
 ];
 
@@ -91,6 +109,15 @@ function RadioSections({ radio }: { radio: Radio }) {
             value: <OneLine title={radio.tnl_addresses.join(", ")} />,
           },
           {
+            label: "Supported TAs",
+            help: "The tracking areas the radio serves, each with the PLMNs it broadcasts.",
+            value: radio.supported_tas.length ? (
+              <OneLine title={formatSupportedTAs(radio.supported_tas)} />
+            ) : (
+              NONE
+            ),
+          },
+          {
             label: "Paging DRX",
             help: "The default paging DRX cycle of the radio, in radio frames.",
             value:
@@ -102,15 +129,15 @@ function RadioSections({ radio }: { radio: Radio }) {
       />
 
       <SectionHeader
-        id="tas-title"
-        title={`Supported TAs (${radio.supported_tas.length})`}
-        description="The tracking areas the radio serves, each with the PLMNs it broadcasts."
+        id="ue-connections-title"
+        title="UE connections by operator"
+        description="The UE connections Ella MOCN relays from this radio to each operator."
       />
-      <DataGrid<SupportedTA>
-        aria-labelledby="tas-title"
-        rows={radio.supported_tas}
-        columns={TA_COLUMNS}
-        getRowId={(row) => row.tac}
+      <DataGrid<OperatorUEConnections>
+        aria-labelledby="ue-connections-title"
+        rows={radio.ue_connections_by_operator ?? []}
+        columns={OPERATOR_COLUMNS}
+        getRowId={(row) => row.operator}
         disableColumnSorting
         disableColumnFilter
         disableColumnMenu
@@ -118,7 +145,7 @@ function RadioSections({ radio }: { radio: Radio }) {
         disableVirtualization
         hideFooter
         autoHeight
-        localeText={{ noRowsLabel: "No tracking areas." }}
+        localeText={{ noRowsLabel: "No operators." }}
         sx={gridSx}
       />
     </>

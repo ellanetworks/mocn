@@ -10,23 +10,51 @@ process_resident_memory_bytes 6.7108864e+07
 process_start_time_seconds 1.7e+09
 ellamocn_database_storage_bytes{file="main"} 1048576
 ellamocn_database_storage_bytes{file="wal"} 524288
-# TYPE ellamocn_radios_connected gauge
-ellamocn_radios_connected 2
-# TYPE ellamocn_s1_associations gauge
-ellamocn_s1_associations{side="mme",state="connected"} 1
-ellamocn_s1_associations{side="mme",state="disconnected"} 1
-ellamocn_s1_associations{side="mme",state="setup_failed"} 0
-ellamocn_s1_associations{side="mme",state="up"} 3
-ellamocn_s1_associations{side="ran",state="connected"} 4
-ellamocn_s1_associations{side="ran",state="up"} 2
+# TYPE ellamocn_radio_associations gauge
+ellamocn_radio_associations{interface="s1",state="connected"} 4
+ellamocn_radio_associations{interface="s1",state="up"} 2
+# TYPE ellamocn_core_associations gauge
+ellamocn_core_associations{interface="s1",operator="B",state="connected"} 0
+ellamocn_core_associations{interface="s1",operator="B",state="disconnected"} 1
+ellamocn_core_associations{interface="s1",operator="B",state="setup_failed"} 0
+ellamocn_core_associations{interface="s1",operator="B",state="up"} 1
+ellamocn_core_associations{interface="s1",operator="A",state="connected"} 1
+ellamocn_core_associations{interface="s1",operator="A",state="disconnected"} 0
+ellamocn_core_associations{interface="s1",operator="A",state="setup_failed"} 0
+ellamocn_core_associations{interface="s1",operator="A",state="up"} 2
+# TYPE ellamocn_ue_connections gauge
+ellamocn_ue_connections{interface="s1",operator="B"} 3
+ellamocn_ue_connections{interface="s1",operator="A"} 4
+ellamocn_ue_connections{interface="s1",operator="C"} 0
 `;
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const serve = (metrics: () => Response) =>
-  vi.stubGlobal("fetch", vi.fn(stubApi({ "/api/v1/metrics": metrics })));
+const OPERATORS = ["A", "B", "C"].map((name) => ({
+  name,
+  pws_operator: false,
+  plmns: [],
+  global_enb_id: null,
+  global_gnb_id: null,
+  mmes: [],
+  amfs: [],
+}));
+
+const serve = (
+  metrics: () => Response,
+  operators: () => Response = () =>
+    new Response(JSON.stringify({ result: { items: OPERATORS } }), {
+      status: 200,
+    }),
+) =>
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      stubApi({ "/api/v1/metrics": metrics, "/api/v1/operators": operators }),
+    ),
+  );
 
 const renderDashboard = () =>
   renderWithClient(
@@ -36,7 +64,7 @@ const renderDashboard = () =>
   );
 
 const findPanel = async (title: string) =>
-  (await screen.findByRole("heading", { name: title })).closest(
+  (await screen.findByRole("heading", { level: 3, name: title })).closest(
     ".MuiCard-root",
   ) as HTMLElement;
 
@@ -53,34 +81,129 @@ describe("Dashboard", () => {
     expect(within(await findPanel("Up Since")).getByText(/2023/)).toBeVisible();
   });
 
-  it("shows the radio and operator figures from the metrics", async () => {
+  it("shows the radios with S1 Setup done and links to the radios", async () => {
     serve(() => new Response(METRICS, { status: 200 }));
     renderDashboard();
 
-    const radios = await screen.findByRole("region", { name: "Radios" });
+    const radios = await findPanel("Radios");
     expect(await within(radios).findByText("2")).toBeVisible();
-    const operators = screen.getByRole("region", { name: "Operators" });
-    expect(within(operators).getByText("3 / 5")).toBeVisible();
+    expect(radios.closest("a")).toHaveAttribute("href", "/radios");
   });
 
-  it("orders the rows radios, operators, system", async () => {
+  it("shows the UE connections across every operator", async () => {
     serve(() => new Response(METRICS, { status: 200 }));
     renderDashboard();
 
-    await screen.findByRole("region", { name: "Radios" });
+    expect(
+      await within(await findPanel("UE connections")).findByText("7"),
+    ).toBeVisible();
+  });
+
+  it("lists the operators, sorted by name, with a total", async () => {
+    serve(() => new Response(METRICS, { status: 200 }));
+    renderDashboard();
+
+    const table = await screen.findByRole("table", { name: "Operators" });
+    const rows = within(table)
+      .getAllByRole("row")
+      .map((row) =>
+        Array.from(row.querySelectorAll("th, td"), (c) => c.textContent),
+      );
+    expect(rows).toEqual([
+      ["Operator", "Core nodes up", "UE connections"],
+      ["A", "2 / 3", "4"],
+      ["B", "1 / 2", "3"],
+      ["C", "0 / 0", "0"],
+      ["Total", "3 / 5", "7"],
+    ]);
+    expect(within(table).getByRole("link", { name: "A" })).toHaveAttribute(
+      "href",
+      "/operators/A",
+    );
+    expect(within(table).getByRole("link", { name: "C" })).toHaveAttribute(
+      "href",
+      "/operators/C",
+    );
+    expect(
+      within(await findPanel("Core nodes and UE connections")).getByRole(
+        "link",
+        { name: "Core nodes and UE connections" },
+      ),
+    ).toHaveAttribute("href", "/operators");
+  });
+
+  it("counts the operators and links to them", async () => {
+    serve(() => new Response(METRICS, { status: 200 }));
+    renderDashboard();
+
+    const card = await findPanel("Operators");
+    expect(await within(card).findByText("3")).toBeVisible();
+    expect(card.closest("a") ?? within(card).getByRole("link")).toHaveAttribute(
+      "href",
+      "/operators",
+    );
+  });
+
+  it("says when there are no operators", async () => {
+    serve(
+      () =>
+        new Response(
+          `ellamocn_radio_associations{interface="s1",state="connected"} 0
+ellamocn_radio_associations{interface="s1",state="up"} 0
+`,
+          { status: 200 },
+        ),
+    );
+    renderDashboard();
+
+    const operators = await findPanel("Core nodes and UE connections");
+    expect(await within(operators).findByText("No operators.")).toBeVisible();
+    expect(within(operators).queryByRole("table")).not.toBeInTheDocument();
+    expect(
+      within(await findPanel("UE connections")).getByText("0"),
+    ).toBeVisible();
+  });
+
+  it("puts the operators table in the overview, before the system", async () => {
+    serve(() => new Response(METRICS, { status: 200 }));
+    renderDashboard();
+
+    await screen.findByRole("region", { name: "Overview" });
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
-    ).toEqual(["Radios", "Operators", "System"]);
+    ).toEqual(["Overview", "System"]);
+    expect(
+      within(screen.getByRole("region", { name: "Overview" }))
+        .getAllByRole("heading", { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual([
+      "Operators",
+      "Radios",
+      "UE connections",
+      "Core nodes and UE connections",
+    ]);
   });
 
-  it("explains the operator figures on hover", async () => {
+  it("explains the radios figure on hover", async () => {
     serve(() => new Response(METRICS, { status: 200 }));
     renderDashboard();
 
-    fireEvent.mouseOver(await findPanel("MMEs Up"));
+    fireEvent.mouseOver(await findPanel("Radios"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "MMEs that accepted the S1 Setup of Ella MOCN, out of every MME configured across the operators.",
+        name: "Radios that completed S1 Setup with Ella MOCN.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("says what the UE connections figure counts on hover", async () => {
+    serve(() => new Response(METRICS, { status: 200 }));
+    renderDashboard();
+
+    fireEvent.mouseOver(await findPanel("UE connections"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "UE-associated logical S1-connections that Ella MOCN relays, across every operator: one per connected UE.",
       }),
     ).toBeInTheDocument();
   });
@@ -92,10 +215,15 @@ describe("Dashboard", () => {
     const database = await findPanel("Database Size");
     expect(await within(database).findByText("N/A")).toBeInTheDocument();
     expect(
-      within(await findPanel("Connected")).getByText("N/A"),
+      within(await findPanel("Radios")).getByText("N/A"),
     ).toBeInTheDocument();
     expect(
-      within(await findPanel("MMEs Up")).getByText("N/A"),
+      within(await findPanel("UE connections")).getByText("N/A"),
+    ).toBeInTheDocument();
+    expect(
+      within(await findPanel("Core nodes and UE connections")).getByText(
+        "No operators.",
+      ),
     ).toBeInTheDocument();
   });
 

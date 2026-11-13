@@ -8,9 +8,12 @@ import {
   FormLabel,
   IconButton,
   MenuItem,
+  Radio,
+  RadioGroup,
   Stack,
   Switch,
   TextField,
+  Tooltip,
 } from "@mui/material";
 import { Add as AddIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +24,8 @@ import { useSnackbar } from "@/contexts/SnackbarContext";
 import { useOperatorUpdate } from "@/hooks/useOperatorUpdate";
 import { useTouched } from "@/hooks/useTouched";
 import {
+  CORE_NODE_KINDS,
+  type CoreNodeKind,
   createOperator,
   type ENBIDType,
   type Operator,
@@ -531,17 +536,68 @@ export function EditGatewayIdentityDialog({
   );
 }
 
+const NODE_IDENTITY_MISSING: Record<CoreNodeKind, string> = {
+  MME: "Set the 4G gateway identity (Global eNB ID) first",
+  AMF: "Set the 5G gateway identity (Global gNB ID) first",
+};
+
+function CoreNodeKindField({
+  value,
+  available,
+  onChange,
+}: {
+  value: CoreNodeKind;
+  available: Record<CoreNodeKind, boolean>;
+  onChange: (kind: CoreNodeKind) => void;
+}) {
+  const label = useId();
+  return (
+    <FormControl>
+      <FormLabel id={label}>Type</FormLabel>
+      <RadioGroup
+        row
+        aria-labelledby={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value as CoreNodeKind)}
+      >
+        {CORE_NODE_KINDS.map((kind) => (
+          <Tooltip
+            key={kind}
+            title={available[kind] ? "" : NODE_IDENTITY_MISSING[kind]}
+            describeChild
+          >
+            <FormControlLabel
+              value={kind}
+              control={<Radio />}
+              label={kind}
+              disabled={!available[kind]}
+            />
+          </Tooltip>
+        ))}
+      </RadioGroup>
+    </FormControl>
+  );
+}
+
 export function CoreNodeDialog({
   operator,
-  kind,
+  kind: editedKind,
   index,
   onClose,
 }: {
   operator: Operator;
-  kind: "MME" | "AMF";
+  kind?: CoreNodeKind;
   index?: number;
   onClose: () => void;
 }) {
+  const available: Record<CoreNodeKind, boolean> = {
+    MME: Boolean(operator.global_enb_id),
+    AMF: Boolean(operator.global_gnb_id),
+  };
+  const [chosenKind, setKind] = useState<CoreNodeKind>(
+    available.MME ? "MME" : "AMF",
+  );
+  const kind = editedKind ?? chosenKind;
   const nodes = (kind === "MME" ? operator.mmes : operator.amfs) ?? [];
   const editing = index === undefined ? undefined : nodes[index];
   const [rows, setRows] = useState<AddressRow[]>(() =>
@@ -569,10 +625,10 @@ export function CoreNodeDialog({
 
   return (
     <EditDialog
-      title={`${editing ? "Edit" : "Add"} ${kind}`}
+      title={editing ? `Edit ${kind}` : "Add Core Network Node"}
       {...(editing ? {} : { submitLabel: "Add", pendingLabel: "Adding…" })}
       failure={`Could not ${editing ? "update" : "add"} the ${kind}`}
-      valid={!unchanged && isValidAddresses(rows, existing)}
+      valid={!unchanged && available[kind] && isValidAddresses(rows, existing)}
       pending={mutation.isPending}
       error={mutation.error}
       onSubmit={() =>
@@ -580,6 +636,13 @@ export function CoreNodeDialog({
       }
       onClose={onClose}
     >
+      {!editing && (
+        <CoreNodeKindField
+          value={kind}
+          available={available}
+          onChange={setKind}
+        />
+      )}
       <FormControl component="fieldset" sx={fieldsetSx}>
         <FormLabel component="legend" sx={{ mb: 1 }}>
           TNL addresses

@@ -65,6 +65,7 @@ const operatorWithStatus = (): Operator => ({
           },
         ],
         relative_mme_capacity: 255,
+        ue_connections: 2,
       },
     },
     {
@@ -73,13 +74,23 @@ const operatorWithStatus = (): Operator => ({
         state: "setup_failed",
         since: "2026-11-12T10:00:05Z",
         primary_tnl_address: "10.0.0.3",
+        ue_connections: 0,
       },
     },
     {
       tnl_addresses: ["10.0.0.4"],
-      status: { state: "disconnected", since: "2026-11-12T10:00:00Z" },
+      status: {
+        state: "disconnected",
+        since: "2026-11-12T10:00:00Z",
+        ue_connections: 0,
+      },
     },
     { tnl_addresses: ["10.0.0.5"] },
+  ],
+  ue_connections: 2,
+  ue_connections_by_radio: [
+    { radio: "001-01:macro:412", ue_connections: 0 },
+    { radio: "001-01:macro:411", name: "enb411", ue_connections: 2 },
   ],
 });
 
@@ -194,14 +205,22 @@ const cells = (row: HTMLElement) =>
 const rowOf = async (text: string) =>
   (await screen.findByText(text)).closest('[role="row"]') as HTMLElement;
 
-const mmeRow = async (address: string) => {
-  const grid = await screen.findByRole("grid", { name: /^4G MMEs/ });
+const NODES = /^Core network nodes/;
+
+const nodeRow = async (kind: string, address: string) => {
+  const grid = await screen.findByRole("grid", { name: NODES });
   return within(grid)
     .getAllByRole("row")
-    .find(
-      (row) => cellText(row.querySelector('[role="gridcell"]')) === address,
-    )!;
+    .find((row) => {
+      const [type, addresses] = Array.from(
+        row.querySelectorAll('[role="gridcell"]'),
+        cellText,
+      );
+      return type === kind && addresses === address;
+    })!;
 };
+
+const mmeRow = (address: string) => nodeRow("MME", address);
 
 const click = async (name: string) =>
   fireEvent.click(await screen.findByRole("button", { name }));
@@ -268,15 +287,33 @@ const identityOf = (rat: string) => {
   return label.parentElement!.textContent!.slice(rat.length);
 };
 
-const addresses = (name: RegExp) =>
-  within(screen.getByRole("grid", { name }))
+const coreNodes = () =>
+  within(screen.getByRole("grid", { name: NODES }))
     .queryAllByRole("row")
     .slice(1)
-    .map((row) => cellText(row.querySelector('[role="gridcell"]')));
+    .map((row) =>
+      Array.from(row.querySelectorAll('[role="gridcell"]'), cellText)
+        .slice(0, 2)
+        .join(" "),
+    );
+
+const NODE_COLUMNS = [
+  "Type",
+  "Addresses",
+  "Name",
+  "Served IDs",
+  "UE connections",
+  "Status",
+];
 
 describe("Operators", () => {
   it("lists the operators, each a link to its page", async () => {
-    serve();
+    serve({
+      operators: [
+        { ...operatorA(), ue_connections: 3 },
+        { ...operatorB(), ue_connections: 0 },
+      ],
+    });
 
     renderAt("/operators");
 
@@ -285,15 +322,17 @@ describe("Operators", () => {
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
-    ).toEqual(["Name", "PLMNs", "PWS"]);
+    ).toEqual(["Name", "PLMNs", "UE connections", "PWS"]);
     expect(cells(await rowOf("Operator A"))).toEqual([
       "Operator A",
       "001/01, 001/02",
+      "3",
       "PWS",
     ]);
     expect(cells(await rowOf("Operator B"))).toEqual([
       "Operator B",
       "315/010",
+      "0",
       "",
     ]);
     expect(screen.getByRole("link", { name: "Operator A" })).toHaveAttribute(
@@ -335,7 +374,7 @@ describe("Operators", () => {
 
     renderAt("/operators", readOnlyAuth);
 
-    expect(cells(await rowOf("Operator A"))).toHaveLength(3);
+    expect(cells(await rowOf("Operator A"))).toHaveLength(4);
     expect(
       screen.queryByRole("button", { name: "Create" }),
     ).not.toBeInTheDocument();
@@ -468,12 +507,8 @@ describe("OperatorDetail", () => {
     for (const [name, description] of [
       ["Overview", "How Ella MOCN identifies this operator."],
       [
-        "4G MMEs (2)",
-        "The MMEs of this operator's 4G core, each with its TNL addresses.",
-      ],
-      [
-        "5G AMFs (1)",
-        "The AMFs of this operator's 5G core, each with its TNL addresses.",
+        "Core network nodes (3)",
+        "The MMEs and AMFs of this operator's core, each with its TNL addresses.",
       ],
     ]) {
       expect(
@@ -489,8 +524,11 @@ describe("OperatorDetail", () => {
     expect(valueOf("Overview", "PWS operator")).toBe("Yes");
     expect(identityOf("4G")).toBe("001/01 · Macro (20 bits) · 703710");
     expect(identityOf("5G")).toBe("001/02 · 74565 (22 bits)");
-    expect(addresses(/^4G MMEs/)).toEqual(["10.0.0.1, 10.0.0.2", "10.0.0.3"]);
-    expect(addresses(/^5G AMFs/)).toEqual(["10.0.1.1"]);
+    expect(coreNodes()).toEqual([
+      "MME 10.0.0.1, 10.0.0.2",
+      "MME 10.0.0.3",
+      "AMF 10.0.1.1",
+    ]);
     expect(
       screen.queryByText(
         "The operator whose core connects the common CBC. Its emergency warnings (PWS) are broadcast to every cell.",
@@ -528,10 +566,8 @@ describe("OperatorDetail", () => {
     expect(identityOf("4G")).toBe("Not set");
     expect(identityOf("5G")).toBe("Not set");
     expect(valueOf("Overview", "PWS operator")).toBe("No");
-    expect(screen.getByText("No MMEs.")).toBeInTheDocument();
-    expect(screen.getByText("No AMFs.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add MME" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Add AMF" })).toBeDisabled();
+    expect(screen.getByText("No core network nodes.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Edit Gateway identity" }),
     ).toBeEnabled();
@@ -539,7 +575,7 @@ describe("OperatorDetail", () => {
       screen.queryByRole("button", { name: /^Remove Gateway identity/ }),
     ).not.toBeInTheDocument();
     fireEvent.mouseOver(
-      screen.getByRole("button", { name: "Add MME" }).parentElement!,
+      screen.getByRole("button", { name: "Add" }).parentElement!,
     );
     expect(
       await screen.findByRole("tooltip", {
@@ -591,10 +627,16 @@ describe("OperatorDetail", () => {
     await screen.findByRole("heading", { level: 2, name: "Overview" });
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(valueOf("Overview", "PWS operator")).toBe("Yes");
-    expect(addresses(/^4G MMEs/)).toEqual(["10.0.0.1, 10.0.0.2", "10.0.0.3"]);
+    expect(coreNodes()).toEqual([
+      "MME 10.0.0.1, 10.0.0.2",
+      "MME 10.0.0.3",
+      "AMF 10.0.1.1",
+    ]);
     expect(
-      screen.getAllByRole("columnheader").map((h) => h.textContent),
-    ).toEqual(["Addresses", "Name", "Served GUMMEIs", "Status", "Addresses"]);
+      within(screen.getByRole("grid", { name: NODES }))
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(NODE_COLUMNS);
   });
 
   it("lets a Network Manager change the operator", async () => {
@@ -797,8 +839,7 @@ describe("OperatorDetail", () => {
       expect(identityOf("4G")).toBe("001/01 · Short macro (18 bits) · 1234"),
     );
     expect(identityOf("5G")).toBe("315/010 · 74565 (22 bits)");
-    expect(screen.getByRole("button", { name: "Add MME" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Add AMF" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add" })).toBeEnabled();
   });
 
   it("edits the Global gNB ID", async () => {
@@ -879,9 +920,13 @@ describe("OperatorDetail", () => {
     const requests = serve();
 
     renderAt("/operators/Operator%20A");
-    await click("Add MME");
+    await click("Add");
 
-    const dialog = screen.getByRole("dialog", { name: "Add MME" });
+    const dialog = screen.getByRole("dialog", {
+      name: "Add Core Network Node",
+    });
+    expect(within(dialog).getByRole("radio", { name: "MME" })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: "AMF" })).toBeEnabled();
     const add = within(dialog).getByRole("button", { name: "Add" });
     expect(add).toBeDisabled();
     expect(
@@ -963,7 +1008,16 @@ describe("OperatorDetail", () => {
     const requests = serve();
 
     renderAt("/operators/Operator%20A");
-    await click("Add AMF");
+    await click("Add");
+    const dialog = screen.getByRole("dialog", {
+      name: "Add Core Network Node",
+    });
+    fill("Address 1", "10.0.1.1");
+    blur("Address 1");
+    expect(submitButton("Add")).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole("radio", { name: "AMF" }));
+    expect(within(dialog).getByText("Already added")).toBeInTheDocument();
+    expect(submitButton("Add")).toBeDisabled();
     fill("Address 1", "10.0.1.2");
     submit("Add");
 
@@ -977,6 +1031,54 @@ describe("OperatorDetail", () => {
         ],
       }),
     ]);
+  });
+
+  it("offers only the types whose gateway identity is set", async () => {
+    serve({
+      operators: [{ ...operatorA(), global_gnb_id: null, amfs: [] }],
+    });
+
+    renderAt("/operators/Operator%20A");
+    await click("Add");
+
+    const dialog = within(
+      screen.getByRole("dialog", { name: "Add Core Network Node" }),
+    );
+    expect(dialog.getByRole("radio", { name: "MME" })).toBeChecked();
+    const amf = dialog.getByRole("radio", { name: "AMF" });
+    expect(amf).toBeDisabled();
+    fireEvent.mouseOver(dialog.getByText("AMF"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Set the 5G gateway identity (Global gNB ID) first",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("chooses the AMF when only the Global gNB ID is set", async () => {
+    serve({
+      operators: [{ ...operatorA(), global_enb_id: null, mmes: [] }],
+    });
+
+    renderAt("/operators/Operator%20A");
+    await click("Add");
+
+    const dialog = within(
+      screen.getByRole("dialog", { name: "Add Core Network Node" }),
+    );
+    expect(dialog.getByRole("radio", { name: "MME" })).toBeDisabled();
+    expect(dialog.getByRole("radio", { name: "AMF" })).toBeChecked();
+  });
+
+  it("names the type of the node it edits", async () => {
+    serve();
+
+    renderAt("/operators/Operator%20A");
+    await click("Edit AMF 10.0.1.1");
+
+    const dialog = within(screen.getByRole("dialog", { name: "Edit AMF" }));
+    expect(dialog.queryByRole("radio")).not.toBeInTheDocument();
+    expect(dialog.getByLabelText(/^Address 1/)).toHaveValue("10.0.1.1");
   });
 
   it("deletes an MME after confirming", async () => {
@@ -1091,39 +1193,50 @@ describe("OperatorDetail", () => {
 
     renderAt("/operators/Operator%20A", readOnlyAuth);
 
-    const grid = within(await screen.findByRole("grid", { name: /^4G MMEs/ }));
+    const grid = within(await screen.findByRole("grid", { name: NODES }));
     expect(grid.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(
-      ["Addresses", "Name", "Served GUMMEIs", "Status"],
+      NODE_COLUMNS,
     );
     expect(cells(await mmeRow("10.0.0.1, 10.0.0.2"))).toEqual([
+      "MME",
       "10.0.0.1, 10.0.0.2",
       "mme0",
       "PLMNs 001/01, 001/02 · MME groups 2 · MME codes 1, 3",
+      "2",
       "Up",
     ]);
     expect(cells(await mmeRow("10.0.0.3"))).toEqual([
+      "MME",
       "10.0.0.3",
       "—",
       "—",
+      "0",
       "Setup failed",
     ]);
     expect(cells(await mmeRow("10.0.0.4"))).toEqual([
+      "MME",
       "10.0.0.4",
       "—",
       "—",
+      "0",
       "Disconnected",
     ]);
     expect(cells(await mmeRow("10.0.0.5"))).toEqual([
+      "MME",
       "10.0.0.5",
       "—",
       "—",
       "—",
+      "—",
     ]);
-    expect(
-      within(screen.getByRole("grid", { name: /^5G AMFs/ }))
-        .getAllByRole("columnheader")
-        .map((h) => h.textContent),
-    ).toEqual(["Addresses"]);
+    expect(cells(await nodeRow("AMF", "10.0.1.1"))).toEqual([
+      "AMF",
+      "10.0.1.1",
+      "—",
+      "—",
+      "—",
+      "—",
+    ]);
   });
 
   it("explains the MME status on hover", async () => {
@@ -1131,7 +1244,13 @@ describe("OperatorDetail", () => {
 
     renderAt("/operators/Operator%20A", readOnlyAuth);
 
-    const grid = within(await screen.findByRole("grid", { name: /^4G MMEs/ }));
+    const grid = within(await screen.findByRole("grid", { name: NODES }));
+    fireEvent.mouseOver(grid.getByText("Type"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "MME: the 4G core, over S1. AMF: the 5G core, over NG.",
+      }),
+    ).toBeInTheDocument();
     fireEvent.mouseOver(grid.getByText("Status"));
     expect(
       await screen.findByRole("tooltip", {
@@ -1151,17 +1270,82 @@ describe("OperatorDetail", () => {
       serve({ operators: [operator] });
 
       renderAt("/operators/Operator%20A", readOnlyAuth);
-      expect(cells(await mmeRow("10.0.0.4"))[3]).toBe("Disconnected");
+      expect(cells(await mmeRow("10.0.0.4"))[5]).toBe("Disconnected");
 
       operator.mmes![2].status = {
         state: "connected",
         since: "2026-11-12T10:01:00Z",
         primary_tnl_address: "10.0.0.4",
+        ue_connections: 1,
       };
       await vi.advanceTimersByTimeAsync(5000);
 
       await waitFor(async () =>
-        expect(cells(await mmeRow("10.0.0.4"))[3]).toBe("Connected"),
+        expect(cells(await mmeRow("10.0.0.4")).slice(4)).toEqual([
+          "1",
+          "Connected",
+        ]),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the operator's UE connections by radio", async () => {
+    serve({ operators: [operatorWithStatus()] });
+
+    renderAt("/operators/Operator%20A", readOnlyAuth);
+
+    const grid = within(
+      await screen.findByRole("grid", { name: "UE connections by radio" }),
+    );
+    expect(grid.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(
+      ["Radio", "UE connections"],
+    );
+    expect(grid.getAllByRole("row").slice(1).map(cells)).toEqual([
+      ["001-01:macro:412", "0"],
+      ["enb411", "2"],
+    ]);
+    expect(grid.getByRole("link", { name: "enb411" })).toHaveAttribute(
+      "href",
+      "/radios/001-01%3Amacro%3A411",
+    );
+    expect(
+      grid.getByRole("link", { name: "001-01:macro:412" }),
+    ).toHaveAttribute("href", "/radios/001-01%3Amacro%3A412");
+
+    fireEvent.mouseOver(grid.getByText("Radio"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "A radio that broadcasts one of the operator's PLMNs, or that has UE connections for it.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the UE connections by radio up to date", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const operator: Operator = {
+        ...operatorWithStatus(),
+        ue_connections_by_radio: [],
+      };
+      serve({ operators: [operator] });
+
+      renderAt("/operators/Operator%20A", readOnlyAuth);
+      const grid = await screen.findByRole("grid", {
+        name: "UE connections by radio",
+      });
+      expect(within(grid).getByText("No radios.")).toBeInTheDocument();
+
+      operator.ue_connections_by_radio = [
+        { radio: "001-01:macro:411", name: "enb411", ue_connections: 1 },
+      ];
+      await vi.advanceTimersByTimeAsync(5000);
+
+      await waitFor(() =>
+        expect(within(grid).getAllByRole("row").slice(1).map(cells)).toEqual([
+          ["enb411", "1"],
+        ]),
       );
     } finally {
       vi.useRealTimers();

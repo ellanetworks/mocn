@@ -44,12 +44,14 @@ type Config struct {
 	ReconnectMin    time.Duration
 	ReconnectMax    time.Duration
 	Now             func() time.Time
+	IntN            func(n int) int
 }
 
 type Gateway struct {
 	cfg     Config
 	log     *slog.Logger
 	setups  *prometheus.CounterVec
+	relay   *relay
 	runCtx  context.Context
 	clients sync.WaitGroup
 
@@ -66,10 +68,6 @@ type Gateway struct {
 func New(cfg Config) *Gateway {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.DiscardHandler)
-	}
-
-	if cfg.Relay == nil {
-		cfg.Relay = localRelay{log: cfg.Logger}
 	}
 
 	if cfg.Now == nil {
@@ -102,16 +100,12 @@ func New(cfg Config) *Gateway {
 		stopping: map[*mmeClient]struct{}{},
 		ranNodes: map[*sctp.SCTPConn]*RANAssociation{},
 		changed:  make(chan struct{}),
-		setups: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "ellamocn_s1_setup_total",
-			Help: "S1 Setup procedures, by side (ran: received from radios, mme: sent to MMEs) and outcome.",
-		}, []string{"side", "outcome"}),
+		setups:   newSetupCounter(),
 	}
 
-	for _, side := range []string{sideRAN, sideMME} {
-		for _, outcome := range []string{outcomeSuccess, outcomeFailure} {
-			g.setups.WithLabelValues(side, outcome)
-		}
+	g.relay = newRelay(g, cfg.IntN)
+	if g.cfg.Relay == nil {
+		g.cfg.Relay = g.relay
 	}
 
 	return g
@@ -381,6 +375,23 @@ func (g *Gateway) MMEStatus(operatorID int64, tnlAddresses []string) (MMEStatus,
 	return MMEStatus{}, false
 }
 
+func (g *Gateway) UEs() []UE {
+	ues := g.relay.snapshot()
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for i := range ues {
+		if o, ok := g.operatorLocked(ues[i].OperatorID); ok {
+			ues[i].OperatorName = o.name
+		}
+	}
+
+	slices.SortStableFunc(ues, func(a, b UE) int { return a.Since.Compare(b.Since) })
+
+	return ues
+}
+
 func (g *Gateway) RANNodes() []RANNode {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -397,35 +408,6 @@ func (g *Gateway) RANNodes() []RANNode {
 
 		return strings.Compare(strings.Join(a.TNLAddresses, ","), strings.Join(b.TNLAddresses, ","))
 	})
-
-	return out
-}
-
-func (g *Gateway) OperatorFor(plmn db.PLMN) (int64, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	for _, o := range g.operators {
-		if slices.Contains(o.plmns, plmn) {
-			return o.id, true
-		}
-	}
-
-	return 0, false
-}
-
-func (g *Gateway) MMEs(operatorID int64) []*MMEAssociation {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	var out []*MMEAssociation
-
-	for _, key := range sortedKeys(g.mmes) {
-		c := g.mmes[key]
-		if c.operatorID == operatorID && c.status.State == MMEUp && c.assoc != nil {
-			out = append(out, c.assoc)
-		}
-	}
 
 	return out
 }

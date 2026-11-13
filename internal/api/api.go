@@ -96,6 +96,7 @@ func routes(cfg Config, a *auth) []route {
 
 		{"GET /api/v1/radios", PermReadOperators, ListRadios(cfg)},
 		{"GET /api/v1/radios/{ref}", PermReadOperators, GetRadio(cfg)},
+		{"GET /api/v1/ue-connections", PermReadOperators, ListUEConnections(cfg)},
 
 		{"GET /api/v1/users", PermManageUsers, a.needsLogin(ListUsers(a))},
 		{"POST /api/v1/users", PermManageUsers, a.needsLogin(CreateUser(a))},

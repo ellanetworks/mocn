@@ -23,6 +23,10 @@ export interface GlobalGNBID {
   gnb_id_length: number;
 }
 
+export const CORE_NODE_KINDS = ["MME", "AMF"] as const;
+
+export type CoreNodeKind = (typeof CORE_NODE_KINDS)[number];
+
 export interface CoreNode {
   tnl_addresses: string[];
 }
@@ -40,6 +44,7 @@ export interface MMEStatus {
   mme_name?: string;
   served_gummeis?: ServedGUMMEI[];
   relative_mme_capacity?: number;
+  ue_connections: number;
 }
 
 export interface MME extends CoreNode {
@@ -54,6 +59,14 @@ export interface Operator {
   global_gnb_id?: GlobalGNBID | null;
   mmes?: MME[] | null;
   amfs?: CoreNode[] | null;
+  ue_connections?: number;
+  ue_connections_by_radio?: RadioUEConnections[];
+}
+
+export interface RadioUEConnections {
+  radio: string;
+  name?: string;
+  ue_connections: number;
 }
 
 const operatorUrl = (name: string) =>

@@ -33,6 +33,7 @@ func TestRoles(t *testing.T) {
 		"DELETE /api/v1/operators/{name}":              admin | networkManager,
 		"GET /api/v1/radios":                           all,
 		"GET /api/v1/radios/x":                         all,
+		"GET /api/v1/ue-connections":                   all,
 		"GET /api/v1/users":                            admin,
 		"POST /api/v1/users":                           admin,
 		"GET /api/v1/users/{email}":                    admin,

@@ -47,13 +47,15 @@ type GlobalGNBID struct {
 }
 
 type Operator struct {
-	Name        string       `json:"name"`
-	PWSOperator bool         `json:"pws_operator"`
-	PLMNs       []PLMN       `json:"plmns"`
-	GlobalENBID *GlobalENBID `json:"global_enb_id"`
-	GlobalGNBID *GlobalGNBID `json:"global_gnb_id"`
-	MMEs        []MME        `json:"mmes"`
-	AMFs        []CoreNode   `json:"amfs"`
+	Name                 string               `json:"name"`
+	PWSOperator          bool                 `json:"pws_operator"`
+	PLMNs                []PLMN               `json:"plmns"`
+	GlobalENBID          *GlobalENBID         `json:"global_enb_id"`
+	GlobalGNBID          *GlobalGNBID         `json:"global_gnb_id"`
+	MMEs                 []MME                `json:"mmes"`
+	AMFs                 []CoreNode           `json:"amfs"`
+	UEConnections        *int                 `json:"ue_connections,omitempty"`
+	UEConnectionsByRadio []RadioUEConnections `json:"ue_connections_by_radio,omitzero"`
 }
 
 type CoreNode struct {
@@ -78,11 +80,13 @@ type MMEStatus struct {
 	MMEName             string          `json:"mme_name,omitempty"`
 	ServedGUMMEIs       []ServedGUMMEIs `json:"served_gummeis,omitempty"`
 	RelativeMMECapacity *uint8          `json:"relative_mme_capacity,omitempty"`
+	UEConnections       int             `json:"ue_connections"`
 }
 
 type S1View interface {
 	MMEStatus(operatorID int64, tnlAddresses []string) (s1.MMEStatus, bool)
 	RANNodes() []s1.RANNode
+	UEs() []s1.UE
 }
 
 type ListOperatorsResponse struct {
@@ -103,9 +107,11 @@ func ListOperators(cfg Config) http.Handler {
 			return
 		}
 
+		ues := ueConnections(cfg)
+
 		resp := ListOperatorsResponse{Items: make([]Operator, 0, len(ops))}
 		for _, o := range ops {
-			resp.Items = append(resp.Items, withStatus(cfg, o, operatorResponse(o)))
+			resp.Items = append(resp.Items, withStatus(cfg, o, operatorResponse(o), ues))
 		}
 
 		writeResponse(r.Context(), w, resp, http.StatusOK, cfg.Logger)
@@ -114,9 +120,19 @@ func ListOperators(cfg Config) http.Handler {
 
 func GetOperator(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if o, ok := lookupOperator(w, r, cfg); ok {
-			writeResponse(r.Context(), w, withStatus(cfg, o, operatorResponse(o)), http.StatusOK, cfg.Logger)
+		o, ok := lookupOperator(w, r, cfg)
+		if !ok {
+			return
 		}
+
+		ues := ueConnections(cfg)
+		resp := withStatus(cfg, o, operatorResponse(o), ues)
+
+		if cfg.S1 != nil {
+			resp.UEConnectionsByRadio = ueConnectionsByRadio(o, cfg.S1.RANNodes(), ues)
+		}
+
+		writeResponse(r.Context(), w, resp, http.StatusOK, cfg.Logger)
 	})
 }
 
@@ -463,16 +479,24 @@ func operatorResponse(o db.Operator) Operator {
 	return resp
 }
 
-func withStatus(cfg Config, o db.Operator, resp Operator) Operator {
+func withStatus(cfg Config, o db.Operator, resp Operator, ues []s1.UE) Operator {
 	if cfg.S1 == nil {
 		return resp
 	}
 
+	total := 0
+
 	for i, m := range o.MMEs {
+		n := countUEConnections(ues, onMME(o.ID, m.TNLAddresses))
+		total += n
+
 		if st, ok := cfg.S1.MMEStatus(o.ID, m.TNLAddresses); ok {
 			resp.MMEs[i].Status = mmeStatusResponse(st)
+			resp.MMEs[i].Status.UEConnections = n
 		}
 	}
+
+	resp.UEConnections = &total
 
 	return resp
 }

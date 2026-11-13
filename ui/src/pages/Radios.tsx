@@ -74,6 +74,14 @@ const columns: GridColDef<Row>[] = [
     renderCell: ({ row }) => <OneLine title={row.tnl_addresses.join(", ")} />,
   },
   {
+    field: "ue_connections",
+    headerName: "UE connections",
+    description:
+      "The UE-associated logical S1-connections Ella MOCN relays from the radio, one per UE in ECM-CONNECTED.",
+    flex: 0.5,
+    minWidth: 140,
+  },
+  {
     field: "state",
     headerName: "Status",
     description:
