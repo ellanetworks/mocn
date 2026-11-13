@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - mocn-statefulset.yaml
+  - mocn-service.yaml
+  - mocn-internal-service.yaml

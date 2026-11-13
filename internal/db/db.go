@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"sync"
-	"sync/atomic"
-	"time"
 
 	"github.com/mattn/go-sqlite3"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -22,27 +20,21 @@ var (
 	ErrNoPassword        = errors.New("the user has no password")
 	ErrForeignPLMN       = errors.New("the PLMN is not one of the operator's")
 	ErrTooManyPLMNs      = errors.New("too many PLMNs")
+	ErrInvalid           = errors.New("invalid")
+	ErrConstraintCheck   = errors.New("check constraint violated")
+	ErrBusy              = errors.New("too busy")
 )
 
 type DB struct {
 	writer      *sql.DB
-	readers     atomic.Pointer[sql.DB]
+	readers     *sql.DB
 	checkpoints *checkpointer
 	path        string
 	metrics     metrics
-	proposer    atomic.Pointer[proposerRef]
-	applyMu     sync.Mutex
-	applied     atomic.Uint64
-	appliedMu   sync.Mutex
-	appliedCh   chan struct{}
-	schema      atomic.Int64
+	tracer      trace.Tracer
 }
 
-const (
-	baselineSchema      = 1
-	readConns           = 8
-	retiredReadersGrace = 30 * time.Second
-)
+const readConns = 8
 
 var migrations = []string{
 	`CREATE TABLE users (
@@ -91,19 +83,6 @@ var migrations = []string{
 		id INTEGER PRIMARY KEY CHECK (id = 1),
 		secret BLOB NOT NULL CHECK (length(secret) >= 32)
 	);
-	CREATE TABLE fsm_state (
-		id INTEGER PRIMARY KEY CHECK (id = 1),
-		applied_index INTEGER NOT NULL,
-		applied_term INTEGER NOT NULL,
-		leader_time INTEGER NOT NULL
-	);
-	INSERT INTO fsm_state VALUES (1, 0, 0, 0);
-	CREATE TABLE applied_requests (
-		request_id BLOB PRIMARY KEY CHECK (length(request_id) = 16),
-		result BLOB NOT NULL,
-		applied_at INTEGER NOT NULL
-	) WITHOUT ROWID;
-	CREATE INDEX applied_requests_applied_at ON applied_requests (applied_at);
 	CREATE TABLE operators (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE CHECK (name != ''),
@@ -164,25 +143,20 @@ var migrations = []string{
 	CREATE INDEX amf_tnl_addresses_amf_id ON amf_tnl_addresses (amf_id, operator_id);`,
 }
 
-func Open(ctx context.Context, path string) (*DB, error) {
+func Open(ctx context.Context, path string, opts ...Option) (*DB, error) {
 	if err := restrict(path); err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	d := &DB{path: path, metrics: newMetrics()}
+	d := &DB{path: path, metrics: newMetrics(), tracer: noopTracer()}
+
+	for _, o := range opts {
+		o(d)
+	}
 
 	if err := d.openConns(ctx); err != nil {
 		return nil, err
 	}
-
-	state, err := readFSMState(ctx, d.writer)
-	if err != nil {
-		_ = d.Close()
-		return nil, fmt.Errorf("open database: read state: %w", err)
-	}
-
-	d.setApplied(state.appliedIndex)
-	d.proposer.Store(&proposerRef{&localProposer{d: d, now: time.Now, last: state.leaderTime}})
 
 	return d, nil
 }
@@ -246,24 +220,13 @@ func (d *DB) openConns(ctx context.Context) error {
 	}
 
 	d.checkpoints = checkpoints
-
-	if old := d.readers.Swap(reader); old != nil {
-		time.AfterFunc(retiredReadersGrace, func() { _ = old.Close() })
-	}
+	d.readers = reader
 
 	return nil
 }
 
-func (d *DB) closeConns() error {
-	return errors.Join(d.closeWriter(), d.reader().Close())
-}
-
-func (d *DB) closeWriter() error {
-	return errors.Join(d.checkpoints.stop(), d.writer.Close())
-}
-
 func (d *DB) reader() *sql.DB {
-	return d.readers.Load()
+	return d.readers
 }
 
 func (d *DB) Ping(ctx context.Context) error {
@@ -271,7 +234,7 @@ func (d *DB) Ping(ctx context.Context) error {
 }
 
 func (d *DB) Close() error {
-	return d.closeConns()
+	return errors.Join(d.checkpoints.stop(), d.writer.Close(), d.reader().Close())
 }
 
 func (d *DB) migrate(ctx context.Context) error {
@@ -285,54 +248,71 @@ func (d *DB) migrate(ctx context.Context) error {
 			version, len(migrations))
 	}
 
-	d.schema.Store(int64(version))
+	for i := version; i < len(migrations); i++ {
+		if err := d.exec(ctx, fmt.Sprintf("migrate the database to %d", i+1), func(tx querier) error {
+			if _, err := tx.ExecContext(ctx, migrations[i]); err != nil {
+				return err
+			}
 
-	if version > 0 {
-		return nil
+			_, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", i+1))
+
+			return err
+		}); err != nil {
+			return err
+		}
 	}
-
-	if err := migrateFile(ctx, d.writer, migrations[:baselineSchema], "the database"); err != nil {
-		return err
-	}
-
-	d.schema.Store(baselineSchema)
 
 	return nil
 }
 
-func migrateFile(ctx context.Context, conn *sql.DB, steps []string, what string) error {
-	var version int
-	if err := conn.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		return fmt.Errorf("read the schema version of %s: %w", what, err)
+type querier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func write[R any](ctx context.Context, d *DB, what string, fn func(tx querier) (R, error)) (R, error) {
+	var zero R
+
+	tx, err := d.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return zero, fmt.Errorf("%s: %w", what, err)
 	}
 
-	if version > len(steps) {
-		return fmt.Errorf("the schema version %d of %s is newer than this binary supports (%d): use a newer binary",
-			version, what, len(steps))
+	defer func() { _ = tx.Rollback() }()
+
+	r, err := fn(tx)
+	if err != nil {
+		return zero, fmt.Errorf("%s: %w", what, constraintError(err))
 	}
 
-	for i := version; i < len(steps); i++ {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("migrate %s to %d: %w", what, i+1, err)
-		}
-
-		if _, err := tx.ExecContext(ctx, steps[i]); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("migrate %s to %d: %w", what, i+1, err)
-		}
-
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("migrate %s to %d: %w", what, i+1, err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("migrate %s to %d: %w", what, i+1, err)
-		}
+	if err := tx.Commit(); err != nil {
+		return zero, fmt.Errorf("%s: %w", what, err)
 	}
 
-	return nil
+	return r, nil
+}
+
+func (d *DB) exec(ctx context.Context, what string, fn func(tx querier) error) error {
+	_, err := write(ctx, d, what, func(tx querier) (struct{}, error) { return struct{}{}, fn(tx) })
+
+	return err
+}
+
+type checkError struct {
+	err error
+}
+
+func (e *checkError) Error() string { return e.err.Error() }
+
+func (e *checkError) Unwrap() []error { return []error{ErrConstraintCheck, e.err} }
+
+func constraintError(err error) error {
+	if isConstraint(err, sqlite3.ErrConstraintCheck) {
+		return &checkError{err: err}
+	}
+
+	return err
 }
 
 func checkForeignKeys(ctx context.Context, q querier) error {
@@ -376,6 +356,23 @@ func restrict(path string) error {
 
 type scanner interface {
 	Scan(dest ...any) error
+}
+
+func each(ctx context.Context, q querier, query string, fn func(scanner) error, args ...any) error {
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		if err := fn(rows); err != nil {
+			return err
+		}
+	}
+
+	return rows.Err()
 }
 
 func isConstraint(err error, code sqlite3.ErrNoExtended) bool {

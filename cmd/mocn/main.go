@@ -40,6 +40,11 @@ func main() {
 }
 
 func start(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	tlsConfig, err := cfg.API.TLS.Load()
+	if err != nil {
+		return err
+	}
+
 	var lc net.ListenConfig
 
 	ln, err := lc.Listen(ctx, "tcp", cfg.API.ListenAddress())
@@ -56,6 +61,7 @@ func start(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	return server.Run(ctx, server.Config{
-		Listener: ln, S1Listener: s1ln, DBPath: cfg.DB.Path, Frontend: ui.FS(), Logger: logger,
+		Listener: ln, TLS: tlsConfig, S1Listener: s1ln, DBPath: cfg.DB.Path, Frontend: ui.FS(), Telemetry: cfg.Telemetry,
+		Logger: logger,
 	})
 }

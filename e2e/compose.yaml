@@ -31,15 +31,55 @@ services:
       provision:
         condition: service_completed_successfully
     entrypoint: ["/start.sh"]
+    environment:
+      DB_URI: mongodb://10.90.0.20/open5gs
+      S1_ADDR: 10.90.0.10
+      GTPU_ADDR: 10.90.1.10
+      MCC: "001"
+      MNC: "01"
+      MME_GID: "2"
+      MME_CODE: "1"
+      TAC: "1"
+      MME_NAME: open5gs-mme0
+      UE_NET: "10.45"
     volumes:
       - ./open5gs/start.sh:/start.sh:ro
-      - ./open5gs/config/open5gs:/etc/open5gs:ro
+      - ./open5gs/config/open5gs:/config:ro
       - ./open5gs/config/freeDiameter:/etc/freeDiameter:ro
     networks:
       core:
         ipv4_address: 10.90.0.10
       ran:
         ipv4_address: 10.90.1.10
+
+  open5gs-b:
+    image: gradiant/open5gs:2.7.6
+    user: root
+    privileged: true
+    depends_on:
+      provision:
+        condition: service_completed_successfully
+    entrypoint: ["/start.sh"]
+    environment:
+      DB_URI: mongodb://10.90.0.20/open5gs_b
+      S1_ADDR: 10.90.0.11
+      GTPU_ADDR: 10.90.1.11
+      MCC: "001"
+      MNC: "02"
+      MME_GID: "3"
+      MME_CODE: "1"
+      TAC: "1"
+      MME_NAME: open5gs-b-mme0
+      UE_NET: "10.46"
+    volumes:
+      - ./open5gs/start.sh:/start.sh:ro
+      - ./open5gs/config/open5gs:/config:ro
+      - ./open5gs/config/freeDiameter:/etc/freeDiameter:ro
+    networks:
+      core:
+        ipv4_address: 10.90.0.11
+      ran:
+        ipv4_address: 10.90.1.11
 
   mocn:
     image: ella-mocn-e2e/mocn
@@ -105,6 +145,52 @@ services:
     networks:
       radio:
         ipv4_address: 10.90.2.3
+
+  srsenb-b:
+    image: gradiant/srsran-4g:23_11
+    privileged: true
+    restart: unless-stopped
+    depends_on: [mocn]
+    command: ["enb", "--rf.device_args=tx_port=tcp://*:2000,rx_port=tcp://10.90.2.5:2001,id=enb,base_srate=23.04e6", "--log.all_level=warning", "--log.s1ap_level=info", "--log.rrc_level=info", "--log.filename=stdout"]
+    environment:
+      ENB_ID: "0x19C"
+      MCC: "001"
+      MNC: "02"
+      TAC: "1"
+      MME_ADDR: 10.90.1.30
+      GTP_BIND_ADDR: 10.90.1.22
+      S1C_BIND_ADDR: 10.90.1.22
+      N_PRB: "50"
+      TX_GAIN: "50"
+      RX_GAIN: "40"
+      ZMQ: "true"
+      UE_ADDRESS: 10.90.2.5
+    networks:
+      ran:
+        ipv4_address: 10.90.1.22
+      radio:
+        ipv4_address: 10.90.2.4
+
+  srsue-b:
+    image: gradiant/srsran-4g:23_11
+    privileged: true
+    restart: on-failure
+    depends_on: [srsenb-b]
+    command: ["ue", "--rf.device_args=tx_port=tcp://10.90.2.5:2001,rx_port=tcp://10.90.2.4:2000,id=ue,base_srate=23.04e6"]
+    environment:
+      ZMQ: "true"
+      ENB_ADDRESS: 10.90.2.4
+      UE_ADDRESS: 10.90.2.5
+      ALGO: milenage
+      KEY: 465b5ce8b199b49faa5f0a2ee238a6bc
+      OPC: cd63cb71954a9f4e48a5994e37a02baf
+      MCC: "001"
+      MNC: "02"
+      MSISDN: "0000000002"
+      APN: internet
+    networks:
+      radio:
+        ipv4_address: 10.90.2.5
 
 networks:
   core:

@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -32,7 +31,7 @@ func operatorB() Operator {
 func createTestOperator(t *testing.T, d *DB, o Operator) Operator {
 	t.Helper()
 
-	id, err := d.CreateOperator(context.Background(), o)
+	id, err := d.CreateOperator(t.Context(), o)
 	if err != nil {
 		t.Fatalf("CreateOperator %s: %v", o.Name, err)
 	}
@@ -43,7 +42,7 @@ func createTestOperator(t *testing.T, d *DB, o Operator) Operator {
 }
 
 func TestOperatorLifecycle(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	if ops, err := d.ListOperators(ctx); err != nil || len(ops) != 0 {
@@ -101,7 +100,7 @@ func TestOperatorLifecycle(t *testing.T) {
 }
 
 func TestOperatorNotFound(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	if _, err := d.GetOperator(ctx, "missing"); !errors.Is(err, ErrNotFound) {
@@ -118,7 +117,7 @@ func TestOperatorNotFound(t *testing.T) {
 }
 
 func TestOperatorDuplicates(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	createTestOperator(t, d, operatorA())
@@ -161,7 +160,7 @@ func TestOperatorDuplicates(t *testing.T) {
 }
 
 func TestOperatorInvalid(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	tests := map[string]struct {
@@ -210,7 +209,7 @@ func TestOperatorInvalid(t *testing.T) {
 }
 
 func TestOperatorLargestIDs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	o := operatorA()
@@ -224,7 +223,7 @@ func TestOperatorLargestIDs(t *testing.T) {
 }
 
 func TestOperatorUpdateRollsBack(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	a := createTestOperator(t, d, operatorA())
@@ -252,7 +251,7 @@ func plmns(mcc string, n int) []PLMN {
 }
 
 func TestOperatorAddressesArePerOperator(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	a := createTestOperator(t, d, operatorA())
@@ -279,7 +278,7 @@ func TestOperatorAddressesArePerOperator(t *testing.T) {
 }
 
 func TestOperatorPLMNLimits(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	a := operatorA()

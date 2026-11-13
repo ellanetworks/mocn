@@ -30,7 +30,7 @@ func spanContext(t *testing.T, flags trace.TraceFlags) context.Context {
 		t.Fatal(err)
 	}
 
-	return trace.ContextWithSpanContext(context.Background(),
+	return trace.ContextWithSpanContext(t.Context(),
 		trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid, TraceFlags: flags}))
 }
 
@@ -58,8 +58,8 @@ func TestTraceContext(t *testing.T) {
 			ctx:  spanContext(t, 0),
 			want: map[string]any{"trace_id": traceID, "span_id": spanID, "trace_flags": "00"},
 		},
-		"no span":      {ctx: context.Background()},
-		"invalid span": {ctx: trace.ContextWithSpanContext(context.Background(), trace.SpanContext{})},
+		"no span":      {ctx: t.Context()},
+		"invalid span": {ctx: trace.ContextWithSpanContext(t.Context(), trace.SpanContext{})},
 		"no context":   {ctx: nil},
 	}
 

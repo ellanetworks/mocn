@@ -69,13 +69,14 @@ type Operator struct {
 }
 
 func (d *DB) CreateOperator(ctx context.Context, o Operator) (id int64, err error) {
-	defer d.observe(poolWrite, &err)()
+	ctx, done := d.observe(ctx, "CreateOperator", poolWrite)
+	defer done(&err)
 
-	return run[int64](ctx, d, cmdCreateOperator, "create operator", o)
+	return write(ctx, d, "create operator", func(tx querier) (int64, error) { return createOperator(ctx, tx, o) })
 }
 
-func applyCreateOperator(a *applyCtx, o Operator) (int64, error) {
-	res, err := a.tx.ExecContext(a.ctx, `INSERT INTO operators (name, pws_operator) VALUES (?, ?)`, o.Name, o.PWSOperator)
+func createOperator(ctx context.Context, tx querier, o Operator) (int64, error) {
+	res, err := tx.ExecContext(ctx, `INSERT INTO operators (name, pws_operator) VALUES (?, ?)`, o.Name, o.PWSOperator)
 	if err != nil {
 		return 0, operatorRowError(err, o)
 	}
@@ -85,28 +86,25 @@ func applyCreateOperator(a *applyCtx, o Operator) (int64, error) {
 		return 0, err
 	}
 
-	return id, insertOperatorParts(a.ctx, a.tx, id, o)
+	return id, insertOperatorParts(ctx, tx, id, o)
 }
 
 func (d *DB) UpdateOperator(ctx context.Context, o Operator) (err error) {
-	defer d.observe(poolWrite, &err)()
+	ctx, done := d.observe(ctx, "UpdateOperator", poolWrite)
+	defer done(&err)
 
-	_, err = run[struct{}](ctx, d, cmdUpdateOperator, "update operator", o)
-
-	return err
+	return d.exec(ctx, "update operator", func(tx querier) error { return updateOperator(ctx, tx, o) })
 }
 
-func applyUpdateOperator(a *applyCtx, o Operator) (struct{}, error) {
-	ctx, tx := a.ctx, a.tx
-
+func updateOperator(ctx context.Context, tx querier, o Operator) error {
 	res, err := tx.ExecContext(ctx, `UPDATE operators SET name = ?, pws_operator = ? WHERE id = ?`, o.Name, o.PWSOperator,
 		o.ID)
 	if err != nil {
-		return struct{}{}, operatorRowError(err, o)
+		return operatorRowError(err, o)
 	}
 
 	if err := checkAffected(res); err != nil {
-		return struct{}{}, err
+		return err
 	}
 
 	for _, q := range []string{
@@ -117,14 +115,14 @@ func applyUpdateOperator(a *applyCtx, o Operator) (struct{}, error) {
 		`DELETE FROM operator_plmns WHERE operator_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, o.ID); err != nil {
-			return struct{}{}, err
+			return err
 		}
 	}
 
-	return struct{}{}, insertOperatorParts(ctx, tx, o.ID, o)
+	return insertOperatorParts(ctx, tx, o.ID, o)
 }
 
-func insertOperatorParts(ctx context.Context, tx *sql.Tx, id int64, o Operator) error {
+func insertOperatorParts(ctx context.Context, tx querier, id int64, o Operator) error {
 	plmnIDs := make(map[PLMN]int64, len(o.PLMNs))
 
 	for _, p := range o.PLMNs {
@@ -145,8 +143,7 @@ func insertOperatorParts(ctx context.Context, tx *sql.Tx, id int64, o Operator) 
 			return fmt.Errorf("%w: global eNB ID PLMN %s", ErrForeignPLMN, e.PLMN)
 		}
 
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO global_enb_ids (operator_id, operator_plmn_id, enb_id_type, enb_id) VALUES (?, ?, ?, ?)`,
+		if _, err := tx.ExecContext(ctx, `INSERT INTO global_enb_ids (operator_id, operator_plmn_id, enb_id_type, enb_id) VALUES (?, ?, ?, ?)`,
 			id, plmnID, e.Type, e.ID); err != nil {
 			return err
 		}
@@ -158,17 +155,13 @@ func insertOperatorParts(ctx context.Context, tx *sql.Tx, id int64, o Operator) 
 			return fmt.Errorf("%w: global gNB ID PLMN %s", ErrForeignPLMN, g.PLMN)
 		}
 
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO global_gnb_ids (operator_id, operator_plmn_id, gnb_id, gnb_id_length) VALUES (?, ?, ?, ?)`,
+		if _, err := tx.ExecContext(ctx, `INSERT INTO global_gnb_ids (operator_id, operator_plmn_id, gnb_id, gnb_id_length) VALUES (?, ?, ?, ?)`,
 			id, plmnID, g.ID, g.Length); err != nil {
 			return err
 		}
 	}
 
-	for _, n := range []struct {
-		nodeQuery, addressQuery, what string
-		nodes                         []CoreNode
-	}{
+	for _, n := range []coreNodeInserts{
 		{
 			`INSERT INTO mmes (operator_id) VALUES (?)`,
 			`INSERT INTO mme_tnl_addresses (mme_id, operator_id, address) VALUES (?, ?, ?)`, "MME", o.MMEs,
@@ -178,7 +171,7 @@ func insertOperatorParts(ctx context.Context, tx *sql.Tx, id int64, o Operator) 
 			`INSERT INTO amf_tnl_addresses (amf_id, operator_id, address) VALUES (?, ?, ?)`, "AMF", o.AMFs,
 		},
 	} {
-		if err := insertCoreNodes(ctx, tx, id, n.nodeQuery, n.addressQuery, n.what, n.nodes); err != nil {
+		if err := insertCoreNodes(ctx, tx, id, n); err != nil {
 			return err
 		}
 	}
@@ -186,15 +179,18 @@ func insertOperatorParts(ctx context.Context, tx *sql.Tx, id int64, o Operator) 
 	return checkPLMNLimits(ctx, tx, id)
 }
 
-func insertCoreNodes(ctx context.Context, tx *sql.Tx, operatorID int64, nodeQuery, addressQuery, what string,
-	nodes []CoreNode,
-) error {
-	for _, n := range nodes {
+type coreNodeInserts struct {
+	nodeQuery, addressQuery, what string
+	nodes                         []CoreNode
+}
+
+func insertCoreNodes(ctx context.Context, tx querier, operatorID int64, ins coreNodeInserts) error {
+	for _, n := range ins.nodes {
 		if len(n.TNLAddresses) == 0 {
-			return fmt.Errorf("%w: %s without a TNL address", ErrInvalid, what)
+			return fmt.Errorf("%w: %s without a TNL address", ErrInvalid, ins.what)
 		}
 
-		res, err := tx.ExecContext(ctx, nodeQuery, operatorID)
+		res, err := tx.ExecContext(ctx, ins.nodeQuery, operatorID)
 		if err != nil {
 			return err
 		}
@@ -205,8 +201,8 @@ func insertCoreNodes(ctx context.Context, tx *sql.Tx, operatorID int64, nodeQuer
 		}
 
 		for _, addr := range n.TNLAddresses {
-			if _, err := tx.ExecContext(ctx, addressQuery, nodeID, operatorID, addr); err != nil {
-				return operatorError(err, what+" "+addr)
+			if _, err := tx.ExecContext(ctx, ins.addressQuery, nodeID, operatorID, addr); err != nil {
+				return operatorError(err, ins.what+" "+addr)
 			}
 		}
 	}
@@ -214,7 +210,7 @@ func insertCoreNodes(ctx context.Context, tx *sql.Tx, operatorID int64, nodeQuer
 	return nil
 }
 
-func checkPLMNLimits(ctx context.Context, tx *sql.Tx, operatorID int64) error {
+func checkPLMNLimits(ctx context.Context, tx querier, operatorID int64) error {
 	for _, l := range []struct {
 		query, message string
 		args           []any
@@ -264,35 +260,33 @@ func operatorError(err error, what string) error {
 }
 
 func (d *DB) DeleteOperator(ctx context.Context, id int64) (err error) {
-	defer d.observe(poolWrite, &err)()
+	ctx, done := d.observe(ctx, "DeleteOperator", poolWrite)
+	defer done(&err)
 
-	_, err = run[struct{}](ctx, d, cmdDeleteOperator, "delete operator", id)
-
-	return err
+	return d.exec(ctx, "delete operator", func(tx querier) error { return deleteOperator(ctx, tx, id) })
 }
 
-func applyDeleteOperator(a *applyCtx, id int64) (struct{}, error) {
-	ctx, tx := a.ctx, a.tx
-
+func deleteOperator(ctx context.Context, tx querier, id int64) error {
 	for _, q := range []string{
 		`DELETE FROM global_enb_ids WHERE operator_id = ?`,
 		`DELETE FROM global_gnb_ids WHERE operator_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
-			return struct{}{}, err
+			return err
 		}
 	}
 
 	res, err := tx.ExecContext(ctx, `DELETE FROM operators WHERE id = ?`, id)
 	if err != nil {
-		return struct{}{}, err
+		return err
 	}
 
-	return struct{}{}, checkAffected(res)
+	return checkAffected(res)
 }
 
 func (d *DB) GetOperator(ctx context.Context, name string) (_ Operator, err error) {
-	defer d.observe(poolRead, &err)()
+	ctx, done := d.observe(ctx, "GetOperator", poolRead)
+	defer done(&err)
 
 	ops, err := d.readOperators(ctx, `SELECT id, name, pws_operator FROM operators WHERE name = ?`, name)
 	if err != nil {
@@ -307,7 +301,8 @@ func (d *DB) GetOperator(ctx context.Context, name string) (_ Operator, err erro
 }
 
 func (d *DB) ListOperators(ctx context.Context) (_ []Operator, err error) {
-	defer d.observe(poolRead, &err)()
+	ctx, done := d.observe(ctx, "ListOperators", poolRead)
+	defer done(&err)
 
 	ops, err := d.readOperators(ctx, `SELECT id, name, pws_operator FROM operators ORDER BY name`)
 	if err != nil {
@@ -318,12 +313,14 @@ func (d *DB) ListOperators(ctx context.Context) (_ []Operator, err error) {
 }
 
 func (d *DB) readOperators(ctx context.Context, query string, args ...any) ([]Operator, error) {
-	tx, err := d.reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	sqlTx, err := d.reader().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = sqlTx.Rollback() }()
+
+	tx := sqlTx
 
 	ops := []Operator{}
 
@@ -462,27 +459,4 @@ func loadCoreNodes(ctx context.Context, q querier, byID map[int64]*Operator) err
 	}
 
 	return nil
-}
-
-func each(ctx context.Context, q querier, query string, fn func(scanner) error, args ...any) error {
-	rows, err := q.QueryContext(ctx, query, args...)
-	if err != nil {
-		return err
-	}
-
-	defer func() { _ = rows.Close() }()
-
-	for rows.Next() {
-		if err := fn(rows); err != nil {
-			return err
-		}
-	}
-
-	return rows.Err()
-}
-
-func init() {
-	register(cmdCreateOperator, handle(applyCreateOperator))
-	register(cmdUpdateOperator, handle(applyUpdateOperator))
-	register(cmdDeleteOperator, handle(applyDeleteOperator))
 }

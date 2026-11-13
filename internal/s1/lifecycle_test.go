@@ -29,9 +29,9 @@ func (*recordingRelay) FromRAN(context.Context, *s1.RANAssociation, s1ap.PDU, []
 
 func (*recordingRelay) FromMME(context.Context, *s1.MMEAssociation, s1ap.PDU, []byte) {}
 
-func (r *recordingRelay) RANLost(*s1.RANAssociation, s1ap.Cause) { r.ranLost.Add(1) }
+func (r *recordingRelay) RANLost(context.Context, *s1.RANAssociation, s1ap.Cause) { r.ranLost.Add(1) }
 
-func (*recordingRelay) MMELost(*s1.MMEAssociation) {}
+func (*recordingRelay) MMELost(context.Context, *s1.MMEAssociation) {}
 
 func upAndRunning(t *testing.T, h *harness, mmeListener *fakeMME) (*peer, *peer) {
 	t.Helper()
@@ -129,6 +129,12 @@ func TestNonUEProceduresTerminatedLocally(t *testing.T) {
 	}})
 
 	enb.quiet(t, 200*time.Millisecond)
+
+	if ind := expect(t, mme, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication); ind.Cause == nil ||
+		ind.Cause.Group != s1ap.CauseGroupProtocol || ind.CriticalityDiagnostics == nil {
+		t.Fatalf("Error Indication = %+v, want a protocol cause with diagnostics", ind)
+	}
+
 	mme.quiet(t, 200*time.Millisecond)
 
 	enb.send(t, rawPDU{&s1ap.InitiatingMessage{

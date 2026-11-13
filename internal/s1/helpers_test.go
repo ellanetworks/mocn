@@ -286,7 +286,7 @@ func startGatewayWith(t *testing.T, cfg s1.Config, ops ...db.Operator) *harness 
 
 	gw := s1.New(cfg)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 
 	go func() { done <- gw.Run(ctx) }()

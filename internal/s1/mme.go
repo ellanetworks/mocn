@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/ellanetworks/core/s1ap"
@@ -20,6 +21,7 @@ const dialTimeout = 10 * time.Second
 type mmeClient struct {
 	g          *Gateway
 	operatorID int64
+	opName     atomic.Pointer[string]
 	enbID      db.GlobalENBID
 	addrs      []string
 	cancel     context.CancelFunc
@@ -38,8 +40,8 @@ type MMEAssociation struct {
 	lost   bool
 }
 
-func (a *MMEAssociation) Send(msg []byte, stream uint16) error {
-	return send(a.conn, msg, stream)
+func (a *MMEAssociation) Send(ctx context.Context, msg []byte, stream uint16) error {
+	return a.client.g.send(ctx, sideCore, a.conn, a.client.operator(), msg, stream)
 }
 
 func (a *MMEAssociation) OperatorID() int64 {
@@ -69,12 +71,28 @@ type mmeSession struct {
 	retryAt   time.Time
 }
 
-func newMMEClient(g *Gateway, operatorID int64, enbID db.GlobalENBID, addrs []string) *mmeClient {
-	return &mmeClient{
+func newMMEClient(g *Gateway, operatorID int64, operator string, enbID db.GlobalENBID, addrs []string) *mmeClient {
+	c := &mmeClient{
 		g: g, operatorID: operatorID, enbID: enbID, addrs: slices.Clone(addrs), kicks: make(chan struct{}, 1),
 		done:   make(chan struct{}),
 		status: MMEStatus{State: MMEDisconnected, Since: g.cfg.Now()},
 	}
+
+	c.setOperatorName(operator)
+
+	return c
+}
+
+func (c *mmeClient) setOperatorName(name string) {
+	c.opName.Store(&name)
+}
+
+func (c *mmeClient) operator() string {
+	if name := c.opName.Load(); name != nil {
+		return *name
+	}
+
+	return ""
 }
 
 func (c *mmeClient) kick() {
@@ -87,6 +105,7 @@ func (c *mmeClient) kick() {
 func (c *mmeClient) snapshotLocked() MMEStatus {
 	s := c.status
 	s.ServedGUMMEIs = slices.Clone(s.ServedGUMMEIs)
+	s.Overload = slices.Clone(s.Overload)
 
 	if c.assoc != nil {
 		if addr, err := c.assoc.conn.PrimaryPeerAddr(); err == nil {
@@ -151,16 +170,20 @@ func (c *mmeClient) run(ctx context.Context) {
 		c.g.mu.Lock()
 
 		wasUp := c.status.State == MMEUp
+		cleared := c.status.Overload
+		radios := c.g.operatorRadiosLocked(c.operatorID)
 		c.assoc = nil
 		c.status = MMEStatus{State: MMEDisconnected, Since: c.g.cfg.Now()}
 
 		if wasUp {
-			c.g.mmeChangedLocked()
+			c.g.mmeChangedLocked(ctx)
 		}
 
 		c.g.mu.Unlock()
 
-		c.g.cfg.Relay.MMELost(assoc)
+		lostCtx := context.WithoutCancel(ctx)
+		c.g.overloadCleared(lostCtx, radios, c.operator(), log, cleared)
+		c.g.cfg.Relay.MMELost(lostCtx, assoc)
 
 		if ctx.Err() != nil {
 			return
@@ -330,7 +353,7 @@ func (c *mmeClient) sendS1Setup(ctx context.Context, s *mmeSession, want enbConf
 		return err
 	}
 
-	if err := s.assoc.Send(out, nonUEStream); err != nil {
+	if err := s.assoc.Send(ctx, out, nonUEStream); err != nil {
 		c.g.countSetup(sideCore, setupError)
 		return fmt.Errorf("SCTP: %w", err)
 	}
@@ -390,7 +413,7 @@ func (c *mmeClient) sendENBConfigurationUpdate(ctx context.Context, s *mmeSessio
 		return fmt.Errorf("marshal eNB Configuration Update: %w", err)
 	}
 
-	if err := s.assoc.Send(out, nonUEStream); err != nil {
+	if err := s.assoc.Send(ctx, out, nonUEStream); err != nil {
 		return fmt.Errorf("SCTP: %w", err)
 	}
 
@@ -404,7 +427,7 @@ func (c *mmeClient) sendENBConfigurationUpdate(ctx context.Context, s *mmeSessio
 
 // TS 36.413 clause 8.7.4.4
 func (c *mmeClient) resendENBConfigurationUpdate(ctx context.Context, s *mmeSession) error {
-	if err := s.assoc.Send(s.sentMsg, nonUEStream); err != nil {
+	if err := s.assoc.Send(ctx, s.sentMsg, nonUEStream); err != nil {
 		return fmt.Errorf("SCTP: %w", err)
 	}
 
@@ -417,8 +440,14 @@ func (c *mmeClient) resendENBConfigurationUpdate(ctx context.Context, s *mmeSess
 
 func (c *mmeClient) handle(ctx context.Context, s *mmeSession, msg []byte) error {
 	pdu, err := s1ap.Unmarshal(msg)
+
+	ctx, span := c.g.receiveFromMME(ctx, s.assoc, pdu, msg)
+	defer span.End()
+
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		c.logger().WarnContext(ctx, "undecodable S1AP message from MME", slog.Any("error", err))
+
 		return nil
 	}
 
@@ -450,6 +479,7 @@ func (c *mmeClient) handle(ctx context.Context, s *mmeSession, msg []byte) error
 	}
 
 	if !s.setupDone {
+		spanFailed(ctx, errTypeNoSetup)
 		c.logger().DebugContext(ctx, "dropped S1AP message before S1 Setup",
 			slog.String("procedure", procedureOf(pdu).String()))
 
@@ -468,13 +498,17 @@ func (c *mmeClient) handleS1SetupResponse(ctx context.Context, s *mmeSession, va
 
 	resp, err := s1ap.ParseS1SetupResponse(value)
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		c.endSetup(s, setupFailure)
+
 		return fmt.Errorf("S1 Setup Response: %w", err)
 	}
 
 	served, err := gummeisFrom(resp.ServedGUMMEIs)
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		c.endSetup(s, setupFailure)
+
 		return fmt.Errorf("S1 Setup Response: %w", err)
 	}
 
@@ -491,7 +525,7 @@ func (c *mmeClient) handleS1SetupResponse(ctx context.Context, s *mmeSession, va
 	c.status.RelativeMMECapacity = resp.RelativeMMECapacity
 	c.lastCause, c.lastTimeToWait = nil, nil
 	c.setState(MMEUp)
-	c.g.mmeChangedLocked()
+	c.g.mmeChangedLocked(ctx)
 	c.g.mu.Unlock()
 
 	c.g.countSetup(sideCore, setupSuccess)
@@ -509,6 +543,7 @@ func (c *mmeClient) handleS1SetupFailure(ctx context.Context, s *mmeSession, val
 
 	fail, err := s1ap.ParseS1SetupFailure(value)
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		return fmt.Errorf("S1 Setup Failure: %w", err)
 	}
 
@@ -523,7 +558,7 @@ func (c *mmeClient) handleS1SetupFailure(ctx context.Context, s *mmeSession, val
 
 	c.lastCause, c.lastTimeToWait = fail.Cause, fail.TimeToWait
 	c.status.State, c.status.Since = MMESetupFailed, c.g.cfg.Now()
-	c.g.mmeChangedLocked()
+	c.g.mmeChangedLocked(ctx)
 	c.g.mu.Unlock()
 
 	c.logger().WarnContext(ctx, "MME rejected S1 Setup", slog.String("cause", causeText(fail.Cause)),
@@ -547,6 +582,8 @@ func (c *mmeClient) handleENBConfigurationUpdateFailure(ctx context.Context, s *
 		if fail.TimeToWait != nil {
 			retry = timeToWait[*fail.TimeToWait]
 		}
+	} else {
+		spanFailed(ctx, errTypeInvalid)
 	}
 
 	s.retryAt = c.g.cfg.Now().Add(retry)
@@ -575,10 +612,11 @@ func (c *mmeClient) handleMMEConfigurationUpdate(ctx context.Context, s *mmeSess
 			diag = s1ap.Ptr(ase.OutcomeDiagnostics())
 		}
 
+		spanFailed(ctx, errTypeInvalid)
 		c.logger().WarnContext(ctx, "rejected MME Configuration Update", slog.Any("error", err))
 
 		if out, err := (&s1ap.MMEConfigurationUpdateFailure{Cause: &cause, CriticalityDiagnostics: diag}).Marshal(); err == nil {
-			_ = s.assoc.Send(out, nonUEStream)
+			_ = s.assoc.Send(ctx, out, nonUEStream)
 		}
 
 		return
@@ -606,10 +644,10 @@ func (c *mmeClient) handleMMEConfigurationUpdate(ctx context.Context, s *mmeSess
 		c.status.RelativeMMECapacity = upd.RelativeMMECapacity
 	}
 
-	c.g.mmeChangedLocked()
+	c.g.mmeChangedLocked(ctx)
 	c.g.mu.Unlock()
 
-	if err := s.assoc.Send(out, nonUEStream); err != nil {
+	if err := s.assoc.Send(ctx, out, nonUEStream); err != nil {
 		c.logger().WarnContext(ctx, "failed to send MME Configuration Update Acknowledge", slog.Any("error", err))
 	}
 

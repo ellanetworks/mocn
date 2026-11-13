@@ -95,14 +95,18 @@ test.describe("MME status", () => {
       }),
     ).toBeVisible({ timeout: 15_000 });
     await expect(mmes.getByRole("columnheader")).toHaveText([
-      "Type",
       "Addresses",
+      "Type",
       "Name",
       "Served IDs",
       "UE connections",
+      "Overload",
       "Status",
       "Actions",
     ]);
+    await expect(
+      row.getByRole("gridcell", { name: "None", exact: true }),
+    ).toBeVisible();
     const connections = page.getByRole("grid", {
       name: "UE connections by radio",
     });
@@ -127,6 +131,7 @@ test.describe("MME status", () => {
       /^(disconnected|connected|up|setup_failed)$/,
     );
     expect(operator.mmes[0].status?.ue_connections).toBe(0);
+    expect(operator.mmes[0].status).not.toHaveProperty("overload");
     expect(operator.ue_connections).toBe(0);
     expect(operator.ue_connections_by_radio).toEqual([]);
     expect(

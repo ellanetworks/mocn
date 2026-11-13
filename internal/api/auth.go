@@ -39,7 +39,6 @@ const (
 	MinPasswordLength       = 8
 	MaxPasswordLength       = 72
 	touchInterval           = time.Minute
-	catchUpTimeout          = 2 * time.Second
 )
 
 type AuthStore interface {
@@ -64,9 +63,6 @@ type AuthStore interface {
 	CountAPITokens(ctx context.Context, userID int64) (int, error)
 	DeleteAPIToken(ctx context.Context, userID int64, tokenID string) error
 	TouchAPIToken(ctx context.Context, id int64, at time.Time) error
-
-	AppliedIndex() uint64
-	WaitApplied(ctx context.Context, index uint64) error
 }
 
 type Permission string
@@ -78,6 +74,7 @@ const (
 	PermUpdateOperators Permission = "operator:update"
 	PermSelf            Permission = "user:self"
 	PermManageUsers     Permission = "user:admin"
+	PermReadProfiles    Permission = "pprof:read"
 )
 
 var readPermissions = []Permission{PermReadOperators, PermSelf}
@@ -85,7 +82,7 @@ var readPermissions = []Permission{PermReadOperators, PermSelf}
 var operatePermissions = []Permission{PermUpdateOperators}
 
 var permissions = map[db.Role][]Permission{
-	db.RoleAdmin:          slices.Concat(readPermissions, operatePermissions, []Permission{PermManageUsers}),
+	db.RoleAdmin:          slices.Concat(readPermissions, operatePermissions, []Permission{PermManageUsers, PermReadProfiles}),
 	db.RoleReadOnly:       readPermissions,
 	db.RoleNetworkManager: slices.Concat(readPermissions, operatePermissions),
 }
@@ -300,7 +297,6 @@ type claims struct {
 	Email     string  `json:"email"`
 	RoleID    db.Role `json:"role_id"`
 	SessionID int64   `json:"sid"`
-	Index     uint64  `json:"idx,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -312,7 +308,6 @@ func (a *auth) accessToken(u db.User, sessionID int64) (string, error) {
 		Email:     u.Email,
 		RoleID:    u.Role,
 		SessionID: sessionID,
-		Index:     a.cfg.Auth.AppliedIndex(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTokenDuration)),
@@ -330,15 +325,6 @@ func (a *auth) checkAccessToken(ctx context.Context, token string) (int64, error
 	}
 
 	s, err := a.cfg.Auth.GetSession(ctx, c.SessionID)
-	if errors.Is(err, db.ErrNotFound) && c.Index > a.cfg.Auth.AppliedIndex() {
-		wait, cancel := context.WithTimeout(ctx, catchUpTimeout)
-		defer cancel()
-
-		if a.cfg.Auth.WaitApplied(wait, c.Index) == nil {
-			s, err = a.cfg.Auth.GetSession(ctx, c.SessionID)
-		}
-	}
-
 	if err != nil {
 		return 0, storeError("get session", err)
 	}

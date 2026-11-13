@@ -80,7 +80,20 @@ type MMEStatus struct {
 	MMEName             string          `json:"mme_name,omitempty"`
 	ServedGUMMEIs       []ServedGUMMEIs `json:"served_gummeis,omitempty"`
 	RelativeMMECapacity *uint8          `json:"relative_mme_capacity,omitempty"`
+	Overload            []Overload      `json:"overload,omitempty"`
 	UEConnections       int             `json:"ue_connections"`
+}
+
+type GUMMEI struct {
+	PLMN       PLMN   `json:"plmn"`
+	MMEGroupID uint16 `json:"mme_group_id"`
+	MMECode    uint8  `json:"mme_code"`
+}
+
+type Overload struct {
+	GUMMEI                         GUMMEI            `json:"gummei"`
+	OverloadAction                 s1.OverloadAction `json:"overload_action"`
+	TrafficLoadReductionIndication *uint8            `json:"traffic_load_reduction_indication,omitempty"`
 }
 
 type S1View interface {
@@ -521,6 +534,16 @@ func mmeStatusResponse(st s1.MMEStatus) *MMEStatus {
 			ServedPLMNs:    plmnsResponse(g.PLMNs),
 			ServedGroupIDs: append([]uint16{}, g.GroupIDs...),
 			ServedMMECs:    mmecs(g.MMECodes),
+		})
+	}
+
+	for _, o := range st.Overload {
+		resp.Overload = append(resp.Overload, Overload{
+			GUMMEI: GUMMEI{
+				PLMN: PLMN(o.GUMMEI.PLMN), MMEGroupID: o.GUMMEI.MMEGroupID, MMECode: o.GUMMEI.MMECode,
+			},
+			OverloadAction:                 o.Action,
+			TrafficLoadReductionIndication: o.TrafficLoadReductionIndication,
 		})
 	}
 

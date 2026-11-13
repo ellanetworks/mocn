@@ -34,9 +34,12 @@ jobs:
     uses: ./.github/workflows/e2e-s1.yaml
   image-build:
     uses: ./.github/workflows/image-build.yaml
+  k8s-smoke:
+    needs: [image-build]
+    uses: ./.github/workflows/k8s-smoke.yaml
   image-publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [go-unit-test, go-lint, go-sec, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, image-build]
+    needs: [go-unit-test, go-lint, go-sec, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, image-build, k8s-smoke]
     permissions:
       contents: read
       packages: write

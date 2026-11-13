@@ -35,6 +35,10 @@ var (
 			"(disconnected: no SCTP association; connected: SCTP association up, S1 Setup not done; "+
 			"up: S1 Setup succeeded; setup_failed: the MME rejected S1 Setup).",
 		[]string{"interface", "operator", "state"}, nil)
+	coreOverloadedDesc = prometheus.NewDesc("ellamocn_core_overloaded",
+		"Core (MME) associations of the configured MMEs with an ongoing overload action (TS 36.413 clause 8.7.6), "+
+			"by interface (s1) and operator.",
+		[]string{"interface", "operator"}, nil)
 	ueConnectionsDesc = prometheus.NewDesc("ellamocn_ue_connections",
 		"UE-associated logical S1-connections (TS 36.413 clause 3.1) relayed, by interface (s1) and operator.",
 		[]string{"interface", "operator"}, nil)
@@ -71,13 +75,15 @@ type stateCollector struct {
 }
 
 func (g *Gateway) Collectors() []prometheus.Collector {
-	return []prometheus.Collector{g.setups, g.relay.initialUE, stateCollector{g: g}}
+	return []prometheus.Collector{g.setups, g.overloads, g.relay.initialUE, g.relay.paged, stateCollector{g: g}}
 }
 
 func (c stateCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- radioAssociationsDesc
 
 	ch <- coreAssociationsDesc
+
+	ch <- coreOverloadedDesc
 
 	ch <- ueConnectionsDesc
 }
@@ -88,6 +94,7 @@ func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 	names := map[int64]string{}
 	ueConns := map[string]int{}
 	core := map[string]map[MMEState]int{}
+	overloaded := map[string]int{}
 
 	c.g.mu.Lock()
 
@@ -115,6 +122,10 @@ func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 
 		core[name][m.status.State]++
+
+		if len(m.status.Overload) > 0 {
+			overloaded[name]++
+		}
 	}
 
 	c.g.mu.Unlock()
@@ -129,6 +140,9 @@ func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(coreAssociationsDesc, prometheus.GaugeValue, float64(states[s]),
 				interfaceS1, name, string(s))
 		}
+
+		ch <- prometheus.MustNewConstMetric(coreOverloadedDesc, prometheus.GaugeValue, float64(overloaded[name]),
+			interfaceS1, name)
 	}
 
 	for name, n := range ueConns {

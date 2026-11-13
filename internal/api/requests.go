@@ -16,8 +16,9 @@ type RequestMetrics struct {
 func NewRequestMetrics() *RequestMetrics {
 	return &RequestMetrics{
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:                            "ellamocn_api_request_duration_seconds",
-			Help:                            "Duration of API requests, by method, route and status code.",
+			Name: "ellamocn_api_request_duration_seconds",
+			Help: "Duration of API requests, by method, route and status code. Profiles under /api/v1/pprof/ " +
+				"are left out.",
 			Buckets:                         []float64{.001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60},
 			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMaxBucketNumber:  100,
@@ -36,7 +37,7 @@ func (m *RequestMetrics) instrument(pattern string, next http.Handler) http.Hand
 		route = path
 	}
 
-	if m == nil || !strings.HasPrefix(route, "/api/") {
+	if m == nil || !strings.HasPrefix(route, "/api/") || strings.HasPrefix(route, "/api/v1/pprof/") {
 		return next
 	}
 

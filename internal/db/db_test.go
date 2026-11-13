@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,7 +9,7 @@ import (
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
 
-	d, err := Open(context.Background(), filepath.Join(t.TempDir(), "mocn.db"))
+	d, err := Open(t.Context(), filepath.Join(t.TempDir(), "mocn.db"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -24,7 +23,7 @@ func TestOpenReachesLatestVersion(t *testing.T) {
 	d := openTestDB(t)
 
 	var version int
-	if err := d.writer.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&version); err != nil {
+	if err := d.writer.QueryRowContext(t.Context(), "PRAGMA user_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
 
@@ -37,7 +36,7 @@ func TestOpenIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mocn.db")
 
 	for range 2 {
-		d, err := Open(context.Background(), path)
+		d, err := Open(t.Context(), path)
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
@@ -49,7 +48,7 @@ func TestOpenIsIdempotent(t *testing.T) {
 }
 
 func TestOpenRejectsNewerSchema(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "mocn.db")
 
 	d, err := Open(ctx, path)
@@ -88,14 +87,14 @@ func TestDatabaseIsPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d, err := Open(context.Background(), path)
+	d, err := Open(t.Context(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() { _ = d.Close() })
 
-	if _, err := d.CreateUser(context.Background(), NewUser{Email: "a@example.com", Role: RoleAdmin}, 100); err != nil {
+	if _, err := d.CreateUser(t.Context(), NewUser{Email: "a@example.com", Role: RoleAdmin}, 100); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,40 +107,5 @@ func TestDatabaseIsPrivate(t *testing.T) {
 		if mode := info.Mode().Perm(); mode != 0o600 {
 			t.Errorf("%s mode = %o, want 600", name, mode)
 		}
-	}
-}
-
-func TestAppliedIndexSurvivesReopening(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "mocn.db")
-
-	d, err := Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := d.CreateUser(ctx, NewUser{Email: "a@example.com", Role: RoleAdmin}, 100); err != nil {
-		t.Fatal(err)
-	}
-
-	applied := d.AppliedIndex()
-
-	if err := d.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if applied == 0 {
-		t.Fatal("AppliedIndex = 0 after a write")
-	}
-
-	d, err = Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = d.Close() })
-
-	if got := d.AppliedIndex(); got != applied {
-		t.Fatalf("AppliedIndex after reopening = %d, want %d", got, applied)
 	}
 }

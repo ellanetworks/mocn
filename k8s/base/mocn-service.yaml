@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ella-mocn
+  labels:
+    app.kubernetes.io/name: ella-mocn
+    app.kubernetes.io/instance: ella-mocn
+    app.kubernetes.io/part-of: ella
+spec:
+  selector:
+    app.kubernetes.io/name: ella-mocn
+    app.kubernetes.io/instance: ella-mocn
+  ports:
+  - name: http
+    protocol: TCP
+    port: 5030
+    targetPort: http

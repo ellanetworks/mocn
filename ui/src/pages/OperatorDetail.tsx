@@ -49,6 +49,8 @@ import {
   formatGlobalENBID,
   formatGlobalGNBID,
   formatGUMMEI,
+  formatOverload,
+  formatOverloadDetail,
   formatPLMN,
   formatTNLAddresses,
   GATEWAY_IDENTITY_HELP,
@@ -88,14 +90,9 @@ interface NodeRow {
 
 const NONE = "—";
 
+const KIND_RAT: Record<CoreNodeKind, string> = { MME: "4G", AMF: "5G" };
+
 const NODE_COLUMNS: GridColDef<NodeRow>[] = [
-  {
-    field: "kind",
-    headerName: "Type",
-    description: "MME: the 4G core, over S1. AMF: the 5G core, over NG.",
-    flex: 0.3,
-    minWidth: 90,
-  },
   {
     field: "addresses",
     headerName: "Addresses",
@@ -103,6 +100,14 @@ const NODE_COLUMNS: GridColDef<NodeRow>[] = [
     flex: 0.8,
     minWidth: 150,
     renderCell: ({ row }) => <OneLine title={row.addresses.join(", ")} />,
+  },
+  {
+    field: "kind",
+    headerName: "Type",
+    description: "MME: the 4G core, over S1. AMF: the 5G core, over NG.",
+    flex: 0.3,
+    minWidth: 100,
+    valueGetter: (_value, row) => `${row.kind} (${KIND_RAT[row.kind]})`,
   },
   {
     field: "mme_name",
@@ -137,6 +142,27 @@ const NODE_COLUMNS: GridColDef<NodeRow>[] = [
     minWidth: 140,
     valueGetter: (_value, row) =>
       row.status ? String(row.status.ue_connections) : NONE,
+  },
+  {
+    field: "overload",
+    headerName: "Overload",
+    description:
+      "The overload action the MME requested in OVERLOAD START, which Ella MOCN relays to the radios that broadcast one of the operator's PLMNs, with the GUMMEIs it applies to. None: no ongoing overload action.",
+    flex: 0.6,
+    minWidth: 140,
+    renderCell: ({ row }) => {
+      if (!row.status) {
+        return NONE;
+      }
+      const overload = row.status.overload ?? [];
+      return overload.length ? (
+        <OneLine title={formatOverloadDetail(overload)}>
+          {formatOverload(overload)}
+        </OneLine>
+      ) : (
+        "None"
+      );
+    },
   },
   {
     field: "state",
