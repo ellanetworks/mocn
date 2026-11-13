@@ -99,11 +99,16 @@ const navSections: { title?: string; items: NavItem[] }[] = [
         permission: "operator:read",
       },
       {
-        to: "/ran-nodes",
-        label: "RAN Nodes",
+        to: "/radios",
+        label: "Radios",
         icon: <SettingsInputAntennaIcon color="primary" />,
-        permission: "ran_node:read",
+        permission: "radio:read",
       },
+    ],
+  },
+  {
+    title: "System",
+    items: [
       {
         to: "/users",
         label: "Users",

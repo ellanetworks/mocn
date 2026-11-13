@@ -159,12 +159,12 @@ type fakeMME struct {
 	conns chan *peer
 }
 
-func listenMME(t *testing.T, ip string, port int) *fakeMME {
+func listenMME(t *testing.T, ip string) *fakeMME {
 	t.Helper()
 
 	var lc sctp.ListenConfig
 
-	ln, err := lc.Listen(t.Context(), &sctp.SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.ParseIP(ip)}}, Port: port})
+	ln, err := lc.Listen(t.Context(), &sctp.SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.ParseIP(ip)}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,11 +229,18 @@ func (o *operators) list(context.Context) ([]db.Operator, error) {
 
 type harness struct {
 	gw   *s1.Gateway
+	stop func()
 	addr *sctp.SCTPAddr
 	ops  *operators
 }
 
 func startGateway(t *testing.T, mmePort int, ops ...db.Operator) *harness {
+	t.Helper()
+
+	return startGatewayWith(t, s1.Config{MMEPort: mmePort}, ops...)
+}
+
+func startGatewayWith(t *testing.T, cfg s1.Config, ops ...db.Operator) *harness {
 	t.Helper()
 
 	var lc sctp.ListenConfig
@@ -246,27 +253,33 @@ func startGateway(t *testing.T, mmePort int, ops ...db.Operator) *harness {
 	src := &operators{}
 	src.set(ops...)
 
-	gw := s1.New(s1.Config{
-		Listener: ln, Operators: src.list, MMEPort: mmePort, SetupWait: time.Second,
-		ResponseTimeout: 2 * time.Second, RetryInterval: 500 * time.Millisecond,
-		ReconnectMin: 100 * time.Millisecond, ReconnectMax: 200 * time.Millisecond,
-		Logger: testLogger(),
-	})
+	cfg.Listener, cfg.SetupWait, cfg.ResponseTimeout, cfg.RetryInterval = ln, time.Second, 2*time.Second, 500*time.Millisecond
+	cfg.ReconnectMin, cfg.ReconnectMax, cfg.Logger = 100*time.Millisecond, 200*time.Millisecond, testLogger()
+
+	if cfg.Operators == nil {
+		cfg.Operators = src.list
+	}
+
+	gw := s1.New(cfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 
 	go func() { done <- gw.Run(ctx) }()
 
-	t.Cleanup(func() {
+	stop := func() {
 		cancel()
 
 		if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
 			t.Error(err)
 		}
-	})
+	}
 
-	return &harness{gw: gw, addr: &sctp.SCTPAddr{
+	var once sync.Once
+
+	t.Cleanup(func() { once.Do(stop) })
+
+	return &harness{gw: gw, stop: func() { once.Do(stop) }, addr: &sctp.SCTPAddr{
 		IPAddrs: []net.IPAddr{{IP: net.IPv4(127, 0, 0, 1)}},
 		Port:    ln.Addr().(*sctp.SCTPAddr).Port,
 	}, ops: src}

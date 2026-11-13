@@ -30,6 +30,7 @@ type mmeClient struct {
 	addrs      []string
 	cancel     context.CancelFunc
 	kicks      chan struct{}
+	done       chan struct{}
 
 	status         MMEStatus
 	lastCause      *s1ap.Cause
@@ -68,6 +69,7 @@ type mmeSession struct {
 	acked     enbConfig
 	pending   procedure
 	sent      enbConfig
+	sentMsg   []byte
 	deadline  time.Time
 	retryAt   time.Time
 }
@@ -75,6 +77,7 @@ type mmeSession struct {
 func newMMEClient(g *Gateway, operatorID int64, enbID db.GlobalENBID, addrs []string) *mmeClient {
 	return &mmeClient{
 		g: g, operatorID: operatorID, enbID: enbID, addrs: slices.Clone(addrs), kicks: make(chan struct{}, 1),
+		done:   make(chan struct{}),
 		status: MMEStatus{State: MMEDisconnected, Since: g.cfg.Now()},
 	}
 }
@@ -121,11 +124,7 @@ func (c *mmeClient) run(ctx context.Context) {
 				return
 			}
 
-			c.g.mu.Lock()
-			c.status.LastFailureCause = "SCTP: " + err.Error()
-			c.g.mu.Unlock()
-
-			log.DebugContext(ctx, "MME association failed", slog.Any("error", err))
+			log.WarnContext(ctx, "MME association failed", slog.Any("error", err))
 
 			if !sleep(ctx, backoff) {
 				return
@@ -158,11 +157,7 @@ func (c *mmeClient) run(ctx context.Context) {
 
 		wasUp := c.status.State == MMEUp
 		c.assoc = nil
-		c.status = MMEStatus{State: MMEDisconnected, Since: c.g.cfg.Now(), LastFailureCause: c.status.LastFailureCause}
-
-		if err != nil {
-			c.status.LastFailureCause = err.Error()
-		}
+		c.status = MMEStatus{State: MMEDisconnected, Since: c.g.cfg.Now()}
 
 		if wasUp {
 			c.g.mmeChangedLocked()
@@ -304,7 +299,7 @@ func (c *mmeClient) step(ctx context.Context, s *mmeSession) error {
 			return errors.New("no response to S1 Setup Request")
 		}
 
-		return errors.New("no response to eNB Configuration Update")
+		return c.resendENBConfigurationUpdate(ctx, s)
 	}
 
 	if now.Before(s.retryAt) {
@@ -384,7 +379,20 @@ func (c *mmeClient) sendENBConfigurationUpdate(ctx context.Context, s *mmeSessio
 	c.logger().InfoContext(ctx, "eNB Configuration Update sent to MME", slog.Int("supported_tas", len(want.tas)),
 		slog.Int("default_paging_drx", pagingDRXFrames(want.drx)))
 
-	s.pending, s.sent, s.deadline = procUpdate, want, c.g.cfg.Now().Add(c.g.cfg.ResponseTimeout)
+	s.pending, s.sent, s.sentMsg, s.deadline = procUpdate, want, out, c.g.cfg.Now().Add(c.g.cfg.ResponseTimeout)
+
+	return nil
+}
+
+// TS 36.413 clause 8.7.4.4
+func (c *mmeClient) resendENBConfigurationUpdate(ctx context.Context, s *mmeSession) error {
+	if err := s.assoc.Send(s.sentMsg, nonUEStream); err != nil {
+		return fmt.Errorf("SCTP: %w", err)
+	}
+
+	c.logger().WarnContext(ctx, "no response to eNB Configuration Update, sent it again")
+
+	s.deadline = c.g.cfg.Now().Add(c.g.cfg.ResponseTimeout)
 
 	return nil
 }
@@ -463,7 +471,6 @@ func (c *mmeClient) handleS1SetupResponse(ctx context.Context, s *mmeSession, va
 
 	c.status.ServedGUMMEIs = served
 	c.status.RelativeMMECapacity = resp.RelativeMMECapacity
-	c.status.LastFailureCause, c.status.TimeToWait = "", 0
 	c.lastCause, c.lastTimeToWait = nil, nil
 	c.setState(MMEUp)
 	c.g.mmeChangedLocked()
@@ -499,13 +506,6 @@ func (c *mmeClient) handleS1SetupFailure(ctx context.Context, s *mmeSession, val
 	c.g.mu.Lock()
 
 	c.lastCause, c.lastTimeToWait = fail.Cause, fail.TimeToWait
-	c.status.LastFailureCause = causeText(fail.Cause)
-	c.status.TimeToWait = 0
-
-	if fail.TimeToWait != nil {
-		c.status.TimeToWait = retry
-	}
-
 	c.status.State, c.status.Since = MMESetupFailed, c.g.cfg.Now()
 	c.g.mmeChangedLocked()
 	c.g.mu.Unlock()
@@ -534,10 +534,6 @@ func (c *mmeClient) handleENBConfigurationUpdateFailure(ctx context.Context, s *
 	}
 
 	s.retryAt = c.g.cfg.Now().Add(retry)
-
-	c.g.mu.Lock()
-	c.status.LastFailureCause = cause
-	c.g.mu.Unlock()
 
 	c.logger().WarnContext(ctx, "MME rejected eNB Configuration Update", slog.String("cause", cause),
 		slog.Duration("retry_in", retry))

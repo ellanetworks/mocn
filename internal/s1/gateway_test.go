@@ -116,18 +116,17 @@ func assertTAs(t *testing.T, got, want s1ap.SupportedTAs) {
 	}
 }
 
-func setUpENB(t *testing.T, enb *peer, req *s1ap.S1SetupRequest) *s1ap.S1SetupResponse {
+func setUpENB(t *testing.T, enb *peer, req *s1ap.S1SetupRequest) {
 	t.Helper()
 
 	enb.send(t, req)
-
-	return expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
+	expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
 }
 
 func TestS1SetupBothWays(t *testing.T) {
 	skipWithoutSCTP(t)
 
-	mmeListener := listenMME(t, "127.0.0.2", 0)
+	mmeListener := listenMME(t, "127.0.0.2")
 	h := startGateway(t, mmeListener.port(), operatorA("127.0.0.2"))
 	mme := mmeListener.accept(t)
 
@@ -219,10 +218,10 @@ func TestS1SetupBothWays(t *testing.T) {
 	registry.MustRegister(h.gw.Collectors()...)
 
 	want := `
-# HELP ellamocn_ran_nodes_connected RAN nodes whose S1 Setup succeeded.
-# TYPE ellamocn_ran_nodes_connected gauge
-ellamocn_ran_nodes_connected 1
-# HELP ellamocn_s1_associations S1 associations, by side (ran: RAN nodes, mme: configured MMEs) and state.
+# HELP ellamocn_radios_connected Radios whose S1 Setup succeeded.
+# TYPE ellamocn_radios_connected gauge
+ellamocn_radios_connected 1
+# HELP ellamocn_s1_associations S1 associations, by side (ran: radios, mme: configured MMEs) and state.
 # TYPE ellamocn_s1_associations gauge
 ellamocn_s1_associations{side="mme",state="connected"} 0
 ellamocn_s1_associations{side="mme",state="disconnected"} 0
@@ -230,7 +229,7 @@ ellamocn_s1_associations{side="mme",state="setup_failed"} 0
 ellamocn_s1_associations{side="mme",state="up"} 1
 ellamocn_s1_associations{side="ran",state="connected"} 0
 ellamocn_s1_associations{side="ran",state="up"} 1
-# HELP ellamocn_s1_setup_total S1 Setup procedures, by side (ran: received from RAN nodes, mme: sent to MMEs) and outcome.
+# HELP ellamocn_s1_setup_total S1 Setup procedures, by side (ran: received from radios, mme: sent to MMEs) and outcome.
 # TYPE ellamocn_s1_setup_total counter
 ellamocn_s1_setup_total{outcome="failure",side="mme"} 0
 ellamocn_s1_setup_total{outcome="failure",side="ran"} 0
@@ -251,7 +250,7 @@ ellamocn_s1_setup_total{outcome="success",side="ran"} 2
 func TestS1SetupFailures(t *testing.T) {
 	skipWithoutSCTP(t)
 
-	mmeListener := listenMME(t, "127.0.0.3", 0)
+	mmeListener := listenMME(t, "127.0.0.3")
 	h := startGateway(t, mmeListener.port(), operatorA("127.0.0.3"), operatorB("127.0.0.4"))
 	mme := mmeListener.accept(t)
 
@@ -288,13 +287,12 @@ func TestS1SetupFailures(t *testing.T) {
 	}
 
 	st, _ := h.gw.MMEStatus(1, []string{"127.0.0.3"})
-	if st.State != s1.MMESetupFailed || st.TimeToWait != time.Second || st.LastFailureCause == "" {
+	if st.State != s1.MMESetupFailed {
 		t.Fatalf("MME status = %+v", st)
 	}
 
 	nodes := h.gw.RANNodes()
-	if len(nodes) != 1 || nodes[0].State != s1.RANNodeConnected || nodes[0].GlobalENBID != nil ||
-		nodes[0].LastFailureCause == "" {
+	if len(nodes) != 1 || nodes[0].State != s1.RANNodeConnected || nodes[0].GlobalENBID != nil {
 		t.Fatalf("RAN nodes = %+v", nodes)
 	}
 
@@ -329,7 +327,7 @@ func TestS1SetupFailures(t *testing.T) {
 func TestMMEReconnectsAndFollowsConfig(t *testing.T) {
 	skipWithoutSCTP(t)
 
-	mmeListener := listenMME(t, "127.0.0.5", 0)
+	mmeListener := listenMME(t, "127.0.0.5")
 	h := startGateway(t, mmeListener.port(), operatorA("127.0.0.5"))
 	mme := mmeListener.accept(t)
 

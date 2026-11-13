@@ -68,7 +68,7 @@ type MME struct {
 type ServedGUMMEIs struct {
 	ServedPLMNs    []PLMN   `json:"served_plmns"`
 	ServedGroupIDs []uint16 `json:"served_group_ids"`
-	ServedMMECs    []uint8  `json:"served_mmecs"`
+	ServedMMECs    []int    `json:"served_mmecs"`
 }
 
 type MMEStatus struct {
@@ -78,8 +78,6 @@ type MMEStatus struct {
 	MMEName             string          `json:"mme_name,omitempty"`
 	ServedGUMMEIs       []ServedGUMMEIs `json:"served_gummeis,omitempty"`
 	RelativeMMECapacity *uint8          `json:"relative_mme_capacity,omitempty"`
-	LastFailureCause    string          `json:"last_failure_cause,omitempty"`
-	TimeToWait          int             `json:"time_to_wait,omitempty"`
 }
 
 type S1View interface {
@@ -491,17 +489,25 @@ func plmnsResponse(in []db.PLMN) []PLMN {
 func mmeStatusResponse(st s1.MMEStatus) *MMEStatus {
 	resp := &MMEStatus{
 		State: st.State, Since: st.Since.UTC(), PrimaryTNLAddress: st.PrimaryTNLAddress, MMEName: st.MMEName,
-		RelativeMMECapacity: st.RelativeMMECapacity, LastFailureCause: st.LastFailureCause,
-		TimeToWait: int(st.TimeToWait / time.Second),
+		RelativeMMECapacity: st.RelativeMMECapacity,
 	}
 
 	for _, g := range st.ServedGUMMEIs {
 		resp.ServedGUMMEIs = append(resp.ServedGUMMEIs, ServedGUMMEIs{
 			ServedPLMNs:    plmnsResponse(g.PLMNs),
 			ServedGroupIDs: append([]uint16{}, g.GroupIDs...),
-			ServedMMECs:    append([]uint8{}, g.MMECodes...),
+			ServedMMECs:    mmecs(g.MMECodes),
 		})
 	}
 
 	return resp
+}
+
+func mmecs(codes []uint8) []int {
+	out := make([]int, len(codes))
+	for i, c := range codes {
+		out[i] = int(c)
+	}
+
+	return out
 }

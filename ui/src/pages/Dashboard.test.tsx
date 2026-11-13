@@ -10,8 +10,8 @@ process_resident_memory_bytes 6.7108864e+07
 process_start_time_seconds 1.7e+09
 ellamocn_database_storage_bytes{file="main"} 1048576
 ellamocn_database_storage_bytes{file="wal"} 524288
-# TYPE ellamocn_ran_nodes_connected gauge
-ellamocn_ran_nodes_connected 2
+# TYPE ellamocn_radios_connected gauge
+ellamocn_radios_connected 2
 # TYPE ellamocn_s1_associations gauge
 ellamocn_s1_associations{side="mme",state="connected"} 1
 ellamocn_s1_associations{side="mme",state="disconnected"} 1
@@ -53,19 +53,27 @@ describe("Dashboard", () => {
     expect(within(await findPanel("Up Since")).getByText(/2023/)).toBeVisible();
   });
 
-  it("shows the S1 figures from the metrics", async () => {
+  it("shows the radio and operator figures from the metrics", async () => {
     serve(() => new Response(METRICS, { status: 200 }));
     renderDashboard();
 
-    expect(
-      await screen.findByRole("region", { name: "S1" }),
-    ).toBeInTheDocument();
-    const ranNodes = await findPanel("RAN Nodes");
-    expect(await within(ranNodes).findByText("2")).toBeVisible();
-    expect(within(await findPanel("MMEs Up")).getByText("3 / 5")).toBeVisible();
+    const radios = await screen.findByRole("region", { name: "Radios" });
+    expect(await within(radios).findByText("2")).toBeVisible();
+    const operators = screen.getByRole("region", { name: "Operators" });
+    expect(within(operators).getByText("3 / 5")).toBeVisible();
   });
 
-  it("explains the S1 figures on hover", async () => {
+  it("orders the rows radios, operators, system", async () => {
+    serve(() => new Response(METRICS, { status: 200 }));
+    renderDashboard();
+
+    await screen.findByRole("region", { name: "Radios" });
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
+    ).toEqual(["Radios", "Operators", "System"]);
+  });
+
+  it("explains the operator figures on hover", async () => {
     serve(() => new Response(METRICS, { status: 200 }));
     renderDashboard();
 
@@ -84,7 +92,7 @@ describe("Dashboard", () => {
     const database = await findPanel("Database Size");
     expect(await within(database).findByText("N/A")).toBeInTheDocument();
     expect(
-      within(await findPanel("RAN Nodes")).getByText("N/A"),
+      within(await findPanel("Connected")).getByText("N/A"),
     ).toBeInTheDocument();
     expect(
       within(await findPanel("MMEs Up")).getByText("N/A"),

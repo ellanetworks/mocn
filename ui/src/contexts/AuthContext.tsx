@@ -23,7 +23,7 @@ export type Permission =
   | "user:admin"
   | "operator:read"
   | "operator:update"
-  | "ran_node:read";
+  | "radio:read";
 
 const permissions: Record<RoleID, Permission[]> = {
   [RoleID.Admin]: [
@@ -31,14 +31,14 @@ const permissions: Record<RoleID, Permission[]> = {
     "user:admin",
     "operator:read",
     "operator:update",
-    "ran_node:read",
+    "radio:read",
   ],
-  [RoleID.ReadOnly]: ["user:self", "operator:read", "ran_node:read"],
+  [RoleID.ReadOnly]: ["user:self", "operator:read", "radio:read"],
   [RoleID.NetworkManager]: [
     "user:self",
     "operator:read",
     "operator:update",
-    "ran_node:read",
+    "radio:read",
   ],
 };
 

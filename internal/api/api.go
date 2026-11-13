@@ -94,7 +94,8 @@ func routes(cfg Config, a *auth) []route {
 		{"PUT /api/v1/operators/{name}", PermUpdateOperators, UpdateOperator(a)},
 		{"DELETE /api/v1/operators/{name}", PermUpdateOperators, DeleteOperator(a)},
 
-		{"GET /api/v1/ran-nodes", PermReadOperators, ListRANNodes(cfg)},
+		{"GET /api/v1/radios", PermReadOperators, ListRadios(cfg)},
+		{"GET /api/v1/radios/{ref}", PermReadOperators, GetRadio(cfg)},
 
 		{"GET /api/v1/users", PermManageUsers, a.needsLogin(ListUsers(a))},
 		{"POST /api/v1/users", PermManageUsers, a.needsLogin(CreateUser(a))},

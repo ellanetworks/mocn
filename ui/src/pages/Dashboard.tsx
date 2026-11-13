@@ -157,7 +157,7 @@ export default function Dashboard() {
   const memory = sumOf(samples, "process_resident_memory_bytes");
   const database = sumOf(samples, "ellamocn_database_storage_bytes");
   const startedAt = sumOf(samples, "process_start_time_seconds");
-  const ranNodes = sumOf(samples, "ellamocn_ran_nodes_connected");
+  const radios = sumOf(samples, "ellamocn_radios_connected");
   const mmesUp = sumOf(samples, "ellamocn_s1_associations", {
     side: "mme",
     state: "up",
@@ -174,7 +174,31 @@ export default function Dashboard() {
     <Box component="section" aria-labelledby="dashboard-title">
       <PageHeader id="dashboard-title" title="Dashboard" />
 
-      <Section title="System" first>
+      <Section title="Radios" first>
+        <Grid size={THIRD}>
+          <KpiCard
+            title="Connected"
+            hint="Radios that completed S1 Setup with Ella MOCN."
+            {...metricCard}
+            value={radios === undefined ? "N/A" : String(radios)}
+          />
+        </Grid>
+      </Section>
+
+      <Section title="Operators">
+        <Grid size={THIRD}>
+          <KpiCard
+            title="MMEs Up"
+            hint="MMEs that accepted the S1 Setup of Ella MOCN, out of every MME configured across the operators."
+            {...metricCard}
+            value={
+              mmesTotal === undefined ? "N/A" : `${mmesUp ?? 0} / ${mmesTotal}`
+            }
+          />
+        </Grid>
+      </Section>
+
+      <Section title="System">
         <Grid size={THIRD}>
           <KpiCard
             title="Process Memory"
@@ -200,27 +224,6 @@ export default function Dashboard() {
               startedAt === undefined
                 ? "N/A"
                 : formatDateTime(new Date(startedAt * 1000).toISOString())
-            }
-          />
-        </Grid>
-      </Section>
-
-      <Section title="S1">
-        <Grid size={THIRD}>
-          <KpiCard
-            title="RAN Nodes"
-            hint="RAN nodes that completed S1 Setup with Ella MOCN."
-            {...metricCard}
-            value={ranNodes === undefined ? "N/A" : String(ranNodes)}
-          />
-        </Grid>
-        <Grid size={THIRD}>
-          <KpiCard
-            title="MMEs Up"
-            hint="MMEs that accepted the S1 Setup of Ella MOCN, out of every MME configured across the operators."
-            {...metricCard}
-            value={
-              mmesTotal === undefined ? "N/A" : `${mmesUp ?? 0} / ${mmesTotal}`
             }
           />
         </Grid>

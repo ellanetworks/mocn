@@ -28,30 +28,26 @@ for (const { name, session } of SESSIONS) {
   test.describe(name, () => {
     if (session) test.use({ storageState: session });
 
-    test("sees no RAN nodes while none is connected", async ({ page }) => {
-      await page.goto("/ran-nodes");
+    test("sees no radios while none is connected", async ({ page }) => {
+      await page.goto("/radios");
 
       await expect(
-        page.getByRole("heading", { level: 1, name: "RAN Nodes (0)" }),
+        page.getByRole("heading", { level: 1, name: "Radios (0)" }),
       ).toBeVisible();
-      const grid = page.getByRole("grid", { name: "RAN Nodes" });
-      await expect(grid).toContainText("No RAN nodes.");
+      const grid = page.getByRole("grid", { name: "Radios" });
+      await expect(grid).toContainText("No radios.");
       await expect(grid.getByRole("columnheader")).toHaveText([
+        "Name",
         "Global eNB ID",
-        "eNB name",
-        "Supported TAs",
-        "Paging DRX",
-        "State",
-        "Connected since",
-        "TNL addresses",
-        "Last failure",
+        "Addresses",
+        "Status",
       ]);
       await expect(
         page
           .getByRole("navigation", { name: "Main" })
-          .getByRole("link", { name: "RAN Nodes" }),
+          .getByRole("link", { name: "Radios" }),
       ).toHaveAttribute("aria-current", "page");
-      await assertNoA11yViolations(page, `RAN Nodes (${name})`);
+      await assertNoA11yViolations(page, `Radios (${name})`);
     });
   });
 }

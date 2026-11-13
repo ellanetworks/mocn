@@ -1,31 +1,28 @@
 import { useState } from "react";
+import { Box, Button, IconButton, Skeleton, Tooltip } from "@mui/material";
 import {
-  Box,
-  Button,
-  IconButton,
-  Skeleton,
-  Tooltip,
-  Typography,
-} from "@mui/material";
-import { Delete as DeleteIcon } from "@mui/icons-material";
+  Add as AddIcon,
+  Delete as DeleteIcon,
+  Edit as EditIcon,
+} from "@mui/icons-material";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import StateChip from "@/components/StateChip";
 import {
-  AddCoreNodeDialog,
+  CoreNodeDialog,
+  DeleteDialog,
   EditPLMNsDialog,
   EditGatewayIdentityDialog,
   EditPWSOperatorDialog,
-  RemoveDialog,
   RenameOperatorDialog,
 } from "@/components/OperatorDialogs";
-import PLMNSummary from "@/components/PLMNSummary";
+import OneLine from "@/components/OneLine";
 import PageHeader from "@/components/PageHeader";
 import QueryAlert from "@/components/QueryAlert";
 import SectionHeader from "@/components/SectionHeader";
-import SettingsTable, { SubFields } from "@/components/SettingsTable";
+import SettingsTable from "@/components/SettingsTable";
 import { useAuth } from "@/contexts/AuthContext";
 import { errorMessage, useSnackbar } from "@/contexts/SnackbarContext";
 import {
@@ -58,8 +55,6 @@ const gridSx = {
     ...GRID_SX["& .MuiDataGrid-cell"],
     display: "flex",
     alignItems: "center",
-    py: 1,
-    overflowWrap: "anywhere",
   },
 };
 
@@ -71,65 +66,21 @@ type Editing =
   | { type: "pws" }
   | { type: "identity" }
   | { type: "add"; kind: Kind }
-  | { type: "remove"; kind: Kind; index: number };
+  | { type: "edit"; kind: Kind; index: number }
+  | { type: "delete"; kind: Kind; index: number };
 
 interface NodeRow {
   index: number;
-  addresses: string;
+  addresses: string[];
   status?: MMEStatus;
 }
 
 const NONE = "—";
 
-function TextList({ label, items }: { label: string; items: string[] }) {
-  return (
-    <Box
-      component="ul"
-      aria-label={label}
-      sx={{ m: 0, p: 0, listStyle: "none" }}
-    >
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </Box>
-  );
-}
-
-const formatFailure = ({ last_failure_cause, time_to_wait }: MMEStatus) =>
-  last_failure_cause === undefined
-    ? NONE
-    : time_to_wait === undefined
-      ? last_failure_cause
-      : `${last_failure_cause} (time to wait ${time_to_wait} s)`;
-
 const MME_COLUMNS: GridColDef<NodeRow>[] = [
   {
-    field: "state",
-    headerName: "Status",
-    description:
-      "Disconnected: no SCTP association to the MME. Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded. Setup failed: the MME rejected the S1 Setup.",
-    minWidth: 130,
-    renderCell: ({ row }) =>
-      row.status ? (
-        <StateChip
-          state={row.status.state}
-          hint={`Since ${formatDateTime(row.status.since, { seconds: true })}`}
-        />
-      ) : (
-        NONE
-      ),
-  },
-  {
-    field: "primary",
-    headerName: "Primary address",
-    description: "The TNL address of the MME that the SCTP association uses.",
-    flex: 0.6,
-    minWidth: 130,
-    valueGetter: (_value, row) => row.status?.primary_tnl_address ?? NONE,
-  },
-  {
     field: "mme_name",
-    headerName: "MME name",
+    headerName: "Name",
     description: "The name the MME sent in its S1 Setup Response.",
     flex: 0.6,
     minWidth: 120,
@@ -140,48 +91,35 @@ const MME_COLUMNS: GridColDef<NodeRow>[] = [
     headerName: "Served GUMMEIs",
     description:
       "The PLMNs, MME group IDs and MME codes that the MME serves, from its S1 Setup Response.",
-    flex: 1.2,
-    minWidth: 220,
+    flex: 1,
+    minWidth: 200,
     renderCell: ({ row }) =>
       row.status?.served_gummeis?.length ? (
-        <TextList
-          label="Served GUMMEIs"
-          items={row.status.served_gummeis.map(formatGUMMEI)}
+        <OneLine
+          title={row.status.served_gummeis.map(formatGUMMEI).join("; ")}
         />
       ) : (
         NONE
       ),
   },
   {
-    field: "capacity",
-    headerName: "Capacity",
+    field: "state",
+    headerName: "Status",
     description:
-      "The relative MME capacity (0 to 255) the MME sent in its S1 Setup Response.",
-    minWidth: 100,
-    valueGetter: (_value, row) =>
-      row.status?.relative_mme_capacity === undefined
-        ? NONE
-        : String(row.status.relative_mme_capacity),
-  },
-  {
-    field: "failure",
-    headerName: "Last failure",
-    description:
-      "The cause of the last S1 Setup Failure or SCTP error, and the time the MME asked to wait before the next S1 Setup.",
-    flex: 1,
-    minWidth: 180,
-    valueGetter: (_value, row) =>
-      row.status ? formatFailure(row.status) : NONE,
+      "Disconnected: no SCTP association to the MME. Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded. Setup failed: the MME rejected the S1 Setup.",
+    flex: 0.4,
+    minWidth: 120,
+    renderCell: ({ row }) =>
+      row.status ? (
+        <StateChip
+          state={row.status.state}
+          hint={`Since ${formatDateTime(row.status.since, { seconds: true })}`}
+        />
+      ) : (
+        NONE
+      ),
   },
 ];
-
-function NotSet() {
-  return (
-    <Typography variant="body2" color="textSecondary">
-      Not set
-    </Typography>
-  );
-}
 
 const KIND_RAT: Record<Kind, string> = { MME: "4G", AMF: "5G" };
 
@@ -191,42 +129,61 @@ function CoreNodes({
   identitySet,
   editable,
   onAdd,
-  onRemove,
+  onEdit,
+  onDelete,
 }: {
   kind: Kind;
   nodes: MME[];
   identitySet: boolean;
   editable: boolean;
   onAdd: () => void;
-  onRemove: (index: number) => void;
+  onEdit: (index: number) => void;
+  onDelete: (index: number) => void;
 }) {
   const id = `${kind.toLowerCase()}s-title`;
   const columns: GridColDef<NodeRow>[] = [
     {
       field: "addresses",
-      headerName: "TNL addresses",
-      description: `The addresses Ella MOCN uses to reach the ${kind}.`,
-      flex: 1,
-      minWidth: 180,
+      headerName: "Addresses",
+      description: `The TNL addresses Ella MOCN uses to reach the ${kind}.`,
+      flex: 0.8,
+      minWidth: 150,
+      renderCell: ({ row }) => <OneLine title={row.addresses.join(", ")} />,
     },
     ...(kind === "MME" ? MME_COLUMNS : []),
   ];
   if (editable) {
     columns.push({
       field: "actions",
-      headerName: "",
-      width: 64,
+      headerName: "Actions",
+      width: 100,
       align: "right",
-      sortable: false,
-      renderCell: ({ row }) => (
-        <IconButton
-          size="small"
-          aria-label={`Remove ${kind} ${row.addresses}`}
-          onClick={() => onRemove(row.index)}
-        >
-          <DeleteIcon fontSize="small" color="primary" />
-        </IconButton>
-      ),
+      headerAlign: "right",
+      renderCell: ({ row }) => {
+        const name = row.addresses.join(", ");
+        return (
+          <>
+            <Tooltip title={`Edit ${kind}`} arrow>
+              <IconButton
+                size="small"
+                aria-label={`Edit ${kind} ${name}`}
+                onClick={() => onEdit(row.index)}
+              >
+                <EditIcon fontSize="small" color="primary" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={`Delete ${kind}`} arrow>
+              <IconButton
+                size="small"
+                aria-label={`Delete ${kind} ${name}`}
+                onClick={() => onDelete(row.index)}
+              >
+                <DeleteIcon fontSize="small" color="primary" />
+              </IconButton>
+            </Tooltip>
+          </>
+        );
+      },
     });
   }
 
@@ -246,9 +203,10 @@ function CoreNodes({
               <Button
                 variant="contained"
                 color="success"
-                size="small"
+                startIcon={<AddIcon />}
                 onClick={onAdd}
                 disabled={!identitySet}
+                sx={{ flexShrink: 0 }}
               >
                 Add {kind}
               </Button>
@@ -260,23 +218,43 @@ function CoreNodes({
         aria-labelledby={id}
         rows={nodes.map((node, index) => ({
           index,
-          addresses: formatTNLAddresses(node),
+          addresses: node.tnl_addresses,
           status: node.status,
         }))}
         columns={columns}
-        getRowId={(row) => row.addresses}
+        getRowId={(row) => row.addresses.join(",")}
         disableColumnSorting
         disableColumnFilter
         disableColumnMenu
         disableRowSelectionOnClick
         disableVirtualization
         hideFooter
-        getRowHeight={() => "auto"}
         localeText={{ noRowsLabel: `No ${kind}s.` }}
         autoHeight
         sx={gridSx}
       />
     </>
+  );
+}
+
+function GatewayIdentity({ parts }: { parts: [string, string | undefined][] }) {
+  return (
+    <OneLine
+      title={parts.map(([rat, id]) => `${rat} ${id ?? "Not set"}`).join("  ")}
+    >
+      {parts.map(([rat, id], i) => (
+        <Box component="span" key={rat} sx={{ ml: i > 0 ? 4 : 0 }}>
+          <Box component="span" sx={{ fontWeight: 600, mr: 1 }}>
+            {rat}
+          </Box>
+          {id ?? (
+            <Box component="span" sx={{ color: "text.secondary" }}>
+              Not set
+            </Box>
+          )}
+        </Box>
+      ))}
+    </OneLine>
   );
 }
 
@@ -298,8 +276,8 @@ function OperatorSections({
   const gnb = operator.global_gnb_id ?? undefined;
   const mmes = operator.mmes ?? [];
   const amfs = operator.amfs ?? [];
-  const removing =
-    editing?.type === "remove"
+  const deleting =
+    editing?.type === "delete"
       ? (editing.kind === "MME" ? mmes : amfs)[editing.index]
       : undefined;
 
@@ -323,7 +301,9 @@ function OperatorSections({
           {
             label: "PLMNs",
             help: "The PLMN IDs of this operator. UEs that select one of them are routed to this operator's core.",
-            value: <PLMNSummary plmns={operator.plmns.map(formatPLMN)} />,
+            value: (
+              <OneLine title={operator.plmns.map(formatPLMN).join(", ")} />
+            ),
             onEdit: edit({ type: "plmns" }),
           },
           {
@@ -336,10 +316,10 @@ function OperatorSections({
             label: "Gateway identity",
             help: GATEWAY_IDENTITY_HELP,
             value: (
-              <SubFields
-                rows={[
-                  ["4G", enb ? formatGlobalENBID(enb) : <NotSet key="enb" />],
-                  ["5G", gnb ? formatGlobalGNBID(gnb) : <NotSet key="gnb" />],
+              <GatewayIdentity
+                parts={[
+                  ["4G", enb ? formatGlobalENBID(enb) : undefined],
+                  ["5G", gnb ? formatGlobalGNBID(gnb) : undefined],
                 ]}
               />
             ),
@@ -354,7 +334,8 @@ function OperatorSections({
         identitySet={enb !== undefined}
         editable={editable}
         onAdd={() => setEditing({ type: "add", kind: "MME" })}
-        onRemove={(index) => setEditing({ type: "remove", kind: "MME", index })}
+        onEdit={(index) => setEditing({ type: "edit", kind: "MME", index })}
+        onDelete={(index) => setEditing({ type: "delete", kind: "MME", index })}
       />
 
       <CoreNodes
@@ -363,7 +344,8 @@ function OperatorSections({
         identitySet={gnb !== undefined}
         editable={editable}
         onAdd={() => setEditing({ type: "add", kind: "AMF" })}
-        onRemove={(index) => setEditing({ type: "remove", kind: "AMF", index })}
+        onEdit={(index) => setEditing({ type: "edit", kind: "AMF", index })}
+        onDelete={(index) => setEditing({ type: "delete", kind: "AMF", index })}
       />
 
       {editing?.type === "name" && (
@@ -383,23 +365,31 @@ function OperatorSections({
         <EditGatewayIdentityDialog operator={operator} onClose={close} />
       )}
       {editing?.type === "add" && (
-        <AddCoreNodeDialog
+        <CoreNodeDialog
           operator={operator}
           kind={editing.kind}
           onClose={close}
         />
       )}
-      {editing?.type === "remove" && removing && (
-        <RemoveDialog
+      {editing?.type === "edit" && (
+        <CoreNodeDialog
           operator={operator}
-          title={`Remove ${editing.kind}`}
-          description={`Remove ${editing.kind} ${formatTNLAddresses(removing)}?`}
+          kind={editing.kind}
+          index={editing.index}
+          onClose={close}
+        />
+      )}
+      {editing?.type === "delete" && deleting && (
+        <DeleteDialog
+          operator={operator}
+          title={`Delete ${editing.kind}`}
+          description={`Delete ${editing.kind} ${formatTNLAddresses(deleting)}?`}
           change={
             editing.kind === "MME"
               ? { mmes: mmes.filter((_, i) => i !== editing.index) }
               : { amfs: amfs.filter((_, i) => i !== editing.index) }
           }
-          message={`${editing.kind} removed successfully.`}
+          message={`${editing.kind} deleted successfully.`}
           onClose={close}
         />
       )}

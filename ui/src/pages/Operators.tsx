@@ -4,7 +4,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { CreateOperatorDialog } from "@/components/OperatorDialogs";
-import PLMNSummary from "@/components/PLMNSummary";
+import OneLine from "@/components/OneLine";
 import PageHeader from "@/components/PageHeader";
 import QueryAlert from "@/components/QueryAlert";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,7 +44,9 @@ const columns: GridColDef<Operator>[] = [
     headerName: "PLMNs",
     flex: 1,
     minWidth: 140,
-    renderCell: ({ row }) => <PLMNSummary plmns={row.plmns.map(formatPLMN)} />,
+    renderCell: ({ row }) => (
+      <OneLine title={row.plmns.map(formatPLMN).join(", ")} />
+    ),
   },
   {
     field: "pws_operator",

@@ -1,11 +1,17 @@
+import type { ReactNode } from "react";
 import { Box } from "@mui/material";
 
-export default function PLMNSummary({ plmns }: { plmns: string[] }) {
-  const text = plmns.join(", ");
+export default function OneLine({
+  title,
+  children,
+}: {
+  title: string;
+  children?: ReactNode;
+}) {
   return (
     <Box
       component="span"
-      title={text}
+      title={title}
       sx={{
         display: "block",
         minWidth: 0,
@@ -14,7 +20,7 @@ export default function PLMNSummary({ plmns }: { plmns: string[] }) {
         whiteSpace: "nowrap",
       }}
     >
-      {text}
+      {children ?? title}
     </Box>
   );
 }

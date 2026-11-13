@@ -136,7 +136,6 @@ type mmeStatus struct {
 	State             string `json:"state"`
 	PrimaryTNLAddress string `json:"primary_tnl_address"`
 	MMEName           string `json:"mme_name"`
-	LastFailureCause  string `json:"last_failure_cause"`
 }
 
 type coreNode struct {
@@ -151,12 +150,12 @@ type operator struct {
 	MMEs        []coreNode   `json:"mmes"`
 }
 
-type ranNode struct {
-	GlobalENBID      *globalENBID `json:"global_enb_id"`
-	ENBName          string       `json:"enb_name"`
-	State            string       `json:"state"`
-	TNLAddresses     []string     `json:"tnl_addresses"`
-	LastFailureCause string       `json:"last_failure_cause"`
+type radio struct {
+	Ref          string       `json:"ref"`
+	GlobalENBID  *globalENBID `json:"global_enb_id"`
+	ENBName      string       `json:"enb_name"`
+	State        string       `json:"state"`
+	TNLAddresses []string     `json:"tnl_addresses"`
 }
 
 func metric(text, name string, labels map[string]string) (float64, bool) {
@@ -242,25 +241,31 @@ func TestS1Setup(t *testing.T) {
 		t.Fatalf("configure operator: %v", err)
 	}
 
-	eventually(t, "RAN node up", 120*time.Second, func() error {
+	eventually(t, "radio up", 120*time.Second, func() error {
 		var nodes struct {
-			Items []ranNode `json:"items"`
+			Items []radio `json:"items"`
 		}
 
-		if _, err := c.do(ctx, http.MethodGet, "/api/v1/ran-nodes", nil, &nodes); err != nil {
+		if _, err := c.do(ctx, http.MethodGet, "/api/v1/radios", nil, &nodes); err != nil {
 			return err
 		}
 
 		if len(nodes.Items) != 1 {
-			return fmt.Errorf("want 1 RAN node, got %+v", nodes.Items)
+			return fmt.Errorf("want 1 radio, got %+v", nodes.Items)
 		}
 
 		if n := nodes.Items[0]; n.State != "up" {
-			return fmt.Errorf("RAN node not up: %+v", n)
+			return fmt.Errorf("radio not up: %+v", n)
 		}
 
 		return nil
 	})
+
+	var one radio
+	if _, err := c.do(ctx, http.MethodGet, "/api/v1/radios/001-01:macro:411", nil, &one); err != nil ||
+		one.Ref != "001-01:macro:411" || one.State != "up" {
+		t.Fatalf("GET radio by ref = %+v, %v", one, err)
+	}
 
 	eventually(t, "MME up", 120*time.Second, func() error {
 		var got operator

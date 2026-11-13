@@ -417,7 +417,7 @@ export function EditGatewayIdentityDialog({
   );
 
   const blocked = (set: boolean, count: number, kind: string) =>
-    set && count > 0 ? `Remove the ${kind}s first` : undefined;
+    set && count > 0 ? `Delete the ${kind}s first` : undefined;
 
   return (
     <EditDialog
@@ -531,43 +531,52 @@ export function EditGatewayIdentityDialog({
   );
 }
 
-export function AddCoreNodeDialog({
+export function CoreNodeDialog({
   operator,
   kind,
+  index,
   onClose,
 }: {
   operator: Operator;
   kind: "MME" | "AMF";
+  index?: number;
   onClose: () => void;
 }) {
-  const [rows, setRows] = useState<AddressRow[]>(() => [addressRow()]);
-  const existing = (kind === "MME" ? operator.mmes : operator.amfs) ?? [];
+  const nodes = (kind === "MME" ? operator.mmes : operator.amfs) ?? [];
+  const editing = index === undefined ? undefined : nodes[index];
+  const [rows, setRows] = useState<AddressRow[]>(() =>
+    editing ? editing.tnl_addresses.map(addressRow) : [addressRow()],
+  );
+  const existing = nodes.filter((_, i) => i !== index);
   const mutation = useOperatorUpdate(
     operator,
-    `${kind} added successfully.`,
+    editing ? `${kind} updated successfully.` : `${kind} added successfully.`,
     onClose,
   );
 
   const { touch, shown } = useTouched();
   const errors = addressErrors(rows, existing);
-  const set = (index: number, address: string) =>
-    setRows(rows.map((row, i) => (i === index ? { ...row, address } : row)));
-  const added = [
-    ...existing,
-    { tnl_addresses: rows.map((row) => row.address.trim()) },
-  ];
+  const set = (i: number, address: string) =>
+    setRows(rows.map((row, j) => (j === i ? { ...row, address } : row)));
+  const node = { tnl_addresses: rows.map((row) => row.address.trim()) };
+  const next =
+    index === undefined
+      ? [...nodes, node]
+      : nodes.map((n, i) => (i === index ? node : n));
+  const unchanged =
+    editing !== undefined &&
+    editing.tnl_addresses.join("\n") === node.tnl_addresses.join("\n");
 
   return (
     <EditDialog
-      title={`Add ${kind}`}
-      submitLabel="Add"
-      pendingLabel="Adding…"
-      failure={`Could not add the ${kind}`}
-      valid={isValidAddresses(rows, existing)}
+      title={`${editing ? "Edit" : "Add"} ${kind}`}
+      {...(editing ? {} : { submitLabel: "Add", pendingLabel: "Adding…" })}
+      failure={`Could not ${editing ? "update" : "add"} the ${kind}`}
+      valid={!unchanged && isValidAddresses(rows, existing)}
       pending={mutation.isPending}
       error={mutation.error}
       onSubmit={() =>
-        mutation.mutate(kind === "MME" ? { mmes: added } : { amfs: added })
+        mutation.mutate(kind === "MME" ? { mmes: next } : { amfs: next })
       }
       onClose={onClose}
     >
@@ -576,10 +585,10 @@ export function AddCoreNodeDialog({
           TNL addresses
         </FormLabel>
         <Stack spacing={1.5}>
-          {rows.map((row, index) => {
+          {rows.map((row, i) => {
             const error = shown(
               String(row.key),
-              requiredError(row.address, errors[index]),
+              requiredError(row.address, errors[i]),
             );
             return (
               <Stack
@@ -589,9 +598,9 @@ export function AddCoreNodeDialog({
                 sx={{ alignItems: "flex-start" }}
               >
                 <TextField
-                  label={`Address ${index + 1}`}
+                  label={`Address ${i + 1}`}
                   value={row.address}
-                  onChange={(e) => set(index, e.target.value)}
+                  onChange={(e) => set(i, e.target.value)}
                   onBlur={touch(String(row.key))}
                   error={error !== undefined}
                   helperText={error ?? "IPv4 or IPv6 address"}
@@ -599,8 +608,8 @@ export function AddCoreNodeDialog({
                   sx={{ flex: 1 }}
                 />
                 <IconButton
-                  aria-label={`Remove address ${index + 1}`}
-                  onClick={() => setRows(rows.filter((_, i) => i !== index))}
+                  aria-label={`Remove address ${i + 1}`}
+                  onClick={() => setRows(rows.filter((_, j) => j !== i))}
                   disabled={rows.length === 1}
                   sx={{ mt: 1 }}
                 >
@@ -661,7 +670,7 @@ export function EditPWSOperatorDialog({
   );
 }
 
-export function RemoveDialog({
+export function DeleteDialog({
   operator,
   title,
   description,
@@ -682,15 +691,15 @@ export function RemoveDialog({
     <ConfirmDialog
       title={title}
       description={description}
-      confirmLabel="Remove"
-      pendingLabel="Removing…"
+      confirmLabel="Delete"
+      pendingLabel="Deleting…"
       pending={mutation.isPending}
       onConfirm={() => mutation.mutate(change)}
       onClose={onClose}
     >
       {mutation.error && (
         <Box sx={{ mt: 2 }}>
-          <DialogError error={mutation.error} prefix="Could not remove" />
+          <DialogError error={mutation.error} prefix="Could not delete" />
         </Box>
       )}
     </ConfirmDialog>

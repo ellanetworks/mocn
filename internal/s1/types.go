@@ -48,8 +48,6 @@ type MMEStatus struct {
 	MMEName             string
 	ServedGUMMEIs       []ServedGUMMEIs
 	RelativeMMECapacity *uint8
-	LastFailureCause    string
-	TimeToWait          time.Duration
 }
 
 type RANNode struct {
@@ -60,5 +58,4 @@ type RANNode struct {
 	State            RANNodeState
 	ConnectedSince   time.Time
 	TNLAddresses     []string
-	LastFailureCause string
 }

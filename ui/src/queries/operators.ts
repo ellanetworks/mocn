@@ -40,8 +40,6 @@ export interface MMEStatus {
   mme_name?: string;
   served_gummeis?: ServedGUMMEI[];
   relative_mme_capacity?: number;
-  last_failure_cause?: string;
-  time_to_wait?: number;
 }
 
 export interface MME extends CoreNode {

@@ -20,7 +20,7 @@ security:
 tags:
   - name: Auth
   - name: Operators
-  - name: RAN Nodes
+  - name: Radios
   - name: Users
   - name: Status
   - name: Metrics
@@ -342,12 +342,12 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/v1/ran-nodes:
+  /api/v1/radios:
     get:
-      tags: [RAN Nodes]
-      operationId: listRANNodes
-      summary: List RAN nodes
-      description: Lists the RAN nodes with an S1 association, oldest association first.
+      tags: [Radios]
+      operationId: listRadios
+      summary: List radios
+      description: Lists the radios with an S1 association, oldest association first.
       responses:
         "200":
           description: OK
@@ -358,11 +358,37 @@ paths:
                 required: [result]
                 properties:
                   result:
-                    $ref: "#/components/schemas/ListRANNodesResponse"
+                    $ref: "#/components/schemas/ListRadiosResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /api/v1/radios/{ref}:
+    get:
+      tags: [Radios]
+      operationId: getRadio
+      summary: Get a radio
+      description: Gets a radio by its ref, which it has once its S1 Setup succeeds.
+      parameters:
+        - $ref: "#/components/parameters/RadioRef"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    $ref: "#/components/schemas/Radio"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/users:
     get:
@@ -723,6 +749,13 @@ components:
       name: name
       in: path
       required: true
+      schema:
+        type: string
+    RadioRef:
+      name: ref
+      in: path
+      required: true
+      description: "<mcc>-<mnc>:<enb_id_type>:<enb_id>, for example 001-01:macro:411."
       schema:
         type: string
     APITokenID:
@@ -1150,12 +1183,6 @@ components:
           type: integer
           minimum: 0
           maximum: 255
-        last_failure_cause:
-          type: string
-          description: The S1AP cause of the last failed procedure, or the SCTP error of the last failed association.
-        time_to_wait:
-          type: integer
-          description: Seconds of the Time to Wait in the last S1 SETUP FAILURE.
 
     ServedGUMMEIs:
       type: object
@@ -1191,13 +1218,16 @@ components:
           items:
             $ref: "#/components/schemas/PLMN"
 
-    RANNode:
+    Radio:
       type: object
       required: [global_enb_id, supported_tas, state, connected_since, tnl_addresses]
-      description: A RAN node with an S1 association to Ella MOCN. Learned at runtime, not stored.
+      description: A radio with an S1 association to Ella MOCN. Learned at runtime, not stored.
       properties:
+        ref:
+          type: string
+          description: Identifies the radio in /api/v1/radios/{ref}. Set once the radio has a Global eNB ID.
         global_enb_id:
-          description: From the S1 SETUP REQUEST. Null before the RAN node sends one, or after it is rejected.
+          description: From the S1 SETUP REQUEST. Null before the radio sends one, or after it is rejected.
           oneOf:
             - type: object
               required: [plmn, enb_id_type, enb_id]
@@ -1233,18 +1263,15 @@ components:
           type: array
           items:
             type: string
-        last_failure_cause:
-          type: string
-          description: The S1AP cause of the last S1 SETUP FAILURE sent to the RAN node.
 
-    ListRANNodesResponse:
+    ListRadiosResponse:
       type: object
       required: [items]
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/RANNode"
+            $ref: "#/components/schemas/Radio"
 
     ListOperatorsResponse:
       type: object

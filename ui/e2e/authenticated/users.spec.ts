@@ -85,7 +85,7 @@ test("an admin creates a user, changes its role and password, and deletes it", a
   ).toBe(true);
   await context.dispose();
 
-  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
   dialog = page.getByRole("dialog", { name: "Delete User" });
   await dialog.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("User deleted successfully.")).toBeVisible();
@@ -102,7 +102,9 @@ test("an admin cannot delete itself or change its own role", async ({
 }) => {
   await page.goto(`/users/${encodeURIComponent(ADMIN_EMAIL)}`);
   await expect(page.getByText("Admin", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Delete" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Delete", exact: true }),
+  ).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Edit role" })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Change Password" }),

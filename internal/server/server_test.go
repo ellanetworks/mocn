@@ -217,10 +217,10 @@ func TestUsersOverHTTP(t *testing.T) {
 		t.Fatalf("list operators = %+v, want %+v", ops[0], operator)
 	}
 
-	code, result = r.call(t, client, http.MethodGet, "/api/v1/ran-nodes", token, nil)
-	if nodes := decode[api.ListRANNodesResponse](t, result); code != http.StatusOK || nodes.Items == nil ||
+	code, result = r.call(t, client, http.MethodGet, "/api/v1/radios", token, nil)
+	if nodes := decode[api.ListRadiosResponse](t, result); code != http.StatusOK || nodes.Items == nil ||
 		len(nodes.Items) != 0 {
-		t.Fatalf("list RAN nodes = %d %s", code, result)
+		t.Fatalf("list radios = %d %s", code, result)
 	}
 
 	if code, result := r.call(t, client, http.MethodDelete, "/api/v1/operators/Operator%20A", token, nil); code != http.StatusOK {

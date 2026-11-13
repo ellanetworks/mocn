@@ -32,7 +32,6 @@ type RANAssociation struct {
 	connectedAt time.Time
 	setup       *ranSetup
 	up          bool
-	failure     string
 	mmeConfig   mmeConfigPush
 }
 
@@ -53,11 +52,10 @@ func (n *RANAssociation) TNLAddresses() []string {
 
 func (n *RANAssociation) snapshotLocked() RANNode {
 	r := RANNode{
-		State:            RANNodeConnected,
-		ConnectedSince:   n.connectedAt,
-		TNLAddresses:     slices.Clone(n.addrs),
-		LastFailureCause: n.failure,
-		SupportedTAs:     []TA{},
+		State:          RANNodeConnected,
+		ConnectedSince: n.connectedAt,
+		TNLAddresses:   slices.Clone(n.addrs),
+		SupportedTAs:   []TA{},
 	}
 
 	if n.up {
@@ -99,7 +97,7 @@ func (g *Gateway) ranConnected(conn *sctp.SCTPConn) {
 	g.ranNodes[conn] = n
 	g.mu.Unlock()
 
-	g.log.Info("RAN node connected", slog.Any("tnl_addresses", n.addrs))
+	g.log.Info("radio connected", slog.Any("tnl_addresses", n.addrs))
 }
 
 func (g *Gateway) ranDisconnected(conn *sctp.SCTPConn) {
@@ -124,7 +122,7 @@ func (g *Gateway) ranDisconnected(conn *sctp.SCTPConn) {
 		return
 	}
 
-	g.log.Info("RAN node disconnected", slog.Any("tnl_addresses", n.addrs))
+	g.log.Info("radio disconnected", slog.Any("tnl_addresses", n.addrs))
 	g.cfg.Relay.RANLost(n)
 }
 
@@ -139,7 +137,7 @@ func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []by
 
 	pdu, err := s1ap.Unmarshal(msg)
 	if err != nil {
-		g.log.WarnContext(ctx, "undecodable S1AP message from RAN node", slog.Any("error", err),
+		g.log.WarnContext(ctx, "undecodable S1AP message from radio", slog.Any("error", err),
 			slog.Any("tnl_addresses", n.addrs))
 
 		return
@@ -206,6 +204,15 @@ func ranSetupFrom(req *s1ap.S1SetupRequest) (ranSetup, error) {
 
 // TS 36.413 clause 8.7.3
 func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []byte) {
+	g.mu.Lock()
+	wasUp := n.up
+	n.up = false
+	g.mu.Unlock()
+
+	if wasUp {
+		g.cfg.Relay.RANLost(n)
+	}
+
 	req, err := s1ap.ParseS1SetupRequest(value)
 	if err != nil {
 		if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
@@ -360,12 +367,12 @@ func (g *Gateway) acceptS1SetupLocked(ctx context.Context, n *RANAssociation, se
 		return
 	}
 
-	n.up, n.failure = true, ""
+	n.up = true
 	n.mmeConfig.acked = served
 
 	g.setups.WithLabelValues(sideRAN, outcomeSuccess).Inc()
 
-	g.log.InfoContext(ctx, "RAN node S1 Setup accepted", slog.String("enb_name", n.setup.name),
+	g.log.InfoContext(ctx, "radio S1 Setup accepted", slog.String("enb_name", n.setup.name),
 		slog.String("global_enb_id", formatGlobalENBID(n.setup.globalENBID)))
 }
 
@@ -378,12 +385,12 @@ func (g *Gateway) rejectS1Setup(ctx context.Context, n *RANAssociation, cause s1
 		g.kickMMEsLocked()
 	}
 
-	n.setup, n.up, n.failure = nil, false, cause.String()
+	n.setup, n.up = nil, false
 	g.mu.Unlock()
 
 	g.setups.WithLabelValues(sideRAN, outcomeFailure).Inc()
 
-	g.log.WarnContext(ctx, "RAN node S1 Setup rejected", slog.String("cause", cause.String()), slog.String("reason", reason),
+	g.log.WarnContext(ctx, "radio S1 Setup rejected", slog.String("cause", cause.String()), slog.String("reason", reason),
 		slog.Any("tnl_addresses", n.addrs))
 
 	out, err := (&s1ap.S1SetupFailure{Cause: &cause, TimeToWait: ttw, CriticalityDiagnostics: diag}).Marshal()
@@ -476,14 +483,14 @@ func (g *Gateway) handleENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 	g.kickMMEsLocked()
 	g.mu.Unlock()
 
-	g.log.InfoContext(ctx, "RAN node configuration updated", slog.String("enb_name", s.name),
+	g.log.InfoContext(ctx, "radio configuration updated", slog.String("enb_name", s.name),
 		slog.String("global_enb_id", formatGlobalENBID(s.globalENBID)))
 }
 
 func (g *Gateway) rejectENBConfigurationUpdate(ctx context.Context, n *RANAssociation, cause s1ap.Cause,
 	diag *s1ap.CriticalityDiagnostics, reason string,
 ) {
-	g.log.WarnContext(ctx, "RAN node eNB Configuration Update rejected", slog.String("cause", cause.String()),
+	g.log.WarnContext(ctx, "radio eNB Configuration Update rejected", slog.String("cause", cause.String()),
 		slog.String("reason", reason), slog.Any("tnl_addresses", n.addrs))
 
 	out, err := (&s1ap.ENBConfigurationUpdateFailure{Cause: &cause, CriticalityDiagnostics: diag}).Marshal()
@@ -573,7 +580,7 @@ func (g *Gateway) handleMMEConfigurationUpdateFailure(ctx context.Context, n *RA
 		cause = causeText(fail.Cause)
 	}
 
-	g.log.WarnContext(ctx, "RAN node rejected MME Configuration Update", slog.String("cause", cause),
+	g.log.WarnContext(ctx, "radio rejected MME Configuration Update", slog.String("cause", cause),
 		slog.Any("tnl_addresses", n.addrs))
 
 	g.mu.Lock()

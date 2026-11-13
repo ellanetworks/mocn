@@ -71,17 +71,13 @@ test.describe("Admin", () => {
     await expect(page.getByRole("button", { name: "Add AMF" })).toBeDisabled();
     await expect(mmes).toContainText("No MMEs.");
 
-    const identityRow = overview
-      .getByRole("row")
-      .filter({ hasText: "Gateway identity" })
-      .first();
     await overview.getByText("Gateway identity", { exact: true }).hover();
     await expect(
       page.getByRole("tooltip", {
         name: "Assigned by the operator. Ella MOCN uses it to identify itself to this operator's core: the Global eNB ID to its MMEs (4G) and the Global gNB ID to its AMFs (5G).",
       }),
     ).toBeVisible();
-    await expect(identityRow.getByText("Not set")).toHaveCount(2);
+    await expect(overview.getByText("Not set")).toHaveCount(2);
 
     const editIdentity = async () => {
       await overview
@@ -112,11 +108,9 @@ test.describe("Admin", () => {
     await identity.getByRole("button", { name: "Save" }).click();
     await saved("Gateway identity saved successfully.");
     await expect(
-      identityRow.getByText("901/71 · Macro (20 bits) · 703710"),
+      overview.getByText("901/71 · Macro (20 bits) · 703710"),
     ).toBeVisible();
-    await expect(
-      identityRow.getByText("901/71 · 74565 (22 bits)"),
-    ).toBeVisible();
+    await expect(overview.getByText("901/71 · 74565 (22 bits)")).toBeVisible();
 
     await page.getByRole("button", { name: "Add MME" }).click();
     dialog = page.getByRole("dialog", { name: "Add MME" });
@@ -140,18 +134,18 @@ test.describe("Admin", () => {
     ).toBeVisible();
     ({ identity, lte, nr } = await editIdentity());
     await expect(lte.getByRole("switch", { name: "Set" })).toBeDisabled();
-    await expect(lte.getByText("Remove the MMEs first")).toBeVisible();
+    await expect(lte.getByText("Delete the MMEs first")).toBeVisible();
     await nr.getByRole("switch", { name: "Set" }).click();
     await identity.getByRole("button", { name: "Save" }).click();
     await saved("Gateway identity saved successfully.");
-    await expect(identityRow.getByText("Not set")).toHaveCount(1);
+    await expect(overview.getByText("Not set")).toHaveCount(1);
 
     await mmes
-      .getByRole("button", { name: "Remove MME 10.0.0.1, 10.0.0.2" })
+      .getByRole("button", { name: "Delete MME 10.0.0.1, 10.0.0.2" })
       .click();
-    dialog = page.getByRole("dialog", { name: "Remove MME" });
-    await dialog.getByRole("button", { name: "Remove" }).click();
-    await saved("MME removed successfully.");
+    dialog = page.getByRole("dialog", { name: "Delete MME" });
+    await dialog.getByRole("button", { name: "Delete" }).click();
+    await saved("MME deleted successfully.");
     await expect(mmes).toContainText("No MMEs.");
 
     ({ identity, nr } = await editIdentity());
@@ -161,9 +155,7 @@ test.describe("Admin", () => {
       .fill("74565");
     await identity.getByRole("button", { name: "Save" }).click();
     await saved("Gateway identity saved successfully.");
-    await expect(
-      identityRow.getByText("901/71 · 74565 (22 bits)"),
-    ).toBeVisible();
+    await expect(overview.getByText("901/71 · 74565 (22 bits)")).toBeVisible();
 
     await page.getByRole("button", { name: "Add AMF" }).click();
     dialog = page.getByRole("dialog", { name: "Add AMF" });
@@ -225,7 +217,7 @@ test.describe("Admin", () => {
       (await send(request, "get", operatorPath(NAME), { token })).status(),
     ).toBe(404);
 
-    await page.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
     dialog = page.getByRole("dialog", { name: "Delete Operator" });
     await dialog.getByRole("button", { name: "Delete" }).click();
     await expect(

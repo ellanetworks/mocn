@@ -53,9 +53,12 @@ type Gateway struct {
 	runCtx  context.Context
 	clients sync.WaitGroup
 
+	reconcileMu sync.Mutex
+
 	mu        sync.Mutex
 	operators []operatorView
 	mmes      map[string]*mmeClient
+	stopping  map[*mmeClient]struct{}
 	ranNodes  map[*sctp.SCTPConn]*RANAssociation
 	changed   chan struct{}
 }
@@ -66,7 +69,7 @@ func New(cfg Config) *Gateway {
 	}
 
 	if cfg.Relay == nil {
-		cfg.Relay = dropRelay{log: cfg.Logger}
+		cfg.Relay = localRelay{log: cfg.Logger}
 	}
 
 	if cfg.Now == nil {
@@ -96,11 +99,12 @@ func New(cfg Config) *Gateway {
 		cfg:      cfg,
 		log:      cfg.Logger,
 		mmes:     map[string]*mmeClient{},
+		stopping: map[*mmeClient]struct{}{},
 		ranNodes: map[*sctp.SCTPConn]*RANAssociation{},
 		changed:  make(chan struct{}),
 		setups: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "ellamocn_s1_setup_total",
-			Help: "S1 Setup procedures, by side (ran: received from RAN nodes, mme: sent to MMEs) and outcome.",
+			Help: "S1 Setup procedures, by side (ran: received from radios, mme: sent to MMEs) and outcome.",
 		}, []string{"side", "outcome"}),
 	}
 
@@ -121,6 +125,8 @@ func (g *Gateway) Run(ctx context.Context) error {
 	g.runCtx = runCtx
 	g.mu.Unlock()
 
+	g.loadOperators(ctx)
+
 	var server *sctp.Server
 
 	if g.cfg.Listener != nil {
@@ -132,10 +138,6 @@ func (g *Gateway) Run(ctx context.Context) error {
 		server.Serve(runCtx, g.cfg.Listener)
 	}
 
-	if err := g.Reconcile(ctx); err != nil {
-		g.log.ErrorContext(ctx, "failed to load operators", slog.Any("error", err))
-	}
-
 	<-ctx.Done()
 
 	shutdownCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
@@ -144,6 +146,10 @@ func (g *Gateway) Run(ctx context.Context) error {
 	if server != nil {
 		server.Shutdown(shutdownCtx)
 	}
+
+	g.mu.Lock()
+	g.runCtx = nil
+	g.mu.Unlock()
 
 	cancel()
 
@@ -163,10 +169,32 @@ func (g *Gateway) Run(ctx context.Context) error {
 	return nil
 }
 
+func (g *Gateway) loadOperators(ctx context.Context) {
+	backoff := g.cfg.ReconnectMin
+
+	for {
+		err := g.Reconcile(ctx)
+		if err == nil {
+			return
+		}
+
+		g.log.ErrorContext(ctx, "failed to load operators", slog.Any("error", err), slog.Duration("retry_in", backoff))
+
+		if !sleep(ctx, backoff) {
+			return
+		}
+
+		backoff = min(2*backoff, g.cfg.ReconnectMax)
+	}
+}
+
 func (g *Gateway) Reconcile(ctx context.Context) error {
 	if g.cfg.Operators == nil {
 		return nil
 	}
+
+	g.reconcileMu.Lock()
+	defer g.reconcileMu.Unlock()
 
 	ops, err := g.cfg.Operators(ctx)
 	if err != nil {
@@ -191,6 +219,8 @@ func (g *Gateway) apply(ops []db.Operator) {
 	g.operators = g.operators[:0]
 	wanted := map[string]bool{}
 
+	var added []*mmeClient
+
 	for _, o := range ops {
 		if o.GlobalENBID == nil || len(o.MMEs) == 0 {
 			continue
@@ -208,22 +238,36 @@ func (g *Gateway) apply(ops []db.Operator) {
 
 			c := newMMEClient(g, o.ID, *o.GlobalENBID, m.TNLAddresses)
 			g.mmes[key] = c
-			g.startClientLocked(c)
+			added = append(added, c)
 		}
 	}
 
 	for key, c := range g.mmes {
 		if !wanted[key] {
 			delete(g.mmes, key)
+			g.stopping[c] = struct{}{}
 			c.cancel()
 		}
+	}
+
+	for _, c := range added {
+		g.startClientLocked(c)
 	}
 
 	g.kickMMEsLocked()
 	g.mmeChangedLocked()
 }
 
+// TS 36.412 clause 7
 func (g *Gateway) startClientLocked(c *mmeClient) {
+	var prev []*mmeClient
+
+	for p := range g.stopping {
+		if slices.ContainsFunc(p.addrs, func(a string) bool { return slices.Contains(c.addrs, a) }) {
+			prev = append(prev, p)
+		}
+	}
+
 	ctx, cancel := context.WithCancel(g.runCtx)
 	c.cancel = cancel
 
@@ -231,6 +275,20 @@ func (g *Gateway) startClientLocked(c *mmeClient) {
 
 	go func() {
 		defer g.clients.Done()
+		defer close(c.done)
+		defer func() {
+			g.mu.Lock()
+			delete(g.stopping, c)
+			g.mu.Unlock()
+		}()
+
+		for _, p := range prev {
+			select {
+			case <-p.done:
+			case <-ctx.Done():
+				return
+			}
+		}
 
 		c.run(ctx)
 	}()

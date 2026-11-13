@@ -49,7 +49,7 @@ func TestOperatorMMEStatus(t *testing.T) {
 			ServedGUMMEIs:       []s1.ServedGUMMEIs{{PLMNs: []db.PLMN{{MCC: "001", MNC: "01"}}, GroupIDs: []uint16{0x8001}, MMECodes: []uint8{1}}},
 			RelativeMMECapacity: &capacity,
 		},
-		"10.0.0.3": {State: s1.MMESetupFailed, Since: since, LastFailureCause: "misc: unknown-PLMN (5)", TimeToWait: 10 * time.Second},
+		"10.0.0.3": {State: s1.MMESetupFailed, Since: since},
 	}})
 
 	if code, _, msg := a.do(t, http.MethodPost, "/api/v1/operators", operatorA); code != http.StatusCreated {
@@ -59,17 +59,21 @@ func TestOperatorMMEStatus(t *testing.T) {
 	want := []api.MME{
 		{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}, Status: &api.MMEStatus{
 			State: s1.MMEUp, Since: since, PrimaryTNLAddress: "10.0.0.2", MMEName: "mme1",
-			ServedGUMMEIs:       []api.ServedGUMMEIs{{ServedPLMNs: []api.PLMN{{MCC: "001", MNC: "01"}}, ServedGroupIDs: []uint16{0x8001}, ServedMMECs: []uint8{1}}},
+			ServedGUMMEIs:       []api.ServedGUMMEIs{{ServedPLMNs: []api.PLMN{{MCC: "001", MNC: "01"}}, ServedGroupIDs: []uint16{0x8001}, ServedMMECs: []int{1}}},
 			RelativeMMECapacity: &capacity,
 		}},
 		{TNLAddresses: []string{"10.0.0.3"}, Status: &api.MMEStatus{
-			State: s1.MMESetupFailed, Since: since, LastFailureCause: "misc: unknown-PLMN (5)", TimeToWait: 10,
+			State: s1.MMESetupFailed, Since: since,
 		}},
 	}
 
 	code, result, _ := a.do(t, http.MethodGet, "/api/v1/operators/Operator%20A", "")
 	if got := decode[api.Operator](t, result); code != http.StatusOK || !reflect.DeepEqual(got.MMEs, want) {
 		t.Fatalf("GET = %d %s", code, result)
+	}
+
+	if !strings.Contains(string(result), `"served_mmecs":[1]`) {
+		t.Fatalf("GET = %s, want served_mmecs as a JSON array of numbers", result)
 	}
 
 	code, result, _ = a.do(t, http.MethodGet, "/api/v1/operators", "")
@@ -83,7 +87,7 @@ func TestOperatorMMEStatus(t *testing.T) {
 	}
 }
 
-func TestListRANNodes(t *testing.T) {
+func TestListRadios(t *testing.T) {
 	since := time.Date(2026, 11, 12, 10, 0, 0, 0, time.FixedZone("x", 3600))
 	a := newS1TestAPI(t, fakeS1{nodes: []s1.RANNode{
 		{
@@ -92,16 +96,17 @@ func TestListRANNodes(t *testing.T) {
 			SupportedTAs: []s1.TA{{TAC: 1, BroadcastPLMNs: []db.PLMN{{MCC: "001", MNC: "01"}, {MCC: "002", MNC: "002"}}}},
 			TNLAddresses: []string{"10.0.0.5", "10.0.1.5"},
 		},
-		{State: s1.RANNodeConnected, ConnectedSince: since, SupportedTAs: []s1.TA{}, TNLAddresses: []string{"10.0.0.6"}, LastFailureCause: "misc: unknown-PLMN (5)"},
+		{State: s1.RANNodeConnected, ConnectedSince: since, SupportedTAs: []s1.TA{}, TNLAddresses: []string{"10.0.0.6"}},
 	}})
 
-	code, result, _ := a.do(t, http.MethodGet, "/api/v1/ran-nodes", "")
+	code, result, _ := a.do(t, http.MethodGet, "/api/v1/radios", "")
 	if code != http.StatusOK {
 		t.Fatalf("GET = %d", code)
 	}
 
-	want := api.ListRANNodesResponse{Items: []api.RANNode{
+	want := api.ListRadiosResponse{Items: []api.Radio{
 		{
+			Ref:         "001-01:home:180150001",
 			GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: "home", ID: 0xabcdef1},
 			ENBName:     "enb1", DefaultPagingDRX: 128, State: s1.RANNodeUp, ConnectedSince: since.UTC(),
 			SupportedTAs: []api.TA{{TAC: 1, BroadcastPLMNs: []api.PLMN{{MCC: "001", MNC: "01"}, {MCC: "002", MNC: "002"}}}},
@@ -109,11 +114,11 @@ func TestListRANNodes(t *testing.T) {
 		},
 		{
 			State: s1.RANNodeConnected, ConnectedSince: since.UTC(), SupportedTAs: []api.TA{},
-			TNLAddresses: []string{"10.0.0.6"}, LastFailureCause: "misc: unknown-PLMN (5)",
+			TNLAddresses: []string{"10.0.0.6"},
 		},
 	}}
 
-	if got := decode[api.ListRANNodesResponse](t, result); !reflect.DeepEqual(got, want) {
+	if got := decode[api.ListRadiosResponse](t, result); !reflect.DeepEqual(got, want) {
 		t.Fatalf("GET = %+v, want %+v", got, want)
 	}
 
@@ -124,8 +129,23 @@ func TestListRANNodes(t *testing.T) {
 	}
 
 	empty := newS1TestAPI(t, nil)
-	if code, result, _ := empty.do(t, http.MethodGet, "/api/v1/ran-nodes", ""); code != http.StatusOK ||
+	if code, result, _ := empty.do(t, http.MethodGet, "/api/v1/radios", ""); code != http.StatusOK ||
 		string(result) != `{"items":[]}` {
 		t.Fatalf("GET without S1 = %d %s", code, result)
+	}
+
+	code, result, _ = a.do(t, http.MethodGet, "/api/v1/radios/001-01:home:180150001", "")
+	if got := decode[api.Radio](t, result); code != http.StatusOK || !reflect.DeepEqual(got, want.Items[0]) {
+		t.Fatalf("GET one = %d %s", code, result)
+	}
+
+	for _, ref := range []string{"001-01:home:1", "x"} {
+		if code, _, _ := a.do(t, http.MethodGet, "/api/v1/radios/"+ref, ""); code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", ref, code)
+		}
+	}
+
+	if code, _, _ := empty.do(t, http.MethodGet, "/api/v1/radios/001-01:home:180150001", ""); code != http.StatusNotFound {
+		t.Errorf("GET one without S1 = %d, want 404", code)
 	}
 }

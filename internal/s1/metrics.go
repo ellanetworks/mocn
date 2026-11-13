@@ -4,9 +4,9 @@ import "github.com/prometheus/client_golang/prometheus"
 
 var (
 	associationsDesc = prometheus.NewDesc("ellamocn_s1_associations",
-		"S1 associations, by side (ran: RAN nodes, mme: configured MMEs) and state.", []string{"side", "state"}, nil)
-	ranNodesDesc = prometheus.NewDesc("ellamocn_ran_nodes_connected",
-		"RAN nodes whose S1 Setup succeeded.", nil, nil)
+		"S1 associations, by side (ran: radios, mme: configured MMEs) and state.", []string{"side", "state"}, nil)
+	ranNodesDesc = prometheus.NewDesc("ellamocn_radios_connected",
+		"Radios whose S1 Setup succeeded.", nil, nil)
 )
 
 type stateCollector struct {
