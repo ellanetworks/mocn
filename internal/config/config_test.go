@@ -21,7 +21,7 @@ func writeConfig(t *testing.T, content string) string {
 }
 
 func TestLoad(t *testing.T) {
-	cfg, err := Load(writeConfig(t, "logging:\n  level: debug\ndb:\n  path: /var/lib/mocn/mocn.db\napi:\n  address: 127.0.0.1\n  port: 8080\n"))
+	cfg, err := Load(writeConfig(t, "logging:\n  level: debug\ndb:\n  path: /var/lib/mocn/mocn.db\napi:\n  address: 127.0.0.1\n  port: 8080\ns1:\n  address: 10.0.0.1\n  port: 36413\n"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -41,6 +41,10 @@ func TestLoad(t *testing.T) {
 	if got := cfg.API.ListenAddress(); got != "127.0.0.1:8080" {
 		t.Errorf("API.ListenAddress() = %q, want 127.0.0.1:8080", got)
 	}
+
+	if want := (S1{Address: netip.MustParseAddr("10.0.0.1"), Port: 36413}); cfg.S1 != want {
+		t.Errorf("S1 = %+v, want %+v", cfg.S1, want)
+	}
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -56,6 +60,10 @@ func TestLoadDefaults(t *testing.T) {
 	if got := cfg.API.ListenAddress(); got != "0.0.0.0:5030" {
 		t.Errorf("API.ListenAddress() = %q, want 0.0.0.0:5030", got)
 	}
+
+	if want := (S1{Address: netip.IPv4Unspecified(), Port: 36412}); cfg.S1 != want {
+		t.Errorf("S1 = %+v, want %+v", cfg.S1, want)
+	}
 }
 
 func TestLoadErrors(t *testing.T) {
@@ -70,6 +78,9 @@ func TestLoadErrors(t *testing.T) {
 		"missing db path": {content: "logging:\n  level: info\n", want: "db.path is required"},
 		"port too high":   {content: "db:\n  path: mocn.db\napi:\n  port: 70000\n", want: "api.port"},
 		"negative port":   {content: "db:\n  path: mocn.db\napi:\n  port: -1\n", want: "api.port"},
+		"s1 port":         {content: "db:\n  path: mocn.db\ns1:\n  port: 65536\n", want: "s1.port"},
+		"s1 address":      {content: "db:\n  path: mocn.db\ns1:\n  address: 36412\n", want: "parse config"},
+		"s1 zone":         {content: "db:\n  path: mocn.db\ns1:\n  address: fe80::1%eth0\n", want: "s1.address"},
 	}
 
 	for name, tc := range tests {

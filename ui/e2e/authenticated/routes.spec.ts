@@ -63,6 +63,7 @@ const ROUTES: RouteCase[] = [
     ready: "Overview",
     prepare: createOperator,
   },
+  { label: "RAN Nodes", route: "/ran-nodes", heading: /^RAN Nodes/ },
   { label: "Users", route: "/users", heading: /^Users/ },
   {
     label: "User",

@@ -44,6 +44,47 @@ const operatorA = (): Operator => ({
   amfs: [{ tnl_addresses: ["10.0.1.1"] }],
 });
 
+const operatorWithStatus = (): Operator => ({
+  ...operatorA(),
+  mmes: [
+    {
+      tnl_addresses: ["10.0.0.1", "10.0.0.2"],
+      status: {
+        state: "up",
+        since: "2026-11-12T10:00:00Z",
+        primary_tnl_address: "10.0.0.2",
+        mme_name: "mme0",
+        served_gummeis: [
+          {
+            served_plmns: [
+              { mcc: "001", mnc: "01" },
+              { mcc: "001", mnc: "02" },
+            ],
+            served_group_ids: [2],
+            served_mmecs: [1, 3],
+          },
+        ],
+        relative_mme_capacity: 255,
+      },
+    },
+    {
+      tnl_addresses: ["10.0.0.3"],
+      status: {
+        state: "setup_failed",
+        since: "2026-11-12T10:00:05Z",
+        primary_tnl_address: "10.0.0.3",
+        last_failure_cause: "misc: unknown-PLMN (5)",
+        time_to_wait: 10,
+      },
+    },
+    {
+      tnl_addresses: ["10.0.0.4"],
+      status: { state: "disconnected", since: "2026-11-12T10:00:00Z" },
+    },
+    { tnl_addresses: ["10.0.0.5"] },
+  ],
+});
+
 const operatorB = (): Operator => ({
   name: "Operator B",
   pws_operator: false,
@@ -150,6 +191,15 @@ const cells = (row: HTMLElement) =>
 const rowOf = async (text: string) =>
   (await screen.findByText(text)).closest('[role="row"]') as HTMLElement;
 
+const mmeRow = async (address: string) => {
+  const grid = await screen.findByRole("grid", { name: /^4G MMEs/ });
+  return within(grid)
+    .getAllByRole("row")
+    .find(
+      (row) => row.querySelector('[role="gridcell"]')?.textContent === address,
+    )!;
+};
+
 const click = async (name: string) =>
   fireEvent.click(await screen.findByRole("button", { name }));
 
@@ -224,7 +274,7 @@ describe("Operators", () => {
     ).toEqual(["Name", "PLMNs", "PWS"]);
     expect(cells(await rowOf("Operator A"))).toEqual([
       "Operator A",
-      "001/01001/02",
+      "001/01, 001/02",
       "PWS",
     ]);
     expect(cells(await rowOf("Operator B"))).toEqual([
@@ -273,7 +323,7 @@ describe("Operators", () => {
 
     expect(cells(await rowOf("Operator A"))).toHaveLength(3);
     expect(
-      screen.queryByRole("button", { name: "Create Operator" }),
+      screen.queryByRole("button", { name: "Create" }),
     ).not.toBeInTheDocument();
   });
 
@@ -282,7 +332,7 @@ describe("Operators", () => {
 
     renderAt("/operators");
     await screen.findByText("No operators.");
-    fireEvent.click(screen.getByRole("button", { name: "Create Operator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     const dialog = screen.getByRole("dialog", { name: "Create Operator" });
     expect(within(dialog).getAllByRole("textbox")).toHaveLength(3);
@@ -366,7 +416,7 @@ describe("Operators", () => {
 
     renderAt("/operators");
     await screen.findByText("No operators.");
-    fireEvent.click(screen.getByRole("button", { name: "Create Operator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
     fill("Name", "Operator C");
     fill("MCC", "001");
     fill("MNC", "01");
@@ -419,14 +469,12 @@ describe("OperatorDetail", () => {
     }
 
     expect(valueOf("Overview", "Name")).toBe("Operator A");
-    expect(
-      within(table("Overview").getByRole("list", { name: "PLMNs" }))
-        .getAllByRole("listitem")
-        .map((li) => li.textContent),
-    ).toEqual(["001/01", "001/02"]);
+    expect(table("Overview").getByTitle("001/01, 001/02")).toHaveTextContent(
+      "001/01, 001/02",
+    );
     expect(valueOf("Overview", "PWS operator")).toBe("Yes");
-    expect(valueOf("Overview", LTE)).toBe("001/01 · Macro (20 bits) · 703710");
-    expect(valueOf("Overview", NR)).toBe("001/02 · 74565 (22 bits)");
+    expect(valueOf("Overview", "4G")).toBe("001/01 · Macro (20 bits) · 703710");
+    expect(valueOf("Overview", "5G")).toBe("001/02 · 74565 (22 bits)");
     expect(addresses(/^4G MMEs/)).toEqual(["10.0.0.1, 10.0.0.2", "10.0.0.3"]);
     expect(addresses(/^5G AMFs/)).toEqual(["10.0.1.1"]);
     expect(
@@ -463,8 +511,8 @@ describe("OperatorDetail", () => {
     renderAt("/operators/Operator%20B");
 
     await screen.findByRole("heading", { level: 2, name: "Overview" });
-    expect(valueOf("Overview", LTE)).toBe("Not set");
-    expect(valueOf("Overview", NR)).toBe("Not set");
+    expect(valueOf("Overview", "4G")).toBe("Not set");
+    expect(valueOf("Overview", "5G")).toBe("Not set");
     expect(valueOf("Overview", "PWS operator")).toBe("No");
     expect(screen.getByText("No MMEs.")).toBeInTheDocument();
     expect(screen.getByText("No AMFs.")).toBeInTheDocument();
@@ -532,7 +580,16 @@ describe("OperatorDetail", () => {
     expect(addresses(/^4G MMEs/)).toEqual(["10.0.0.1, 10.0.0.2", "10.0.0.3"]);
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
-    ).toEqual(["TNL addresses", "TNL addresses"]);
+    ).toEqual([
+      "TNL addresses",
+      "Status",
+      "Primary address",
+      "MME name",
+      "Served GUMMEIs",
+      "Capacity",
+      "Last failure",
+      "TNL addresses",
+    ]);
   });
 
   it("lets a Network Manager change the operator", async () => {
@@ -668,7 +725,9 @@ describe("OperatorDetail", () => {
       name: "Edit Gateway Identity",
     });
     const save = within(dialog).getByRole("button", { name: "Save" });
-    expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+    for (const textbox of within(dialog).getAllByRole("textbox")) {
+      expect(textbox).toBeDisabled();
+    }
     for (const name of [LTE, NR]) {
       const set = part(name).getByRole("switch", { name: "Set" });
       expect(set).not.toBeChecked();
@@ -730,11 +789,11 @@ describe("OperatorDetail", () => {
       }),
     ]);
     await waitFor(() =>
-      expect(valueOf("Overview", LTE)).toBe(
+      expect(valueOf("Overview", "4G")).toBe(
         "001/01 · Short macro (18 bits) · 1234",
       ),
     );
-    expect(valueOf("Overview", NR)).toBe("315/010 · 74565 (22 bits)");
+    expect(valueOf("Overview", "5G")).toBe("315/010 · 74565 (22 bits)");
     expect(screen.getByRole("button", { name: "Add MME" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Add AMF" })).toBeEnabled();
   });
@@ -782,15 +841,17 @@ describe("OperatorDetail", () => {
       part(NR).queryByText("Remove the AMFs first"),
     ).not.toBeInTheDocument();
     toggle(NR);
-    expect(part(NR).queryByRole("textbox")).not.toBeInTheDocument();
+    for (const textbox of part(NR).getAllByRole("textbox")) {
+      expect(textbox).toBeDisabled();
+    }
     submit("Save");
 
     await saved("Gateway identity saved successfully.");
     expect(requests).toEqual([
       put("Operator A", { ...operatorA(), amfs: [], global_gnb_id: null }),
     ]);
-    await waitFor(() => expect(valueOf("Overview", NR)).toBe("Not set"));
-    expect(valueOf("Overview", LTE)).toBe("001/01 · Macro (20 bits) · 703710");
+    await waitFor(() => expect(valueOf("Overview", "5G")).toBe("Not set"));
+    expect(valueOf("Overview", "4G")).toBe("001/01 · Macro (20 bits) · 703710");
   });
 
   it("shows the server's error in the gateway identity dialog", async () => {
@@ -989,6 +1050,128 @@ describe("OperatorDetail", () => {
     expect(location()).toBe("/operators");
     expect(requests).toEqual([
       { method: "DELETE", path: "/api/v1/operators/Operator B" },
+    ]);
+  });
+
+  it("shows the S1 status of each MME", async () => {
+    serve({ operators: [operatorWithStatus()] });
+
+    renderAt("/operators/Operator%20A", readOnlyAuth);
+
+    const grid = within(await screen.findByRole("grid", { name: /^4G MMEs/ }));
+    expect(grid.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(
+      [
+        "TNL addresses",
+        "Status",
+        "Primary address",
+        "MME name",
+        "Served GUMMEIs",
+        "Capacity",
+        "Last failure",
+      ],
+    );
+    expect(cells(await mmeRow("10.0.0.1, 10.0.0.2"))).toEqual([
+      "10.0.0.1, 10.0.0.2",
+      "Up",
+      "10.0.0.2",
+      "mme0",
+      "PLMNs 001/01, 001/02 · MME groups 2 · MME codes 1, 3",
+      "255",
+      "—",
+    ]);
+    expect(cells(await mmeRow("10.0.0.3"))).toEqual([
+      "10.0.0.3",
+      "Setup failed",
+      "10.0.0.3",
+      "—",
+      "—",
+      "—",
+      "misc: unknown-PLMN (5) (time to wait 10 s)",
+    ]);
+    expect(cells(await mmeRow("10.0.0.4"))).toEqual([
+      "10.0.0.4",
+      "Disconnected",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+    ]);
+    expect(cells(await mmeRow("10.0.0.5"))).toEqual([
+      "10.0.0.5",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+    ]);
+    expect(
+      within(screen.getByRole("grid", { name: /^5G AMFs/ }))
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["TNL addresses"]);
+  });
+
+  it("explains the MME status on hover", async () => {
+    serve({ operators: [operatorWithStatus()] });
+
+    renderAt("/operators/Operator%20A", readOnlyAuth);
+
+    const grid = within(await screen.findByRole("grid", { name: /^4G MMEs/ }));
+    fireEvent.mouseOver(grid.getByText("Status"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: /^Disconnected: no SCTP association to the MME\./,
+      }),
+    ).toBeInTheDocument();
+    expect(grid.getByText("Up").closest(".MuiChip-root")).toHaveAttribute(
+      "title",
+      expect.stringMatching(/^Since Nov 12, \d\d:\d\d:00$/),
+    );
+  });
+
+  it("keeps the MME status up to date", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const operator = operatorWithStatus();
+      serve({ operators: [operator] });
+
+      renderAt("/operators/Operator%20A", readOnlyAuth);
+      expect(cells(await mmeRow("10.0.0.4"))[1]).toBe("Disconnected");
+
+      operator.mmes![2].status = {
+        state: "connected",
+        since: "2026-11-12T10:01:00Z",
+        primary_tnl_address: "10.0.0.4",
+      };
+      await vi.advanceTimersByTimeAsync(5000);
+
+      await waitFor(async () =>
+        expect(cells(await mmeRow("10.0.0.4"))[1]).toBe("Connected"),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends no MME status back when it changes the operator", async () => {
+    const requests = serve({ operators: [operatorWithStatus()] });
+
+    renderAt("/operators/Operator%20A");
+    await click("Remove MME 10.0.0.3");
+    submit("Remove");
+
+    await saved("MME removed successfully.");
+    expect(requests).toEqual([
+      put("Operator A", {
+        ...operatorA(),
+        mmes: [
+          { tnl_addresses: ["10.0.0.1", "10.0.0.2"] },
+          { tnl_addresses: ["10.0.0.4"] },
+          { tnl_addresses: ["10.0.0.5"] },
+        ],
+      }),
     ]);
   });
 });

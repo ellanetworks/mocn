@@ -20,6 +20,9 @@ db:
 api:
   address: 127.0.0.1
   port: $port
+s1:
+  address: 127.0.0.1
+  port: ${ELLA_E2E_S1_PORT:-36499}
 YAML
 
 exec "$build/mocn" --config "$build/mocn.yaml"

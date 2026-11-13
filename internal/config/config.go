@@ -11,12 +11,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultAPIPort = 5030
+const (
+	defaultAPIPort = 5030
+	defaultS1Port  = 36412
+)
 
 type Config struct {
 	Logging Logging `yaml:"logging"`
 	DB      DB      `yaml:"db"`
 	API     API     `yaml:"api"`
+	S1      S1      `yaml:"s1"`
 }
 
 type Logging struct {
@@ -34,6 +38,11 @@ type API struct {
 
 func (a API) ListenAddress() string {
 	return netip.AddrPortFrom(a.Address, uint16(a.Port)).String()
+}
+
+type S1 struct {
+	Address netip.Addr `yaml:"address"`
+	Port    int        `yaml:"port"`
 }
 
 func Load(path string) (Config, error) {
@@ -58,6 +67,14 @@ func Load(path string) (Config, error) {
 		cfg.API.Port = defaultAPIPort
 	}
 
+	if !cfg.S1.Address.IsValid() {
+		cfg.S1.Address = netip.IPv4Unspecified()
+	}
+
+	if cfg.S1.Port == 0 {
+		cfg.S1.Port = defaultS1Port
+	}
+
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
 	}
@@ -71,6 +88,10 @@ func (c Config) validate() error {
 		return errors.New("db.path is required")
 	case c.API.Port < 1 || c.API.Port > 65535:
 		return errors.New("api.port must be between 1 and 65535")
+	case c.S1.Port < 1 || c.S1.Port > 65535:
+		return errors.New("s1.port must be between 1 and 65535")
+	case c.S1.Address.Zone() != "":
+		return errors.New("s1.address must not have a zone")
 	}
 
 	return nil

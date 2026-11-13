@@ -30,11 +30,13 @@ jobs:
     uses: ./.github/workflows/ui-test.yaml
   ui-e2e:
     uses: ./.github/workflows/ui-e2e.yaml
+  e2e-s1:
+    uses: ./.github/workflows/e2e-s1.yaml
   image-build:
     uses: ./.github/workflows/image-build.yaml
   image-publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [go-unit-test, go-lint, go-sec, ui-lint, ui-typecheck, ui-test, ui-e2e, image-build]
+    needs: [go-unit-test, go-lint, go-sec, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, image-build]
     permissions:
       contents: read
       packages: write

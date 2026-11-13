@@ -4,6 +4,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { CreateOperatorDialog } from "@/components/OperatorDialogs";
+import PLMNSummary from "@/components/PLMNSummary";
 import PageHeader from "@/components/PageHeader";
 import QueryAlert from "@/components/QueryAlert";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,8 +19,6 @@ const gridSx = {
     ...GRID_SX["& .MuiDataGrid-cell"],
     display: "flex",
     alignItems: "center",
-    py: 1,
-    overflowWrap: "anywhere",
   },
 };
 
@@ -45,14 +44,7 @@ const columns: GridColDef<Operator>[] = [
     headerName: "PLMNs",
     flex: 1,
     minWidth: 140,
-    renderCell: ({ row }) => (
-      <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none" }}>
-        {row.plmns.map((plmn) => {
-          const text = formatPLMN(plmn);
-          return <li key={text}>{text}</li>;
-        })}
-      </Box>
-    ),
+    renderCell: ({ row }) => <PLMNSummary plmns={row.plmns.map(formatPLMN)} />,
   },
   {
     field: "pws_operator",
@@ -89,7 +81,7 @@ export default function Operators() {
               color="success"
               onClick={() => setCreating(true)}
             >
-              Create Operator
+              Create
             </Button>
           )
         }
@@ -108,7 +100,6 @@ export default function Operators() {
         disableRowSelectionOnClick
         disableVirtualization
         hideFooter
-        getRowHeight={() => "auto"}
         autoHeight
         localeText={{ noRowsLabel: "No operators." }}
         sx={gridSx}

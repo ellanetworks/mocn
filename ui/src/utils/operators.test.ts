@@ -8,6 +8,7 @@ import {
   enbIdError,
   formatGlobalENBID,
   formatGlobalGNBID,
+  formatGUMMEI,
   formatPLMN,
   formatTNLAddresses,
   gnbIdError,
@@ -56,6 +57,23 @@ describe("operator formatting", () => {
         enb_id: 7,
       }),
     ).toBe("001/01 · Short macro (18 bits) · 7");
+    expect(
+      formatGlobalENBID({
+        plmn: { mcc: "001", mnc: "01" },
+        enb_id_type: "home",
+        enb_id: 268435455,
+      }),
+    ).toBe("001/01 · Home (28 bits) · 268435455");
+    expect(
+      formatGUMMEI({
+        served_plmns: [
+          { mcc: "001", mnc: "01" },
+          { mcc: "315", mnc: "010" },
+        ],
+        served_group_ids: [1, 32768],
+        served_mmecs: [2],
+      }),
+    ).toBe("PLMNs 001/01, 315/010 · MME groups 1, 32768 · MME codes 2");
     expect(formatGlobalGNBID(operator.global_gnb_id!)).toBe(
       "001/01 · 74565 (22 bits)",
     );
@@ -179,6 +197,24 @@ describe("operatorBody", () => {
         amfs: [],
       },
     );
+  });
+
+  it("leaves out the read-only MME status", () => {
+    const withStatus: Operator = {
+      ...operator,
+      mmes: [
+        {
+          tnl_addresses: ["10.0.0.1"],
+          status: { state: "up", since: "2026-11-12T10:00:00Z" },
+        },
+      ],
+    };
+    expect(operatorBody(withStatus).mmes).toEqual([
+      { tnl_addresses: ["10.0.0.1"] },
+    ]);
+    expect(operatorBody(operator, { mmes: withStatus.mmes }).mmes).toEqual([
+      { tnl_addresses: ["10.0.0.1"] },
+    ]);
   });
 });
 

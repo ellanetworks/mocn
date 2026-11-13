@@ -1,10 +1,12 @@
 import type {
+  AnyENBIDType,
   CoreNode,
   ENBIDType,
   GlobalENBID,
   GlobalGNBID,
   Operator,
   PLMN,
+  ServedGUMMEI,
 } from "@/queries/operators";
 
 export const MAX_NAME_LENGTH = 64;
@@ -22,6 +24,16 @@ export const ENB_ID_TYPE_LABELS: Record<ENBIDType, string> = {
   macro: "Macro",
   short_macro: "Short macro",
   long_macro: "Long macro",
+};
+
+const ANY_ENB_ID_BITS: Record<AnyENBIDType, number> = {
+  ...ENB_ID_BITS,
+  home: 28,
+};
+
+const ANY_ENB_ID_TYPE_LABELS: Record<AnyENBIDType, string> = {
+  ...ENB_ID_TYPE_LABELS,
+  home: "Home",
 };
 
 export const PWS_HELP =
@@ -65,8 +77,23 @@ export const parsePLMN = (text: string): PLMN => {
   return { mcc, mnc };
 };
 
-export const formatGlobalENBID = ({ plmn, enb_id_type, enb_id }: GlobalENBID) =>
-  `${formatPLMN(plmn)} · ${ENB_ID_TYPE_LABELS[enb_id_type]} (${ENB_ID_BITS[enb_id_type]} bits) · ${enb_id}`;
+export const formatGlobalENBID = ({
+  plmn,
+  enb_id_type,
+  enb_id,
+}: Omit<GlobalENBID, "enb_id_type"> & { enb_id_type: AnyENBIDType }) =>
+  `${formatPLMN(plmn)} · ${ANY_ENB_ID_TYPE_LABELS[enb_id_type]} (${ANY_ENB_ID_BITS[enb_id_type]} bits) · ${enb_id}`;
+
+export const formatGUMMEI = ({
+  served_plmns,
+  served_group_ids,
+  served_mmecs,
+}: ServedGUMMEI) =>
+  [
+    `PLMNs ${served_plmns.map(formatPLMN).join(", ")}`,
+    `MME groups ${served_group_ids.join(", ")}`,
+    `MME codes ${served_mmecs.join(", ")}`,
+  ].join(" · ");
 
 export const formatGlobalGNBID = ({
   plmn,
@@ -187,16 +214,22 @@ export const isValidAddresses = (rows: AddressRow[], existing: CoreNode[]) =>
   rows.every((r) => r.address.trim() !== "") &&
   addressErrors(rows, existing).every((e) => e === undefined);
 
+const nodeBody = ({ tnl_addresses }: CoreNode): CoreNode => ({
+  tnl_addresses,
+});
+
 export const operatorBody = (
   operator: Operator,
   change: Partial<Operator> = {},
-): Operator => ({
-  name: operator.name,
-  pws_operator: operator.pws_operator,
-  plmns: operator.plmns,
-  global_enb_id: operator.global_enb_id ?? null,
-  global_gnb_id: operator.global_gnb_id ?? null,
-  mmes: operator.mmes ?? [],
-  amfs: operator.amfs ?? [],
-  ...change,
-});
+): Operator => {
+  const merged = { ...operator, ...change };
+  return {
+    name: merged.name,
+    pws_operator: merged.pws_operator,
+    plmns: merged.plmns,
+    global_enb_id: merged.global_enb_id ?? null,
+    global_gnb_id: merged.global_gnb_id ?? null,
+    mmes: (merged.mmes ?? []).map(nodeBody),
+    amfs: (merged.amfs ?? []).map(nodeBody),
+  };
+};

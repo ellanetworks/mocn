@@ -8,6 +8,7 @@ import Login from "@/pages/Login";
 import OperatorDetail from "@/pages/OperatorDetail";
 import Operators from "@/pages/Operators";
 import Profile from "@/pages/Profile";
+import RANNodes from "@/pages/RANNodes";
 import UserDetail from "@/pages/UserDetail";
 import Users from "@/pages/Users";
 
@@ -42,6 +43,11 @@ const pages: { path: string; element: ReactElement; permission: Permission }[] =
       path: "/operators/:name",
       element: <OperatorDetail />,
       permission: "operator:read",
+    },
+    {
+      path: "/ran-nodes",
+      element: <RANNodes />,
+      permission: "ran_node:read",
     },
     { path: "/users", element: <Users />, permission: "user:admin" },
     {

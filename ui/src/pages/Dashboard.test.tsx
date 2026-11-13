@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import Dashboard, { formatBytes } from "@/pages/Dashboard";
 import { renderWithClient, stubApi } from "@/test/render";
@@ -10,6 +10,15 @@ process_resident_memory_bytes 6.7108864e+07
 process_start_time_seconds 1.7e+09
 ellamocn_database_storage_bytes{file="main"} 1048576
 ellamocn_database_storage_bytes{file="wal"} 524288
+# TYPE ellamocn_ran_nodes_connected gauge
+ellamocn_ran_nodes_connected 2
+# TYPE ellamocn_s1_associations gauge
+ellamocn_s1_associations{side="mme",state="connected"} 1
+ellamocn_s1_associations{side="mme",state="disconnected"} 1
+ellamocn_s1_associations{side="mme",state="setup_failed"} 0
+ellamocn_s1_associations{side="mme",state="up"} 3
+ellamocn_s1_associations{side="ran",state="connected"} 4
+ellamocn_s1_associations{side="ran",state="up"} 2
 `;
 
 afterEach(() => {
@@ -44,12 +53,42 @@ describe("Dashboard", () => {
     expect(within(await findPanel("Up Since")).getByText(/2023/)).toBeVisible();
   });
 
+  it("shows the S1 figures from the metrics", async () => {
+    serve(() => new Response(METRICS, { status: 200 }));
+    renderDashboard();
+
+    expect(
+      await screen.findByRole("region", { name: "S1" }),
+    ).toBeInTheDocument();
+    const ranNodes = await findPanel("RAN Nodes");
+    expect(await within(ranNodes).findByText("2")).toBeVisible();
+    expect(within(await findPanel("MMEs Up")).getByText("3 / 5")).toBeVisible();
+  });
+
+  it("explains the S1 figures on hover", async () => {
+    serve(() => new Response(METRICS, { status: 200 }));
+    renderDashboard();
+
+    fireEvent.mouseOver(await findPanel("MMEs Up"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "MMEs that accepted the S1 Setup of Ella MOCN, out of every MME configured across the operators.",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("shows N/A for a metric the MOCN does not expose", async () => {
     serve(() => new Response("", { status: 200 }));
     renderDashboard();
 
     const database = await findPanel("Database Size");
     expect(await within(database).findByText("N/A")).toBeInTheDocument();
+    expect(
+      within(await findPanel("RAN Nodes")).getByText("N/A"),
+    ).toBeInTheDocument();
+    expect(
+      within(await findPanel("MMEs Up")).getByText("N/A"),
+    ).toBeInTheDocument();
   });
 
   it("says when the metrics fail to load", async () => {

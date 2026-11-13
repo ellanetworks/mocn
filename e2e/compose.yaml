@@ -1,0 +1,123 @@
+name: mocn-e2e
+
+services:
+  mongo:
+    image: mongo:7.0
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping: 1}).ok"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks:
+      core:
+        ipv4_address: 10.90.0.20
+
+  provision:
+    image: mongo:7.0
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - ./open5gs/provision.js:/provision.js:ro
+    entrypoint: ["mongosh", "--quiet", "mongodb://10.90.0.20/open5gs", "/provision.js"]
+    restart: "no"
+    networks: [core]
+
+  open5gs:
+    image: gradiant/open5gs:2.7.6
+    user: root
+    privileged: true
+    depends_on:
+      provision:
+        condition: service_completed_successfully
+    entrypoint: ["/start.sh"]
+    volumes:
+      - ./open5gs/start.sh:/start.sh:ro
+      - ./open5gs/config/open5gs:/etc/open5gs:ro
+      - ./open5gs/config/freeDiameter:/etc/freeDiameter:ro
+    networks:
+      core:
+        ipv4_address: 10.90.0.10
+      ran:
+        ipv4_address: 10.90.1.10
+
+  mocn:
+    image: ella-mocn-e2e/mocn
+    build:
+      context: ..
+      dockerfile: e2e/mocn/Dockerfile
+    restart: unless-stopped
+    command: ["--config", "/mocn.yaml"]
+    volumes:
+      - ./mocn/mocn.yaml:/mocn.yaml:ro
+    tmpfs:
+      - /data
+    ports:
+      - "127.0.0.1:${E2E_API_PORT:-5032}:5030"
+    networks:
+      core:
+        ipv4_address: 10.90.0.30
+      ran:
+        ipv4_address: 10.90.1.30
+
+  srsenb:
+    image: gradiant/srsran-4g:23_11
+    privileged: true
+    restart: unless-stopped
+    depends_on: [mocn]
+    command: ["enb", "--rf.device_args=tx_port=tcp://*:2000,rx_port=tcp://10.90.2.3:2001,id=enb,base_srate=23.04e6", "--log.all_level=warning", "--log.s1ap_level=info", "--log.rrc_level=info", "--log.filename=stdout"]
+    environment:
+      ENB_ID: "0x19B"
+      MCC: "001"
+      MNC: "01"
+      TAC: "1"
+      MME_ADDR: 10.90.1.30
+      GTP_BIND_ADDR: 10.90.1.21
+      S1C_BIND_ADDR: 10.90.1.21
+      N_PRB: "50"
+      TX_GAIN: "50"
+      RX_GAIN: "40"
+      ZMQ: "true"
+      UE_ADDRESS: 10.90.2.3
+    networks:
+      ran:
+        ipv4_address: 10.90.1.21
+      radio:
+        ipv4_address: 10.90.2.2
+
+  srsue:
+    image: gradiant/srsran-4g:23_11
+    privileged: true
+    restart: on-failure
+    depends_on: [srsenb]
+    command: ["ue", "--rf.device_args=tx_port=tcp://10.90.2.3:2001,rx_port=tcp://10.90.2.2:2000,id=ue,base_srate=23.04e6"]
+    environment:
+      ZMQ: "true"
+      ENB_ADDRESS: 10.90.2.2
+      UE_ADDRESS: 10.90.2.3
+      ALGO: milenage
+      KEY: 465b5ce8b199b49faa5f0a2ee238a6bc
+      OPC: cd63cb71954a9f4e48a5994e37a02baf
+      MCC: "001"
+      MNC: "01"
+      MSISDN: "0000000001"
+      APN: internet
+    networks:
+      radio:
+        ipv4_address: 10.90.2.3
+
+networks:
+  core:
+    ipam:
+      config:
+        - subnet: 10.90.0.0/24
+  ran:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.90.1.0/24
+  radio:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.90.2.0/24

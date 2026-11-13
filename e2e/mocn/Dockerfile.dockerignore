@@ -1,0 +1,16 @@
+.git
+.github
+e2e
+docs
+site
+*.rock
+*.snap
+*.db
+*.db-shm
+*.db-wal
+/main
+/mocn
+ui/node_modules
+ui/dist
+ui/test-results
+ui/playwright-report

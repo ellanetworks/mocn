@@ -174,10 +174,12 @@ function PLMNSelect({
   value,
   options,
   onChange,
+  disabled,
 }: {
   value: string;
   options: string[];
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <TextField
@@ -185,6 +187,7 @@ function PLMNSelect({
       label="PLMN"
       value={options.includes(value) ? value : ""}
       onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
       required
     >
       {options.map((option) => (
@@ -325,32 +328,34 @@ function IdentityPart({
   children: ReactNode;
 }) {
   const hint = useId();
+  const title = useId();
   return (
-    <FormControl component="fieldset" sx={fieldsetSx}>
-      <FormLabel component="legend">{label}</FormLabel>
-      <FormControlLabel
-        control={
-          <Switch
-            checked={set}
-            onChange={(e) => onSet(e.target.checked)}
-            disabled={blocked !== undefined}
-            slotProps={{
-              input: { "aria-describedby": blocked ? hint : undefined },
-            }}
-          />
-        }
-        label="Set"
-      />
-      {blocked && (
-        <FormHelperText id={hint} sx={{ mt: 0 }}>
-          {blocked}
-        </FormHelperText>
-      )}
-      {set && (
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          {children}
-        </Stack>
-      )}
+    <FormControl component="fieldset" aria-labelledby={title} sx={fieldsetSx}>
+      <Stack
+        direction="row"
+        sx={{ alignItems: "center", justifyContent: "space-between" }}
+      >
+        <FormLabel id={title} component="span">
+          {label}
+        </FormLabel>
+        <Switch
+          checked={set}
+          onChange={(e) => onSet(e.target.checked)}
+          disabled={blocked !== undefined}
+          slotProps={{
+            input: {
+              "aria-label": "Set",
+              "aria-describedby": blocked ? hint : undefined,
+            },
+          }}
+        />
+      </Stack>
+      <FormHelperText id={hint} sx={{ mt: 0, minHeight: "1.66em" }}>
+        {blocked ?? ""}
+      </FormHelperText>
+      <Stack spacing={2} sx={{ mt: 1 }}>
+        {children}
+      </Stack>
     </FormControl>
   );
 }
@@ -449,12 +454,18 @@ export function EditGatewayIdentityDialog({
         blocked={blocked(enbSet, operator.mmes?.length ?? 0, "MME")}
         onSet={setEnbSet}
       >
-        <PLMNSelect value={enbPLMN} options={options} onChange={setEnbPLMN} />
+        <PLMNSelect
+          value={enbPLMN}
+          options={options}
+          onChange={setEnbPLMN}
+          disabled={!enbSet}
+        />
         <TextField
           select
           label="eNB ID type"
           value={enbType}
           onChange={(e) => setEnbType(e.target.value as ENBIDType)}
+          disabled={!enbSet}
           required
         >
           {ENB_ID_TYPES.map((t) => (
@@ -468,8 +479,9 @@ export function EditGatewayIdentityDialog({
           value={enbId}
           onChange={(e) => setEnbId(e.target.value.trim())}
           onBlur={touch("enb.id")}
-          error={enbIdShown !== undefined}
-          helperText={enbIdShown ?? `0 to ${maxENBID(enbType)}`}
+          disabled={!enbSet}
+          error={enbSet && enbIdShown !== undefined}
+          helperText={(enbSet && enbIdShown) || `0 to ${maxENBID(enbType)}`}
           required
           slotProps={numeric}
         />
@@ -480,15 +492,22 @@ export function EditGatewayIdentityDialog({
         blocked={blocked(gnbSet, operator.amfs?.length ?? 0, "AMF")}
         onSet={setGnbSet}
       >
-        <PLMNSelect value={gnbPLMN} options={options} onChange={setGnbPLMN} />
+        <PLMNSelect
+          value={gnbPLMN}
+          options={options}
+          onChange={setGnbPLMN}
+          disabled={!gnbSet}
+        />
         <TextField
           label="gNB ID"
           value={gnbId}
           onChange={(e) => setGnbId(e.target.value.trim())}
           onBlur={touch("gnb.id")}
-          error={gnbIdShown !== undefined}
+          disabled={!gnbSet}
+          error={gnbSet && gnbIdShown !== undefined}
           helperText={
-            gnbIdShown ?? (gnbMax === undefined ? undefined : `0 to ${gnbMax}`)
+            (gnbSet && gnbIdShown) ||
+            (gnbMax === undefined ? " " : `0 to ${gnbMax}`)
           }
           required
           slotProps={numeric}
@@ -498,9 +517,10 @@ export function EditGatewayIdentityDialog({
           value={gnbLength}
           onChange={(e) => setGnbLength(e.target.value.trim())}
           onBlur={touch("gnb.length")}
-          error={gnbLengthShown !== undefined}
+          disabled={!gnbSet}
+          error={gnbSet && gnbLengthShown !== undefined}
           helperText={
-            gnbLengthShown ??
+            (gnbSet && gnbLengthShown) ||
             `${MIN_GNB_ID_LENGTH} to ${MAX_GNB_ID_LENGTH} bits`
           }
           required

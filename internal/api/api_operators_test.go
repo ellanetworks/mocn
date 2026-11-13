@@ -30,7 +30,7 @@ func TestOperators(t *testing.T) {
 		PLMNs:       []api.PLMN{{MCC: "001", MNC: "01"}, {MCC: "001", MNC: "002"}},
 		GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: db.ENBIDMacro, ID: 703710},
 		GlobalGNBID: &api.GlobalGNBID{PLMN: api.PLMN{MCC: "001", MNC: "002"}, ID: 74565, Length: 22},
-		MMEs:        []api.CoreNode{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
+		MMEs:        []api.MME{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
 		AMFs:        []api.CoreNode{{TNLAddresses: []string{"2001:db8::1"}}},
 	}
 

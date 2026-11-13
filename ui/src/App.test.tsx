@@ -34,6 +34,7 @@ const serve = (role: RoleID | null = RoleID.Admin) => {
         "/api/v1/users/me/api-tokens": () => json(200, { result: page([]) }),
         "/api/v1/metrics": () => new Response("", { status: 200 }),
         "/api/v1/operators": () => json(200, { result: { items: [] } }),
+        "/api/v1/ran-nodes": () => json(200, { result: { items: [] } }),
       }),
     ),
   );
@@ -66,6 +67,7 @@ describe("App", () => {
     ).toEqual([
       ["Dashboard", "/dashboard"],
       ["Operators", "/operators"],
+      ["RAN Nodes", "/ran-nodes"],
       ["Users", "/users"],
     ]);
     expect(screen.getByRole("main")).toBeInTheDocument();
@@ -117,7 +119,7 @@ describe("App", () => {
       within(screen.getByRole("navigation", { name: "Main" }))
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Dashboard", "Operators"]);
+    ).toEqual(["Dashboard", "Operators", "RAN Nodes"]);
   });
 
   it("shows a Read Only user the Operators", async () => {
@@ -132,6 +134,22 @@ describe("App", () => {
       "page",
     );
   });
+
+  it.each([RoleID.Admin, RoleID.NetworkManager, RoleID.ReadOnly])(
+    "shows role %i the RAN Nodes",
+    async (role) => {
+      serve(role);
+      renderAt("/ran-nodes");
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "RAN Nodes (0)" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "RAN Nodes" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    },
+  );
 
   it("opens the profile from the account menu", async () => {
     serve();

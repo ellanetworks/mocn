@@ -12,6 +12,7 @@ import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import StateChip from "@/components/StateChip";
 import {
   AddCoreNodeDialog,
   EditPLMNsDialog,
@@ -20,6 +21,7 @@ import {
   RemoveDialog,
   RenameOperatorDialog,
 } from "@/components/OperatorDialogs";
+import PLMNSummary from "@/components/PLMNSummary";
 import PageHeader from "@/components/PageHeader";
 import QueryAlert from "@/components/QueryAlert";
 import SectionHeader from "@/components/SectionHeader";
@@ -27,23 +29,26 @@ import SettingsTable, { SubFields } from "@/components/SettingsTable";
 import { useAuth } from "@/contexts/AuthContext";
 import { errorMessage, useSnackbar } from "@/contexts/SnackbarContext";
 import {
-  type CoreNode,
   deleteOperator,
   getOperator,
+  type MME,
+  type MMEStatus,
   type Operator,
 } from "@/queries/operators";
+import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
 import {
-  ENB_IDENTITY_LABEL,
   formatGlobalENBID,
   formatGlobalGNBID,
+  formatGUMMEI,
   formatPLMN,
   formatTNLAddresses,
   GATEWAY_IDENTITY_HELP,
-  GNB_IDENTITY_LABEL,
   operatorPath,
   PWS_HELP,
 } from "@/utils/operators";
+
+export const OPERATOR_REFRESH_MS = 5000;
 
 const operatorQueryKey = (name: string) => ["operators", "operator", name];
 
@@ -53,6 +58,7 @@ const gridSx = {
     ...GRID_SX["& .MuiDataGrid-cell"],
     display: "flex",
     alignItems: "center",
+    py: 1,
     overflowWrap: "anywhere",
   },
 };
@@ -70,27 +76,110 @@ type Editing =
 interface NodeRow {
   index: number;
   addresses: string;
+  status?: MMEStatus;
 }
+
+const NONE = "—";
+
+function TextList({ label, items }: { label: string; items: string[] }) {
+  return (
+    <Box
+      component="ul"
+      aria-label={label}
+      sx={{ m: 0, p: 0, listStyle: "none" }}
+    >
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </Box>
+  );
+}
+
+const formatFailure = ({ last_failure_cause, time_to_wait }: MMEStatus) =>
+  last_failure_cause === undefined
+    ? NONE
+    : time_to_wait === undefined
+      ? last_failure_cause
+      : `${last_failure_cause} (time to wait ${time_to_wait} s)`;
+
+const MME_COLUMNS: GridColDef<NodeRow>[] = [
+  {
+    field: "state",
+    headerName: "Status",
+    description:
+      "Disconnected: no SCTP association to the MME. Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded. Setup failed: the MME rejected the S1 Setup.",
+    minWidth: 130,
+    renderCell: ({ row }) =>
+      row.status ? (
+        <StateChip
+          state={row.status.state}
+          hint={`Since ${formatDateTime(row.status.since, { seconds: true })}`}
+        />
+      ) : (
+        NONE
+      ),
+  },
+  {
+    field: "primary",
+    headerName: "Primary address",
+    description: "The TNL address of the MME that the SCTP association uses.",
+    flex: 0.6,
+    minWidth: 130,
+    valueGetter: (_value, row) => row.status?.primary_tnl_address ?? NONE,
+  },
+  {
+    field: "mme_name",
+    headerName: "MME name",
+    description: "The name the MME sent in its S1 Setup Response.",
+    flex: 0.6,
+    minWidth: 120,
+    valueGetter: (_value, row) => row.status?.mme_name ?? NONE,
+  },
+  {
+    field: "gummeis",
+    headerName: "Served GUMMEIs",
+    description:
+      "The PLMNs, MME group IDs and MME codes that the MME serves, from its S1 Setup Response.",
+    flex: 1.2,
+    minWidth: 220,
+    renderCell: ({ row }) =>
+      row.status?.served_gummeis?.length ? (
+        <TextList
+          label="Served GUMMEIs"
+          items={row.status.served_gummeis.map(formatGUMMEI)}
+        />
+      ) : (
+        NONE
+      ),
+  },
+  {
+    field: "capacity",
+    headerName: "Capacity",
+    description:
+      "The relative MME capacity (0 to 255) the MME sent in its S1 Setup Response.",
+    minWidth: 100,
+    valueGetter: (_value, row) =>
+      row.status?.relative_mme_capacity === undefined
+        ? NONE
+        : String(row.status.relative_mme_capacity),
+  },
+  {
+    field: "failure",
+    headerName: "Last failure",
+    description:
+      "The cause of the last S1 Setup Failure or SCTP error, and the time the MME asked to wait before the next S1 Setup.",
+    flex: 1,
+    minWidth: 180,
+    valueGetter: (_value, row) =>
+      row.status ? formatFailure(row.status) : NONE,
+  },
+];
 
 function NotSet() {
   return (
     <Typography variant="body2" color="textSecondary">
       Not set
     </Typography>
-  );
-}
-
-function PLMNList({ plmns }: { plmns: string[] }) {
-  return (
-    <Box
-      component="ul"
-      aria-label="PLMNs"
-      sx={{ m: 0, p: 0, listStyle: "none" }}
-    >
-      {plmns.map((plmn) => (
-        <li key={plmn}>{plmn}</li>
-      ))}
-    </Box>
   );
 }
 
@@ -105,7 +194,7 @@ function CoreNodes({
   onRemove,
 }: {
   kind: Kind;
-  nodes: CoreNode[];
+  nodes: MME[];
   identitySet: boolean;
   editable: boolean;
   onAdd: () => void;
@@ -116,9 +205,11 @@ function CoreNodes({
     {
       field: "addresses",
       headerName: "TNL addresses",
+      description: `The addresses Ella MOCN uses to reach the ${kind}.`,
       flex: 1,
       minWidth: 180,
     },
+    ...(kind === "MME" ? MME_COLUMNS : []),
   ];
   if (editable) {
     columns.push({
@@ -170,6 +261,7 @@ function CoreNodes({
         rows={nodes.map((node, index) => ({
           index,
           addresses: formatTNLAddresses(node),
+          status: node.status,
         }))}
         columns={columns}
         getRowId={(row) => row.addresses}
@@ -179,6 +271,7 @@ function CoreNodes({
         disableRowSelectionOnClick
         disableVirtualization
         hideFooter
+        getRowHeight={() => "auto"}
         localeText={{ noRowsLabel: `No ${kind}s.` }}
         autoHeight
         sx={gridSx}
@@ -230,7 +323,7 @@ function OperatorSections({
           {
             label: "PLMNs",
             help: "The PLMN IDs of this operator. UEs that select one of them are routed to this operator's core.",
-            value: <PLMNList plmns={operator.plmns.map(formatPLMN)} />,
+            value: <PLMNSummary plmns={operator.plmns.map(formatPLMN)} />,
             onEdit: edit({ type: "plmns" }),
           },
           {
@@ -245,14 +338,8 @@ function OperatorSections({
             value: (
               <SubFields
                 rows={[
-                  [
-                    ENB_IDENTITY_LABEL,
-                    enb ? formatGlobalENBID(enb) : <NotSet key="enb" />,
-                  ],
-                  [
-                    GNB_IDENTITY_LABEL,
-                    gnb ? formatGlobalGNBID(gnb) : <NotSet key="gnb" />,
-                  ],
+                  ["4G", enb ? formatGlobalENBID(enb) : <NotSet key="enb" />],
+                  ["5G", gnb ? formatGlobalGNBID(gnb) : <NotSet key="gnb" />],
                 ]}
               />
             ),
@@ -331,6 +418,7 @@ export default function OperatorDetail() {
   const operator = useQuery({
     queryKey: operatorQueryKey(name),
     queryFn: () => getOperator(name),
+    refetchInterval: OPERATOR_REFRESH_MS,
   });
 
   const remove = useMutation({

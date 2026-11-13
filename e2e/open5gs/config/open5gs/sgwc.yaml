@@ -1,0 +1,13 @@
+logger:
+  file:
+    path: /var/log/open5gs/sgwc.log
+sgwc:
+  gtpc:
+    server:
+      - address: 127.0.0.3
+  pfcp:
+    server:
+      - address: 127.0.0.3
+    client:
+      sgwu:
+        - address: 127.0.0.6

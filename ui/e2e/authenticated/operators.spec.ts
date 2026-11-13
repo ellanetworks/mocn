@@ -51,7 +51,7 @@ test.describe("Admin", () => {
     const overview = page.getByRole("table", { name: "Overview" });
 
     await page.goto("/operators");
-    await page.getByRole("button", { name: "Create Operator" }).click();
+    await page.getByRole("button", { name: "Create", exact: true }).click();
     let dialog = page.getByRole("dialog", { name: "Create Operator" });
     await expect(dialog.getByRole("textbox")).toHaveCount(3);
     await dialog.getByRole("textbox", { name: "Name" }).fill(NAME);
@@ -271,7 +271,7 @@ test.describe("Read Only", () => {
     const row = page.getByRole("row").filter({ hasText: READ_ONLY_NAME });
     await expect(row).toContainText("901/72");
     await expect(
-      page.getByRole("button", { name: "Create Operator" }),
+      page.getByRole("button", { name: "Create", exact: true }),
     ).toHaveCount(0);
 
     await row.getByRole("link", { name: READ_ONLY_NAME }).click();

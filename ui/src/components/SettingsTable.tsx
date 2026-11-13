@@ -56,7 +56,9 @@ export default function SettingsTable({
                   <span>{row.label}</span>
                 </Tooltip>
               </TableCell>
-              <TableCell sx={{ width: "55%", overflowWrap: "anywhere" }}>
+              <TableCell
+                sx={{ width: "55%", maxWidth: 0, overflowWrap: "anywhere" }}
+              >
                 {row.value}
               </TableCell>
               <TableCell sx={{ width: "10%", textAlign: "right" }}>

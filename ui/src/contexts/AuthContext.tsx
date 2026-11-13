@@ -19,7 +19,11 @@ import {
 import { decodeAccessToken } from "@/utils/jwt";
 
 export type Permission =
-  "user:self" | "user:admin" | "operator:read" | "operator:update";
+  | "user:self"
+  | "user:admin"
+  | "operator:read"
+  | "operator:update"
+  | "ran_node:read";
 
 const permissions: Record<RoleID, Permission[]> = {
   [RoleID.Admin]: [
@@ -27,9 +31,15 @@ const permissions: Record<RoleID, Permission[]> = {
     "user:admin",
     "operator:read",
     "operator:update",
+    "ran_node:read",
   ],
-  [RoleID.ReadOnly]: ["user:self", "operator:read"],
-  [RoleID.NetworkManager]: ["user:self", "operator:read", "operator:update"],
+  [RoleID.ReadOnly]: ["user:self", "operator:read", "ran_node:read"],
+  [RoleID.NetworkManager]: [
+    "user:self",
+    "operator:read",
+    "operator:update",
+    "ran_node:read",
+  ],
 };
 
 export interface Auth {

@@ -31,6 +31,7 @@ func TestRoles(t *testing.T) {
 		"GET /api/v1/operators/{name}":                 all,
 		"PUT /api/v1/operators/{name}":                 admin | networkManager,
 		"DELETE /api/v1/operators/{name}":              admin | networkManager,
+		"GET /api/v1/ran-nodes":                        all,
 		"GET /api/v1/users":                            admin,
 		"POST /api/v1/users":                           admin,
 		"GET /api/v1/users/{email}":                    admin,
