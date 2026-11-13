@@ -12,6 +12,10 @@ import { listOperators, type Operator } from "@/queries/operators";
 import { GRID_SX } from "@/utils/layout";
 import { formatPLMN, operatorPath } from "@/utils/operators";
 
+export const OPERATORS_REFRESH_MS = 5000;
+
+const NONE = "—";
+
 const gridSx = {
   ...GRID_SX,
   "& .MuiDataGrid-row": { cursor: "pointer" },
@@ -49,6 +53,15 @@ const columns: GridColDef<Operator>[] = [
     ),
   },
   {
+    field: "ue_connections",
+    headerName: "UE connections",
+    description:
+      "The UE-associated logical S1-connections Ella MOCN relays to the operator's MMEs, one per UE in ECM-CONNECTED.",
+    flex: 0.5,
+    minWidth: 140,
+    valueGetter: (_value, row) => row.ue_connections ?? NONE,
+  },
+  {
     field: "pws_operator",
     headerName: "PWS",
     width: 100,
@@ -67,6 +80,7 @@ export default function Operators() {
   const operators = useQuery({
     queryKey: ["operators"],
     queryFn: listOperators,
+    refetchInterval: OPERATORS_REFRESH_MS,
   });
 
   return (

@@ -25,11 +25,11 @@ type recordingRelay struct {
 	ranLost atomic.Int32
 }
 
-func (*recordingRelay) FromRAN(context.Context, *s1.RANAssociation, s1ap.PDU) {}
+func (*recordingRelay) FromRAN(context.Context, *s1.RANAssociation, s1ap.PDU, []byte) {}
 
-func (*recordingRelay) FromMME(context.Context, *s1.MMEAssociation, s1ap.PDU) {}
+func (*recordingRelay) FromMME(context.Context, *s1.MMEAssociation, s1ap.PDU, []byte) {}
 
-func (r *recordingRelay) RANLost(*s1.RANAssociation) { r.ranLost.Add(1) }
+func (r *recordingRelay) RANLost(*s1.RANAssociation, s1ap.Cause) { r.ranLost.Add(1) }
 
 func (*recordingRelay) MMELost(*s1.MMEAssociation) {}
 

@@ -29,6 +29,11 @@ const NODES: Radio[] = [
     state: "up",
     connected_since: "2026-11-12T10:00:00Z",
     tnl_addresses: ["10.0.0.5", "10.0.0.6"],
+    ue_connections: 2,
+    ue_connections_by_operator: [
+      { operator: "Operator A", ue_connections: 2 },
+      { operator: "Operator B", ue_connections: 0 },
+    ],
   },
   {
     ref: "315-010:home:4660",
@@ -42,6 +47,7 @@ const NODES: Radio[] = [
     state: "connected",
     connected_since: "2026-11-12T10:00:05Z",
     tnl_addresses: ["10.0.0.7"],
+    ue_connections: 0,
   },
   {
     global_enb_id: null,
@@ -49,6 +55,7 @@ const NODES: Radio[] = [
     state: "connected",
     connected_since: "2026-11-12T10:00:09Z",
     tnl_addresses: ["10.0.0.8"],
+    ue_connections: 0,
   },
 ];
 
@@ -115,16 +122,29 @@ describe("Radios", () => {
     expect(document.title).toBe("Radios · Ella MOCN");
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
-    ).toEqual(["Name", "Global eNB ID", "Addresses", "Status"]);
+    ).toEqual([
+      "Name",
+      "Global eNB ID",
+      "Addresses",
+      "UE connections",
+      "Status",
+    ]);
     expect(rows()).toEqual([
-      ["srsenb01", "001/01 · Macro (20 bits) · 1", "10.0.0.5, 10.0.0.6", "Up"],
+      [
+        "srsenb01",
+        "001/01 · Macro (20 bits) · 1",
+        "10.0.0.5, 10.0.0.6",
+        "2",
+        "Up",
+      ],
       [
         "315-010:home:4660",
         "315/010 · Home (28 bits) · 4660",
         "10.0.0.7",
+        "0",
         "Connected",
       ],
-      ["10.0.0.8", "—", "10.0.0.8", "Connected"],
+      ["10.0.0.8", "—", "10.0.0.8", "0", "Connected"],
     ]);
     expect(screen.getByRole("link", { name: "srsenb01" })).toHaveAttribute(
       "href",
@@ -179,9 +199,54 @@ describe("Radios", () => {
     expect(valueOf("Addresses")).toBe("10.0.0.5, 10.0.0.6");
     expect(valueOf("Paging DRX")).toBe("128");
 
-    const tas = within(screen.getByRole("grid", { name: "Supported TAs (2)" }));
+    expect(valueOf("Supported TAs")).toBe(
+      "TAC 1: 001/01, 315/010; TAC 7: 001/01",
+    );
     expect(
-      tas
+      overview.getByTitle("TAC 1: 001/01, 315/010; TAC 7: 001/01"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("grid", { name: /^Supported TAs/ }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.mouseOver(overview.getByText("Supported TAs"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "The tracking areas the radio serves, each with the PLMNs it broadcasts.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a dash for a radio without tracking areas", async () => {
+    const node: Radio = { ...NODES[0], supported_tas: [] };
+    serve(() => [node]);
+
+    renderAt("/radios/001-01%3Amacro%3A1");
+
+    const overview = within(
+      await screen.findByRole("table", { name: "Overview" }),
+    );
+    expect(
+      overview
+        .getByText("Supported TAs")
+        .closest("tr")!
+        .querySelectorAll("td")[1].textContent,
+    ).toBe("—");
+  });
+
+  it("shows a radio's UE connections by operator", async () => {
+    serve(() => NODES);
+
+    renderAt("/radios/001-01%3Amacro%3A1");
+
+    const grid = within(
+      await screen.findByRole("grid", { name: "UE connections by operator" }),
+    );
+    expect(grid.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(
+      ["Operator", "UE connections"],
+    );
+    expect(
+      grid
         .getAllByRole("row")
         .slice(1)
         .map((row) =>
@@ -190,9 +255,41 @@ describe("Radios", () => {
             .map((cell) => cell.textContent),
         ),
     ).toEqual([
-      ["1", "001/01, 315/010"],
-      ["7", "001/01"],
+      ["Operator A", "2"],
+      ["Operator B", "0"],
     ]);
+    expect(grid.getByRole("link", { name: "Operator B" })).toHaveAttribute(
+      "href",
+      "/operators/Operator%20B",
+    );
+
+    fireEvent.mouseOver(grid.getByText("Operator"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "An operator that owns a PLMN the radio broadcasts, or that has UE connections from it.",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a radio's UE connections by operator up to date", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const node: Radio = { ...NODES[0], ue_connections_by_operator: [] };
+    serve(() => [node]);
+
+    renderAt("/radios/001-01%3Amacro%3A1");
+    const grid = await screen.findByRole("grid", {
+      name: "UE connections by operator",
+    });
+    expect(within(grid).getByText("No operators.")).toBeInTheDocument();
+
+    node.ue_connections_by_operator = [
+      { operator: "Operator A", ue_connections: 1 },
+    ];
+    await vi.advanceTimersByTimeAsync(5000);
+
+    await waitFor(() =>
+      expect(within(grid).getByText("Operator A")).toBeVisible(),
+    );
   });
 
   it("says when a radio is gone", async () => {

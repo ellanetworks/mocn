@@ -21,6 +21,7 @@ tags:
   - name: Auth
   - name: Operators
   - name: Radios
+  - name: UE connections
   - name: Users
   - name: Status
   - name: Metrics
@@ -389,6 +390,41 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/ue-connections:
+    get:
+      tags: [UE connections]
+      operationId: listUEConnections
+      summary: List UE connections
+      description: Lists the UE-associated logical S1-connections that Ella MOCN relays, oldest first.
+      parameters:
+        - name: radio
+          in: query
+          description: Only the UE connections of the radio with this ref.
+          schema:
+            type: string
+        - name: operator
+          in: query
+          description: Only the UE connections of the operator with this name.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    $ref: "#/components/schemas/ListUEConnectionsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v1/users:
     get:
@@ -1113,6 +1149,22 @@ components:
             Needs a global_gnb_id. An address appears at most once across the operator's AMFs.
           items:
             $ref: "#/components/schemas/CoreNode"
+        ue_connections:
+          type: integer
+          minimum: 0
+          readOnly: true
+          description: >-
+            The number of UE-associated logical S1-connections across the operator's MMEs. Present in GET responses.
+            Ignored in requests.
+        ue_connections_by_radio:
+          type: array
+          readOnly: true
+          description: >-
+            The number of UE-associated logical S1-connections of the operator on each radio. Lists every radio that
+            broadcasts one of the operator's PLMNs, and every other radio with UE connections of the operator, sorted
+            by name, or by ref for a radio without a name. Present in GET /api/v1/operators/{name} responses. Ignored in requests.
+          items:
+            $ref: "#/components/schemas/RadioUEConnections"
 
     CoreNode:
       type: object
@@ -1153,7 +1205,7 @@ components:
     MMEStatus:
       type: object
       readOnly: true
-      required: [state, since]
+      required: [state, since, ue_connections]
       description: >-
         Runtime state of the MME, learned from the S1 association and not stored. Present in GET responses for the MMEs
         of an operator with a global_enb_id. Ignored in requests.
@@ -1183,6 +1235,10 @@ components:
           type: integer
           minimum: 0
           maximum: 255
+        ue_connections:
+          type: integer
+          minimum: 0
+          description: The number of UE-associated logical S1-connections relayed to the MME.
 
     ServedGUMMEIs:
       type: object
@@ -1220,7 +1276,7 @@ components:
 
     Radio:
       type: object
-      required: [global_enb_id, supported_tas, state, connected_since, tnl_addresses]
+      required: [global_enb_id, supported_tas, state, connected_since, tnl_addresses, ue_connections]
       description: A radio with an S1 association to Ella MOCN. Learned at runtime, not stored.
       properties:
         ref:
@@ -1263,6 +1319,43 @@ components:
           type: array
           items:
             type: string
+        ue_connections:
+          type: integer
+          minimum: 0
+          description: The number of UE-associated logical S1-connections from the radio.
+        ue_connections_by_operator:
+          type: array
+          description: >-
+            The number of UE-associated logical S1-connections from the radio for each operator. Lists every operator
+            that owns one of the PLMNs the radio broadcasts, and every other operator with UE connections from the
+            radio, sorted by operator name. Present in GET /api/v1/radios/{ref} responses.
+          items:
+            $ref: "#/components/schemas/OperatorUEConnections"
+
+    OperatorUEConnections:
+      type: object
+      required: [operator, ue_connections]
+      properties:
+        operator:
+          type: string
+          description: The operator name.
+        ue_connections:
+          type: integer
+          minimum: 0
+
+    RadioUEConnections:
+      type: object
+      required: [radio, ue_connections]
+      properties:
+        radio:
+          type: string
+          description: The radio ref.
+        name:
+          type: string
+          description: The eNB name of the radio, if it sent one.
+        ue_connections:
+          type: integer
+          minimum: 0
 
     ListRadiosResponse:
       type: object
@@ -1272,6 +1365,103 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Radio"
+
+    TAI:
+      type: object
+      required: [plmn, tac]
+      properties:
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        tac:
+          type: integer
+          minimum: 0
+          maximum: 65535
+
+    ECGI:
+      type: object
+      required: [plmn, cell_id]
+      properties:
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        cell_id:
+          type: integer
+          minimum: 0
+          maximum: 268435455
+          description: 28-bit E-UTRAN Cell Identity.
+
+    UEConnection:
+      type: object
+      required: [radio, mme, operator, plmn, since, tai, ecgi]
+      description: A UE-associated logical S1-connection relayed by Ella MOCN. Learned at runtime, not stored.
+      properties:
+        radio:
+          type: object
+          required: [ref, enb_ue_s1ap_id, mme_ue_s1ap_id]
+          description: The S1 connection between the radio and Ella MOCN.
+          properties:
+            ref:
+              type: string
+              description: The radio's ref in /api/v1/radios/{ref}.
+            enb_ue_s1ap_id:
+              type: integer
+              minimum: 0
+              maximum: 16777215
+              description: Allocated by the radio.
+            mme_ue_s1ap_id:
+              type: integer
+              minimum: 0
+              maximum: 4294967295
+              description: Allocated by Ella MOCN.
+        mme:
+          type: object
+          required: [tnl_addresses, enb_ue_s1ap_id, mme_ue_s1ap_id]
+          description: The S1 connection between Ella MOCN and the operator's MME.
+          properties:
+            tnl_addresses:
+              type: array
+              items:
+                type: string
+              description: The MME's TNL addresses, as configured on the operator.
+            enb_ue_s1ap_id:
+              type: integer
+              minimum: 0
+              maximum: 16777215
+              description: Allocated by Ella MOCN.
+            mme_ue_s1ap_id:
+              description: Allocated by the MME. Null until the MME's first message for the UE.
+              oneOf:
+                - type: integer
+                  minimum: 0
+                  maximum: 4294967295
+                - type: "null"
+        operator:
+          type: string
+          description: The operator that serves the selected PLMN.
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        since:
+          type: string
+          format: date-time
+          description: When the radio sent the INITIAL UE MESSAGE.
+        tai:
+          description: The last TAI the radio reported for the UE.
+          oneOf:
+            - $ref: "#/components/schemas/TAI"
+            - type: "null"
+        ecgi:
+          description: The last E-UTRAN CGI the radio reported for the UE.
+          oneOf:
+            - $ref: "#/components/schemas/ECGI"
+            - type: "null"
+
+    ListUEConnectionsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UEConnection"
 
     ListOperatorsResponse:
       type: object

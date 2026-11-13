@@ -199,19 +199,29 @@ describe("operatorBody", () => {
     );
   });
 
-  it("leaves out the read-only MME status", () => {
+  it("leaves out the read-only MME status and UE connections", () => {
     const withStatus: Operator = {
       ...operator,
       mmes: [
         {
           tnl_addresses: ["10.0.0.1"],
-          status: { state: "up", since: "2026-11-12T10:00:00Z" },
+          status: {
+            state: "up",
+            since: "2026-11-12T10:00:00Z",
+            ue_connections: 1,
+          },
         },
       ],
+      ue_connections: 1,
+      ue_connections_by_radio: [{ radio: "001-01:macro:1", ue_connections: 1 }],
     };
     expect(operatorBody(withStatus).mmes).toEqual([
       { tnl_addresses: ["10.0.0.1"] },
     ]);
+    expect(operatorBody(withStatus)).not.toHaveProperty("ue_connections");
+    expect(operatorBody(withStatus)).not.toHaveProperty(
+      "ue_connections_by_radio",
+    );
     expect(operatorBody(operator, { mmes: withStatus.mmes }).mmes).toEqual([
       { tnl_addresses: ["10.0.0.1"] },
     ]);

@@ -15,13 +15,7 @@ import (
 	"github.com/ellanetworks/mocn/internal/db"
 )
 
-const (
-	sideRAN        = "ran"
-	sideMME        = "mme"
-	outcomeSuccess = "success"
-	outcomeFailure = "failure"
-	dialTimeout    = 10 * time.Second
-)
+const dialTimeout = 10 * time.Second
 
 type mmeClient struct {
 	g          *Gateway
@@ -41,6 +35,7 @@ type mmeClient struct {
 type MMEAssociation struct {
 	client *mmeClient
 	conn   *sctp.SCTPConn
+	lost   bool
 }
 
 func (a *MMEAssociation) Send(msg []byte, stream uint16) error {
@@ -251,6 +246,11 @@ func (c *mmeClient) session(ctx context.Context, assoc *MMEAssociation) error {
 	timer := time.NewTimer(time.Hour)
 
 	defer timer.Stop()
+	defer func() {
+		if s.pending == procSetup {
+			c.endSetup(s, setupError)
+		}
+	}()
 
 	for {
 		if err := c.step(ctx, s); err != nil {
@@ -296,6 +296,7 @@ func (c *mmeClient) step(ctx context.Context, s *mmeSession) error {
 		}
 
 		if s.pending == procSetup {
+			c.endSetup(s, setupTimeout)
 			return errors.New("no response to S1 Setup Request")
 		}
 
@@ -323,22 +324,14 @@ func (c *mmeClient) step(ctx context.Context, s *mmeSession) error {
 
 // TS 36.413 clause 8.7.3
 func (c *mmeClient) sendS1Setup(ctx context.Context, s *mmeSession, want enbConfig) error {
-	id, err := globalENBIDTo(c.enbID)
+	out, err := s1SetupRequest(c.enbID, want)
 	if err != nil {
+		c.g.countSetup(sideCore, setupError)
 		return err
-	}
-
-	tas, err := tasTo(want.tas)
-	if err != nil {
-		return err
-	}
-
-	out, err := (&s1ap.S1SetupRequest{GlobalENBID: id, SupportedTAs: tas, DefaultPagingDRX: s1ap.Ptr(want.drx)}).Marshal()
-	if err != nil {
-		return fmt.Errorf("marshal S1 Setup Request: %w", err)
 	}
 
 	if err := s.assoc.Send(out, nonUEStream); err != nil {
+		c.g.countSetup(sideCore, setupError)
 		return fmt.Errorf("SCTP: %w", err)
 	}
 
@@ -348,6 +341,31 @@ func (c *mmeClient) sendS1Setup(ctx context.Context, s *mmeSession, want enbConf
 	s.pending, s.sent, s.deadline = procSetup, want, c.g.cfg.Now().Add(c.g.cfg.ResponseTimeout)
 
 	return nil
+}
+
+func s1SetupRequest(enbID db.GlobalENBID, want enbConfig) ([]byte, error) {
+	id, err := globalENBIDTo(enbID)
+	if err != nil {
+		return nil, err
+	}
+
+	tas, err := tasTo(want.tas)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := (&s1ap.S1SetupRequest{GlobalENBID: id, SupportedTAs: tas, DefaultPagingDRX: s1ap.Ptr(want.drx)}).Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshal S1 Setup Request: %w", err)
+	}
+
+	return out, nil
+}
+
+func (c *mmeClient) endSetup(s *mmeSession, result string) {
+	s.pending = procNone
+
+	c.g.countSetup(sideCore, result)
 }
 
 // TS 36.413 clause 8.7.4
@@ -438,7 +456,7 @@ func (c *mmeClient) handle(ctx context.Context, s *mmeSession, msg []byte) error
 		return nil
 	}
 
-	c.g.cfg.Relay.FromMME(ctx, s.assoc, pdu)
+	c.g.cfg.Relay.FromMME(ctx, s.assoc, pdu, msg)
 
 	return nil
 }
@@ -450,13 +468,13 @@ func (c *mmeClient) handleS1SetupResponse(ctx context.Context, s *mmeSession, va
 
 	resp, err := s1ap.ParseS1SetupResponse(value)
 	if err != nil {
-		c.g.setups.WithLabelValues(sideMME, outcomeFailure).Inc()
+		c.endSetup(s, setupFailure)
 		return fmt.Errorf("S1 Setup Response: %w", err)
 	}
 
 	served, err := gummeisFrom(resp.ServedGUMMEIs)
 	if err != nil {
-		c.g.setups.WithLabelValues(sideMME, outcomeFailure).Inc()
+		c.endSetup(s, setupFailure)
 		return fmt.Errorf("S1 Setup Response: %w", err)
 	}
 
@@ -476,7 +494,7 @@ func (c *mmeClient) handleS1SetupResponse(ctx context.Context, s *mmeSession, va
 	c.g.mmeChangedLocked()
 	c.g.mu.Unlock()
 
-	c.g.setups.WithLabelValues(sideMME, outcomeSuccess).Inc()
+	c.g.countSetup(sideCore, setupSuccess)
 	c.logger().InfoContext(ctx, "MME S1 Setup succeeded", slog.String("mme_name", c.status.MMEName))
 
 	return nil
@@ -487,9 +505,7 @@ func (c *mmeClient) handleS1SetupFailure(ctx context.Context, s *mmeSession, val
 		return nil
 	}
 
-	s.pending = procNone
-
-	c.g.setups.WithLabelValues(sideMME, outcomeFailure).Inc()
+	c.endSetup(s, setupFailure)
 
 	fail, err := s1ap.ParseS1SetupFailure(value)
 	if err != nil {

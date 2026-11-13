@@ -46,8 +46,7 @@ test.describe("Admin", () => {
       await expect(page.getByText(message)).toBeVisible();
       await expect(page.getByRole("dialog")).toHaveCount(0);
     };
-    const mmes = page.getByRole("grid", { name: /^4G MMEs/ });
-    const amfs = page.getByRole("grid", { name: /^5G AMFs/ });
+    const nodes = page.getByRole("grid", { name: /^Core network nodes/ });
     const overview = page.getByRole("table", { name: "Overview" });
 
     await page.goto("/operators");
@@ -67,9 +66,9 @@ test.describe("Admin", () => {
     await expect(
       page.getByRole("button", { name: "Edit", exact: true }),
     ).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Add MME" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Add AMF" })).toBeDisabled();
-    await expect(mmes).toContainText("No MMEs.");
+    const add = page.getByRole("button", { name: "Add", exact: true });
+    await expect(add).toBeDisabled();
+    await expect(nodes).toContainText("No core network nodes.");
 
     await overview.getByText("Gateway identity", { exact: true }).hover();
     await expect(
@@ -112,8 +111,9 @@ test.describe("Admin", () => {
     ).toBeVisible();
     await expect(overview.getByText("901/71 · 74565 (22 bits)")).toBeVisible();
 
-    await page.getByRole("button", { name: "Add MME" }).click();
-    dialog = page.getByRole("dialog", { name: "Add MME" });
+    await add.click();
+    dialog = page.getByRole("dialog", { name: "Add Core Network Node" });
+    await expect(dialog.getByRole("radio", { name: "MME" })).toBeChecked();
     await dialog.getByRole("textbox", { name: "Address 1" }).fill("10.0.0.1");
     await dialog.getByRole("button", { name: "Add address" }).click();
     await dialog.getByRole("textbox", { name: "Address 2" }).fill("10.0.0.1");
@@ -123,14 +123,17 @@ test.describe("Admin", () => {
       dialog.getByRole("button", { name: "Add", exact: true }),
     ).toBeDisabled();
     await dialog.getByRole("textbox", { name: "Address 2" }).fill("10.0.0.2");
-    await assertNoA11yViolations(page, "Add MME dialog");
+    await assertNoA11yViolations(page, "Add Core Network Node dialog");
     await dialog.getByRole("button", { name: "Add", exact: true }).click();
     await saved("MME added successfully.");
     await expect(
-      page.getByRole("heading", { level: 2, name: "4G MMEs (1)" }),
+      page.getByRole("heading", { level: 2, name: "Core network nodes (1)" }),
     ).toBeVisible();
     await expect(
-      mmes.getByRole("gridcell", { name: "10.0.0.1, 10.0.0.2", exact: true }),
+      nodes.getByRole("gridcell", { name: "10.0.0.1, 10.0.0.2", exact: true }),
+    ).toBeVisible();
+    await expect(
+      nodes.getByRole("gridcell", { name: "MME", exact: true }),
     ).toBeVisible();
     ({ identity, lte, nr } = await editIdentity());
     await expect(lte.getByRole("switch", { name: "Set" })).toBeDisabled();
@@ -139,14 +142,25 @@ test.describe("Admin", () => {
     await identity.getByRole("button", { name: "Save" }).click();
     await saved("Gateway identity saved successfully.");
     await expect(overview.getByText("Not set")).toHaveCount(1);
+    await add.click();
+    dialog = page.getByRole("dialog", { name: "Add Core Network Node" });
+    await expect(dialog.getByRole("radio", { name: "AMF" })).toBeDisabled();
+    await dialog.getByText("AMF", { exact: true }).hover();
+    await expect(
+      page.getByRole("tooltip", {
+        name: "Set the 5G gateway identity (Global gNB ID) first",
+      }),
+    ).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 
-    await mmes
+    await nodes
       .getByRole("button", { name: "Delete MME 10.0.0.1, 10.0.0.2" })
       .click();
     dialog = page.getByRole("dialog", { name: "Delete MME" });
     await dialog.getByRole("button", { name: "Delete" }).click();
     await saved("MME deleted successfully.");
-    await expect(mmes).toContainText("No MMEs.");
+    await expect(nodes).toContainText("No core network nodes.");
 
     ({ identity, nr } = await editIdentity());
     await nr.getByRole("switch", { name: "Set" }).click();
@@ -157,13 +171,14 @@ test.describe("Admin", () => {
     await saved("Gateway identity saved successfully.");
     await expect(overview.getByText("901/71 · 74565 (22 bits)")).toBeVisible();
 
-    await page.getByRole("button", { name: "Add AMF" }).click();
-    dialog = page.getByRole("dialog", { name: "Add AMF" });
+    await add.click();
+    dialog = page.getByRole("dialog", { name: "Add Core Network Node" });
+    await dialog.getByRole("radio", { name: "AMF" }).check();
     await dialog.getByRole("textbox", { name: "Address 1" }).fill("10.0.1.1");
     await dialog.getByRole("button", { name: "Add", exact: true }).click();
     await saved("AMF added successfully.");
     await expect(
-      amfs.getByRole("gridcell", { name: "10.0.1.1", exact: true }),
+      nodes.getByRole("gridcell", { name: "10.0.1.1", exact: true }),
     ).toBeVisible();
 
     const pwsRow = overview
@@ -211,7 +226,7 @@ test.describe("Admin", () => {
       page.getByRole("heading", { level: 1, name: heading(RENAMED) }),
     ).toBeVisible();
     await expect(
-      amfs.getByRole("gridcell", { name: "10.0.1.1", exact: true }),
+      nodes.getByRole("gridcell", { name: "10.0.1.1", exact: true }),
     ).toBeVisible();
     expect(
       (await send(request, "get", operatorPath(NAME), { token })).status(),

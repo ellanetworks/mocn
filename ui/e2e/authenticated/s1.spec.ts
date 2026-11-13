@@ -40,6 +40,7 @@ for (const { name, session } of SESSIONS) {
         "Name",
         "Global eNB ID",
         "Addresses",
+        "UE connections",
         "Status",
       ]);
       await expect(
@@ -84,7 +85,7 @@ test.describe("MME status", () => {
   }) => {
     await page.goto(`/operators/${encodeURIComponent(OPERATOR)}`);
 
-    const mmes = page.getByRole("grid", { name: /^4G MMEs/ });
+    const mmes = page.getByRole("grid", { name: /^Core network nodes/ });
     const row = mmes.getByRole("row").filter({
       has: page.getByRole("gridcell", { name: UNREACHABLE_MME, exact: true }),
     });
@@ -93,14 +94,48 @@ test.describe("MME status", () => {
         hasText: /^(Disconnected|Connected|Up|Setup failed)$/,
       }),
     ).toBeVisible({ timeout: 15_000 });
+    await expect(mmes.getByRole("columnheader")).toHaveText([
+      "Type",
+      "Addresses",
+      "Name",
+      "Served IDs",
+      "UE connections",
+      "Status",
+      "Actions",
+    ]);
+    const connections = page.getByRole("grid", {
+      name: "UE connections by radio",
+    });
+    await expect(connections).toContainText("No radios.");
+    await expect(connections.getByRole("columnheader")).toHaveText([
+      "Radio",
+      "UE connections",
+    ]);
     await assertNoA11yViolations(page, "Operator MME status");
 
+    const token = await adminToken(request);
     const operator = await json<{
-      mmes: { tnl_addresses: string[]; status?: { state: string } }[];
-    }>(request, "get", operatorPath, { token: await adminToken(request) });
+      ue_connections: number;
+      ue_connections_by_radio: unknown[];
+      mmes: {
+        tnl_addresses: string[];
+        status?: { state: string; ue_connections: number };
+      }[];
+    }>(request, "get", operatorPath, { token });
     expect(operator.mmes[0].tnl_addresses).toEqual([UNREACHABLE_MME]);
     expect(operator.mmes[0].status?.state).toMatch(
       /^(disconnected|connected|up|setup_failed)$/,
     );
+    expect(operator.mmes[0].status?.ue_connections).toBe(0);
+    expect(operator.ue_connections).toBe(0);
+    expect(operator.ue_connections_by_radio).toEqual([]);
+    expect(
+      await json<{ items: unknown[] }>(
+        request,
+        "get",
+        `/api/v1/ue-connections?operator=${encodeURIComponent(OPERATOR)}`,
+        { token },
+      ),
+    ).toEqual({ items: [] });
   });
 });

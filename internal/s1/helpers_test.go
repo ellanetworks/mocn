@@ -18,16 +18,22 @@ import (
 
 const waitFor = 5 * time.Second
 
+type frame struct {
+	pdu    s1ap.PDU
+	raw    []byte
+	stream uint16
+}
+
 type peer struct {
 	conn *sctp.SCTPConn
-	msgs chan s1ap.PDU
+	msgs chan frame
 	done chan struct{}
 }
 
 func newPeer(t *testing.T, conn *sctp.SCTPConn) *peer {
 	t.Helper()
 
-	p := &peer{conn: conn, msgs: make(chan s1ap.PDU, 16), done: make(chan struct{})}
+	p := &peer{conn: conn, msgs: make(chan frame, 16), done: make(chan struct{})}
 
 	go func() {
 		defer close(p.done)
@@ -44,12 +50,14 @@ func newPeer(t *testing.T, conn *sctp.SCTPConn) *peer {
 				continue
 			}
 
-			pdu, err := s1ap.Unmarshal(append([]byte{}, buf[:n]...))
+			raw := append([]byte{}, buf[:n]...)
+
+			pdu, err := s1ap.Unmarshal(raw)
 			if err != nil {
 				continue
 			}
 
-			p.msgs <- pdu
+			p.msgs <- frame{pdu: pdu, raw: raw, stream: info.Stream}
 		}
 	}()
 
@@ -74,12 +82,18 @@ func (p *peer) send(t *testing.T, msg interface{ Marshal() ([]byte, error) }) {
 func (p *peer) next(t *testing.T) s1ap.PDU {
 	t.Helper()
 
+	return p.nextFrame(t).pdu
+}
+
+func (p *peer) nextFrame(t *testing.T) frame {
+	t.Helper()
+
 	select {
-	case pdu := <-p.msgs:
-		return pdu
+	case f := <-p.msgs:
+		return f
 	case <-time.After(waitFor):
 		t.Fatal("no S1AP message")
-		return nil
+		return frame{}
 	}
 }
 
@@ -87,8 +101,8 @@ func (p *peer) quiet(t *testing.T, d time.Duration) {
 	t.Helper()
 
 	select {
-	case pdu := <-p.msgs:
-		t.Fatalf("unexpected S1AP message %T", pdu)
+	case f := <-p.msgs:
+		t.Fatalf("unexpected S1AP message %s", procedureName(f.pdu))
 	case <-time.After(d):
 	}
 }
@@ -162,9 +176,15 @@ type fakeMME struct {
 func listenMME(t *testing.T, ip string) *fakeMME {
 	t.Helper()
 
+	return listenMMEAt(t, ip, 0)
+}
+
+func listenMMEAt(t *testing.T, ip string, port int) *fakeMME {
+	t.Helper()
+
 	var lc sctp.ListenConfig
 
-	ln, err := lc.Listen(t.Context(), &sctp.SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.ParseIP(ip)}}})
+	ln, err := lc.Listen(t.Context(), &sctp.SCTPAddr{IPAddrs: []net.IPAddr{{IP: net.ParseIP(ip)}}, Port: port})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +274,11 @@ func startGatewayWith(t *testing.T, cfg s1.Config, ops ...db.Operator) *harness 
 	src.set(ops...)
 
 	cfg.Listener, cfg.SetupWait, cfg.ResponseTimeout, cfg.RetryInterval = ln, time.Second, 2*time.Second, 500*time.Millisecond
-	cfg.ReconnectMin, cfg.ReconnectMax, cfg.Logger = 100*time.Millisecond, 200*time.Millisecond, testLogger()
+	cfg.ReconnectMin, cfg.ReconnectMax = 100*time.Millisecond, 200*time.Millisecond
+
+	if cfg.Logger == nil {
+		cfg.Logger = testLogger()
+	}
 
 	if cfg.Operators == nil {
 		cfg.Operators = src.list
@@ -334,4 +358,17 @@ func testLogger() *slog.Logger {
 	}
 
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
+func procedureName(pdu s1ap.PDU) string {
+	switch m := pdu.(type) {
+	case *s1ap.InitiatingMessage:
+		return "initiating " + m.ProcedureCode.String()
+	case *s1ap.SuccessfulOutcome:
+		return "successful " + m.ProcedureCode.String()
+	case *s1ap.UnsuccessfulOutcome:
+		return "unsuccessful " + m.ProcedureCode.String()
+	}
+
+	return "unknown"
 }

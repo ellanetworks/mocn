@@ -14,3 +14,9 @@ func (g *Gateway) HoldMMEAssociation(addrs ...string) (release func()) {
 		close(c.done)
 	}
 }
+
+func (g *Gateway) FailMMESends(err error) {
+	g.relay.mu.Lock()
+	g.relay.sendMME = func(*MMEAssociation, []byte, uint16) error { return err }
+	g.relay.mu.Unlock()
+}

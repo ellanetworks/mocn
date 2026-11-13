@@ -218,23 +218,39 @@ func TestS1SetupBothWays(t *testing.T) {
 	registry.MustRegister(h.gw.Collectors()...)
 
 	want := `
-# HELP ellamocn_radios_connected Radios whose S1 Setup succeeded.
-# TYPE ellamocn_radios_connected gauge
-ellamocn_radios_connected 1
-# HELP ellamocn_s1_associations S1 associations, by side (ran: radios, mme: configured MMEs) and state.
-# TYPE ellamocn_s1_associations gauge
-ellamocn_s1_associations{side="mme",state="connected"} 0
-ellamocn_s1_associations{side="mme",state="disconnected"} 0
-ellamocn_s1_associations{side="mme",state="setup_failed"} 0
-ellamocn_s1_associations{side="mme",state="up"} 1
-ellamocn_s1_associations{side="ran",state="connected"} 0
-ellamocn_s1_associations{side="ran",state="up"} 1
-# HELP ellamocn_s1_setup_total S1 Setup procedures, by side (ran: received from radios, mme: sent to MMEs) and outcome.
-# TYPE ellamocn_s1_setup_total counter
-ellamocn_s1_setup_total{outcome="failure",side="mme"} 0
-ellamocn_s1_setup_total{outcome="failure",side="ran"} 0
-ellamocn_s1_setup_total{outcome="success",side="mme"} 1
-ellamocn_s1_setup_total{outcome="success",side="ran"} 2
+# HELP ellamocn_core_associations Core (MME) associations of the configured MMEs, by interface (s1), operator and state (disconnected: no SCTP association; connected: SCTP association up, S1 Setup not done; up: S1 Setup succeeded; setup_failed: the MME rejected S1 Setup).
+# TYPE ellamocn_core_associations gauge
+ellamocn_core_associations{interface="s1",operator="A",state="connected"} 0
+ellamocn_core_associations{interface="s1",operator="A",state="disconnected"} 0
+ellamocn_core_associations{interface="s1",operator="A",state="setup_failed"} 0
+ellamocn_core_associations{interface="s1",operator="A",state="up"} 1
+# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1) and result (relayed: sent to an MME; unknown_plmn: no operator serves the PLMN; no_mme: no selectable MME of the operator; rejected: reuses an allocated eNB UE S1AP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME).
+# TYPE ellamocn_initial_ue_messages_total counter
+ellamocn_initial_ue_messages_total{interface="s1",result="error"} 0
+ellamocn_initial_ue_messages_total{interface="s1",result="invalid"} 0
+ellamocn_initial_ue_messages_total{interface="s1",result="no_mme"} 0
+ellamocn_initial_ue_messages_total{interface="s1",result="rejected"} 0
+ellamocn_initial_ue_messages_total{interface="s1",result="relayed"} 0
+ellamocn_initial_ue_messages_total{interface="s1",result="unknown_plmn"} 0
+# HELP ellamocn_radio_associations Radio (eNodeB) associations, by interface (s1) and state (connected: SCTP association up, no successful S1 Setup; up: S1 Setup succeeded).
+# TYPE ellamocn_radio_associations gauge
+ellamocn_radio_associations{interface="s1",state="connected"} 0
+ellamocn_radio_associations{interface="s1",state="up"} 1
+# HELP ellamocn_setup_attempts_total Setup procedures (S1 Setup), by interface (s1), side and result. side=radio: received from radios; result success, invalid (undecodable or invalid request), unknown_plmn (no operator serves a broadcast PLMN), no_mme (no MME of the serving operators is up), mme_failure (the serving operators' MMEs rejected S1 Setup), error (the response could not be built or sent, or the radio left before the answer). side=core: sent to MMEs; result success, failure (the MME rejected the request or answered with an invalid response), timeout (no answer from the MME), error (the request could not be built or sent, or the association dropped before the answer).
+# TYPE ellamocn_setup_attempts_total counter
+ellamocn_setup_attempts_total{interface="s1",result="error",side="core"} 0
+ellamocn_setup_attempts_total{interface="s1",result="error",side="radio"} 0
+ellamocn_setup_attempts_total{interface="s1",result="failure",side="core"} 0
+ellamocn_setup_attempts_total{interface="s1",result="invalid",side="radio"} 0
+ellamocn_setup_attempts_total{interface="s1",result="mme_failure",side="radio"} 0
+ellamocn_setup_attempts_total{interface="s1",result="no_mme",side="radio"} 0
+ellamocn_setup_attempts_total{interface="s1",result="success",side="core"} 1
+ellamocn_setup_attempts_total{interface="s1",result="success",side="radio"} 2
+ellamocn_setup_attempts_total{interface="s1",result="timeout",side="core"} 0
+ellamocn_setup_attempts_total{interface="s1",result="unknown_plmn",side="radio"} 0
+# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) relayed, by interface (s1) and operator.
+# TYPE ellamocn_ue_connections gauge
+ellamocn_ue_connections{interface="s1",operator="A"} 0
 `
 	if err := testutil.GatherAndCompare(registry, strings.NewReader(want)); err != nil {
 		t.Fatal(err)
@@ -322,6 +338,76 @@ func TestS1SetupFailures(t *testing.T) {
 	}
 
 	mme.quiet(t, 200*time.Millisecond)
+
+	enb.send(t, rawPDU{&s1ap.InitiatingMessage{
+		ProcedureCode: s1ap.ProcS1Setup, Criticality: s1ap.CriticalityReject, Value: []byte{0, 0, 0},
+	}})
+	expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
+
+	assertSetupAttempts(t, h, map[string]float64{
+		"radio/unknown_plmn": 1, "radio/no_mme": 1, "radio/mme_failure": 1, "radio/success": 1, "radio/invalid": 1,
+		"core/failure": 1, "core/success": 1,
+	})
+}
+
+func TestS1SetupTimeout(t *testing.T) {
+	skipWithoutSCTP(t)
+
+	mmeListener := listenMME(t, "127.0.0.3")
+	h := startGateway(t, mmeListener.port(), operatorA("127.0.0.3"))
+	mme := mmeListener.accept(t)
+
+	enb := h.connectENB(t)
+	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00101")))
+
+	expect(t, mme, "initiating", s1ap.ProcS1Setup, s1ap.ParseS1SetupRequest)
+	expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
+
+	h.eventually(t, "the MME association to drop", func() bool {
+		st, _ := h.gw.MMEStatus(1, []string{"127.0.0.3"})
+		return st.State == s1.MMEDisconnected
+	})
+
+	assertSetupAttempts(t, h, map[string]float64{"radio/no_mme": 1, "core/timeout": 1})
+}
+
+func assertSetupAttempts(t *testing.T, h *harness, want map[string]float64) {
+	t.Helper()
+
+	registry := prometheus.NewPedanticRegistry()
+	registry.MustRegister(h.gw.Collectors()...)
+
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]float64{}
+
+	for _, f := range families {
+		if f.GetName() != "ellamocn_setup_attempts_total" {
+			continue
+		}
+
+		for _, m := range f.GetMetric() {
+			labels := map[string]string{}
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+
+			if labels["interface"] != "s1" {
+				t.Fatalf("interface = %q", labels["interface"])
+			}
+
+			if v := m.GetCounter().GetValue(); v != 0 {
+				got[labels["side"]+"/"+labels["result"]] = v
+			}
+		}
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("setup attempts = %v, want %v", got, want)
+	}
 }
 
 func TestMMEReconnectsAndFollowsConfig(t *testing.T) {

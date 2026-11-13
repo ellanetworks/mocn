@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Box, Button, IconButton, Skeleton, Tooltip } from "@mui/material";
+import {
+  Box,
+  Button,
+  IconButton,
+  Link,
+  Skeleton,
+  Tooltip,
+} from "@mui/material";
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
@@ -7,7 +14,7 @@ import {
 } from "@mui/icons-material";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import StateChip from "@/components/StateChip";
 import {
@@ -28,10 +35,14 @@ import { errorMessage, useSnackbar } from "@/contexts/SnackbarContext";
 import {
   deleteOperator,
   getOperator,
+  type CoreNode,
+  type CoreNodeKind,
   type MME,
   type MMEStatus,
   type Operator,
+  type RadioUEConnections,
 } from "@/queries/operators";
+import { radioPath } from "@/queries/radios";
 import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
 import {
@@ -58,18 +69,18 @@ const gridSx = {
   },
 };
 
-type Kind = "MME" | "AMF";
-
 type Editing =
   | { type: "name" }
   | { type: "plmns" }
   | { type: "pws" }
   | { type: "identity" }
-  | { type: "add"; kind: Kind }
-  | { type: "edit"; kind: Kind; index: number }
-  | { type: "delete"; kind: Kind; index: number };
+  | { type: "add" }
+  | { type: "edit"; kind: CoreNodeKind; index: number }
+  | { type: "delete"; kind: CoreNodeKind; index: number };
 
 interface NodeRow {
+  id: string;
+  kind: CoreNodeKind;
   index: number;
   addresses: string[];
   status?: MMEStatus;
@@ -77,7 +88,22 @@ interface NodeRow {
 
 const NONE = "—";
 
-const MME_COLUMNS: GridColDef<NodeRow>[] = [
+const NODE_COLUMNS: GridColDef<NodeRow>[] = [
+  {
+    field: "kind",
+    headerName: "Type",
+    description: "MME: the 4G core, over S1. AMF: the 5G core, over NG.",
+    flex: 0.3,
+    minWidth: 90,
+  },
+  {
+    field: "addresses",
+    headerName: "Addresses",
+    description: "The TNL addresses Ella MOCN uses to reach the node.",
+    flex: 0.8,
+    minWidth: 150,
+    renderCell: ({ row }) => <OneLine title={row.addresses.join(", ")} />,
+  },
   {
     field: "mme_name",
     headerName: "Name",
@@ -87,10 +113,10 @@ const MME_COLUMNS: GridColDef<NodeRow>[] = [
     valueGetter: (_value, row) => row.status?.mme_name ?? NONE,
   },
   {
-    field: "gummeis",
-    headerName: "Served GUMMEIs",
+    field: "served_ids",
+    headerName: "Served IDs",
     description:
-      "The PLMNs, MME group IDs and MME codes that the MME serves, from its S1 Setup Response.",
+      "The GUMMEIs the MME serves, from its S1 Setup Response: PLMNs, MME group IDs and MME codes.",
     flex: 1,
     minWidth: 200,
     renderCell: ({ row }) =>
@@ -103,12 +129,22 @@ const MME_COLUMNS: GridColDef<NodeRow>[] = [
       ),
   },
   {
+    field: "ue_connections",
+    headerName: "UE connections",
+    description:
+      "The UE-associated logical S1-connections Ella MOCN relays to the MME, one per UE in ECM-CONNECTED.",
+    flex: 0.4,
+    minWidth: 140,
+    valueGetter: (_value, row) =>
+      row.status ? String(row.status.ue_connections) : NONE,
+  },
+  {
     field: "state",
     headerName: "Status",
     description:
       "Disconnected: no SCTP association to the MME. Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded. Setup failed: the MME rejected the S1 Setup.",
     flex: 0.4,
-    minWidth: 120,
+    minWidth: 150,
     renderCell: ({ row }) =>
       row.status ? (
         <StateChip
@@ -121,37 +157,68 @@ const MME_COLUMNS: GridColDef<NodeRow>[] = [
   },
 ];
 
-const KIND_RAT: Record<Kind, string> = { MME: "4G", AMF: "5G" };
+const RADIO_COLUMNS: GridColDef<RadioUEConnections>[] = [
+  {
+    field: "radio",
+    headerName: "Radio",
+    description:
+      "A radio that broadcasts one of the operator's PLMNs, or that has UE connections for it.",
+    flex: 1,
+    minWidth: 160,
+    renderCell: ({ row }) => (
+      <Link
+        component={RouterLink}
+        to={radioPath(row.radio)}
+        variant="body2"
+        sx={{ color: "link", textDecoration: "underline" }}
+      >
+        {row.name ?? row.radio}
+      </Link>
+    ),
+  },
+  {
+    field: "ue_connections",
+    headerName: "UE connections",
+    description:
+      "The UE-associated logical S1-connections Ella MOCN relays from the radio to the operator, one per UE in ECM-CONNECTED.",
+    flex: 0.5,
+    minWidth: 140,
+  },
+];
 
 function CoreNodes({
-  kind,
-  nodes,
-  identitySet,
+  mmes,
+  amfs,
+  identity,
   editable,
   onAdd,
   onEdit,
   onDelete,
 }: {
-  kind: Kind;
-  nodes: MME[];
-  identitySet: boolean;
+  mmes: MME[];
+  amfs: CoreNode[];
+  identity: Record<CoreNodeKind, boolean>;
   editable: boolean;
   onAdd: () => void;
-  onEdit: (index: number) => void;
-  onDelete: (index: number) => void;
+  onEdit: (kind: CoreNodeKind, index: number) => void;
+  onDelete: (kind: CoreNodeKind, index: number) => void;
 }) {
-  const id = `${kind.toLowerCase()}s-title`;
-  const columns: GridColDef<NodeRow>[] = [
-    {
-      field: "addresses",
-      headerName: "Addresses",
-      description: `The TNL addresses Ella MOCN uses to reach the ${kind}.`,
-      flex: 0.8,
-      minWidth: 150,
-      renderCell: ({ row }) => <OneLine title={row.addresses.join(", ")} />,
-    },
-    ...(kind === "MME" ? MME_COLUMNS : []),
+  const rows: NodeRow[] = [
+    ...mmes.map((node, index) => ({
+      id: `MME ${node.tnl_addresses.join(",")}`,
+      kind: "MME" as const,
+      index,
+      addresses: node.tnl_addresses,
+      status: node.status,
+    })),
+    ...amfs.map((node, index) => ({
+      id: `AMF ${node.tnl_addresses.join(",")}`,
+      kind: "AMF" as const,
+      index,
+      addresses: node.tnl_addresses,
+    })),
   ];
+  const columns: GridColDef<NodeRow>[] = [...NODE_COLUMNS];
   if (editable) {
     columns.push({
       field: "actions",
@@ -163,20 +230,20 @@ function CoreNodes({
         const name = row.addresses.join(", ");
         return (
           <>
-            <Tooltip title={`Edit ${kind}`} arrow>
+            <Tooltip title={`Edit ${row.kind}`} arrow>
               <IconButton
                 size="small"
-                aria-label={`Edit ${kind} ${name}`}
-                onClick={() => onEdit(row.index)}
+                aria-label={`Edit ${row.kind} ${name}`}
+                onClick={() => onEdit(row.kind, row.index)}
               >
                 <EditIcon fontSize="small" color="primary" />
               </IconButton>
             </Tooltip>
-            <Tooltip title={`Delete ${kind}`} arrow>
+            <Tooltip title={`Delete ${row.kind}`} arrow>
               <IconButton
                 size="small"
-                aria-label={`Delete ${kind} ${name}`}
-                onClick={() => onDelete(row.index)}
+                aria-label={`Delete ${row.kind} ${name}`}
+                onClick={() => onDelete(row.kind, row.index)}
               >
                 <DeleteIcon fontSize="small" color="primary" />
               </IconButton>
@@ -186,17 +253,18 @@ function CoreNodes({
       },
     });
   }
+  const addable = identity.MME || identity.AMF;
 
   return (
     <>
       <SectionHeader
-        id={id}
-        title={`${KIND_RAT[kind]} ${kind}s (${nodes.length})`}
-        description={`The ${kind}s of this operator's ${KIND_RAT[kind]} core, each with its TNL addresses.`}
+        id="core-nodes-title"
+        title={`Core network nodes (${rows.length})`}
+        description="The MMEs and AMFs of this operator's core, each with its TNL addresses."
       >
         {editable && (
           <Tooltip
-            title={identitySet ? "" : "Set the gateway identity first"}
+            title={addable ? "" : "Set the gateway identity first"}
             describeChild
           >
             <span>
@@ -205,31 +273,26 @@ function CoreNodes({
                 color="success"
                 startIcon={<AddIcon />}
                 onClick={onAdd}
-                disabled={!identitySet}
+                disabled={!addable}
                 sx={{ flexShrink: 0 }}
               >
-                Add {kind}
+                Add
               </Button>
             </span>
           </Tooltip>
         )}
       </SectionHeader>
       <DataGrid<NodeRow>
-        aria-labelledby={id}
-        rows={nodes.map((node, index) => ({
-          index,
-          addresses: node.tnl_addresses,
-          status: node.status,
-        }))}
+        aria-labelledby="core-nodes-title"
+        rows={rows}
         columns={columns}
-        getRowId={(row) => row.addresses.join(",")}
         disableColumnSorting
         disableColumnFilter
         disableColumnMenu
         disableRowSelectionOnClick
         disableVirtualization
         hideFooter
-        localeText={{ noRowsLabel: `No ${kind}s.` }}
+        localeText={{ noRowsLabel: "No core network nodes." }}
         autoHeight
         sx={gridSx}
       />
@@ -239,11 +302,9 @@ function CoreNodes({
 
 function GatewayIdentity({ parts }: { parts: [string, string | undefined][] }) {
   return (
-    <OneLine
-      title={parts.map(([rat, id]) => `${rat} ${id ?? "Not set"}`).join("  ")}
-    >
-      {parts.map(([rat, id], i) => (
-        <Box component="span" key={rat} sx={{ ml: i > 0 ? 4 : 0 }}>
+    <Box>
+      {parts.map(([rat, id]) => (
+        <OneLine key={rat} title={`${rat} ${id ?? "Not set"}`}>
           <Box component="span" sx={{ fontWeight: 600, mr: 1 }}>
             {rat}
           </Box>
@@ -252,9 +313,9 @@ function GatewayIdentity({ parts }: { parts: [string, string | undefined][] }) {
               Not set
             </Box>
           )}
-        </Box>
+        </OneLine>
       ))}
-    </OneLine>
+    </Box>
   );
 }
 
@@ -315,6 +376,7 @@ function OperatorSections({
           {
             label: "Gateway identity",
             help: GATEWAY_IDENTITY_HELP,
+            dense: true,
             value: (
               <GatewayIdentity
                 parts={[
@@ -329,23 +391,34 @@ function OperatorSections({
       />
 
       <CoreNodes
-        kind="MME"
-        nodes={mmes}
-        identitySet={enb !== undefined}
+        mmes={mmes}
+        amfs={amfs}
+        identity={{ MME: enb !== undefined, AMF: gnb !== undefined }}
         editable={editable}
-        onAdd={() => setEditing({ type: "add", kind: "MME" })}
-        onEdit={(index) => setEditing({ type: "edit", kind: "MME", index })}
-        onDelete={(index) => setEditing({ type: "delete", kind: "MME", index })}
+        onAdd={() => setEditing({ type: "add" })}
+        onEdit={(kind, index) => setEditing({ type: "edit", kind, index })}
+        onDelete={(kind, index) => setEditing({ type: "delete", kind, index })}
       />
 
-      <CoreNodes
-        kind="AMF"
-        nodes={amfs}
-        identitySet={gnb !== undefined}
-        editable={editable}
-        onAdd={() => setEditing({ type: "add", kind: "AMF" })}
-        onEdit={(index) => setEditing({ type: "edit", kind: "AMF", index })}
-        onDelete={(index) => setEditing({ type: "delete", kind: "AMF", index })}
+      <SectionHeader
+        id="ue-connections-title"
+        title="UE connections by radio"
+        description="The UE connections Ella MOCN relays to this operator from each radio."
+      />
+      <DataGrid<RadioUEConnections>
+        aria-labelledby="ue-connections-title"
+        rows={operator.ue_connections_by_radio ?? []}
+        columns={RADIO_COLUMNS}
+        getRowId={(row) => row.radio}
+        disableColumnSorting
+        disableColumnFilter
+        disableColumnMenu
+        disableRowSelectionOnClick
+        disableVirtualization
+        hideFooter
+        autoHeight
+        localeText={{ noRowsLabel: "No radios." }}
+        sx={gridSx}
       />
 
       {editing?.type === "name" && (
@@ -365,11 +438,7 @@ function OperatorSections({
         <EditGatewayIdentityDialog operator={operator} onClose={close} />
       )}
       {editing?.type === "add" && (
-        <CoreNodeDialog
-          operator={operator}
-          kind={editing.kind}
-          onClose={close}
-        />
+        <CoreNodeDialog operator={operator} onClose={close} />
       )}
       {editing?.type === "edit" && (
         <CoreNodeDialog

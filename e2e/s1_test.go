@@ -150,12 +150,31 @@ type operator struct {
 	MMEs        []coreNode   `json:"mmes"`
 }
 
+type ueConnection struct {
+	Radio struct {
+		Ref         string `json:"ref"`
+		ENBUES1APID int    `json:"enb_ue_s1ap_id"`
+		MMEUES1APID int    `json:"mme_ue_s1ap_id"`
+	} `json:"radio"`
+	MME struct {
+		TNLAddresses []string `json:"tnl_addresses"`
+		ENBUES1APID  int      `json:"enb_ue_s1ap_id"`
+		MMEUES1APID  *int     `json:"mme_ue_s1ap_id"`
+	} `json:"mme"`
+	Operator string `json:"operator"`
+	PLMN     plmn   `json:"plmn"`
+	TAI      *struct {
+		TAC int `json:"tac"`
+	} `json:"tai"`
+}
+
 type radio struct {
-	Ref          string       `json:"ref"`
-	GlobalENBID  *globalENBID `json:"global_enb_id"`
-	ENBName      string       `json:"enb_name"`
-	State        string       `json:"state"`
-	TNLAddresses []string     `json:"tnl_addresses"`
+	Ref           string       `json:"ref"`
+	GlobalENBID   *globalENBID `json:"global_enb_id"`
+	ENBName       string       `json:"enb_name"`
+	State         string       `json:"state"`
+	TNLAddresses  []string     `json:"tnl_addresses"`
+	UEConnections int          `json:"ue_connections"`
 }
 
 func metric(text, name string, labels map[string]string) (float64, bool) {
@@ -195,8 +214,9 @@ func metric(text, name string, labels map[string]string) (float64, bool) {
 	return 0, false
 }
 
-func TestS1Setup(t *testing.T) {
-	ctx := context.Background()
+func setUp(ctx context.Context, t *testing.T) *client {
+	t.Helper()
+
 	c := newClient()
 
 	eventually(t, "Ella MOCN API", 120*time.Second, func() error {
@@ -240,6 +260,13 @@ func TestS1Setup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("configure operator: %v", err)
 	}
+
+	return c
+}
+
+func TestS1Setup(t *testing.T) {
+	ctx := context.Background()
+	c := setUp(ctx, t)
 
 	eventually(t, "radio up", 120*time.Second, func() error {
 		var nodes struct {
@@ -295,17 +322,27 @@ func TestS1Setup(t *testing.T) {
 			return err
 		}
 
-		for _, side := range []string{"ran", "mme"} {
-			labels := map[string]string{"side": side, "outcome": "success"}
+		for _, side := range []string{"radio", "core"} {
+			labels := map[string]string{"interface": "s1", "side": side, "result": "success"}
 
-			v, ok := metric(text, "ellamocn_s1_setup_total", labels)
+			v, ok := metric(text, "ellamocn_setup_attempts_total", labels)
 			if !ok {
-				return fmt.Errorf("ellamocn_s1_setup_total%v missing", labels)
+				return fmt.Errorf("ellamocn_setup_attempts_total%v missing", labels)
 			}
 
 			if v < 1 {
-				return fmt.Errorf("ellamocn_s1_setup_total%v = %v", labels, v)
+				return fmt.Errorf("ellamocn_setup_attempts_total%v = %v", labels, v)
 			}
+		}
+
+		radios := map[string]string{"interface": "s1", "state": "up"}
+		if v, ok := metric(text, "ellamocn_radio_associations", radios); !ok || v != 1 {
+			return fmt.Errorf("ellamocn_radio_associations%v = %v, %v", radios, v, ok)
+		}
+
+		core := map[string]string{"interface": "s1", "operator": operatorName, "state": "up"}
+		if v, ok := metric(text, "ellamocn_core_associations", core); !ok || v != 1 {
+			return fmt.Errorf("ellamocn_core_associations%v = %v, %v", core, v, ok)
 		}
 
 		return nil
@@ -319,6 +356,149 @@ func TestS1Setup(t *testing.T) {
 
 		if !strings.Contains(string(out), "eNB-S1 accepted[10.90.0.30]") {
 			return errors.New("open5gs MME has no S1 association from Ella MOCN")
+		}
+
+		return nil
+	})
+}
+
+func compose(ctx context.Context, args ...string) (string, error) {
+	out, err := exec.CommandContext(ctx, "docker", append([]string{"compose"}, args...)...).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("docker compose %s: %w: %s", strings.Join(args, " "), err, out)
+	}
+
+	return string(out), nil
+}
+
+func logContains(ctx context.Context, what string, args ...string) func() error {
+	return func() error {
+		out, err := compose(ctx, args...)
+		if err != nil {
+			return err
+		}
+
+		if !strings.Contains(out, what) {
+			return fmt.Errorf("%q not logged yet", what)
+		}
+
+		return nil
+	}
+}
+
+func mmeLog(ctx context.Context, what string) func() error {
+	return logContains(ctx, what, "exec", "-T", "open5gs", "cat", "/var/log/open5gs/mme.log")
+}
+
+func ueConnections(ctx context.Context, c *client) ([]ueConnection, error) {
+	var list struct {
+		Items []ueConnection `json:"items"`
+	}
+
+	_, err := c.do(ctx, http.MethodGet, "/api/v1/ue-connections", nil, &list)
+
+	return list.Items, err
+}
+
+func ping(ctx context.Context) error {
+	_, err := compose(ctx, "exec", "-T", "srsue", "ping", "-c", "3", "-W", "5", "-I", "tun_srsue", "10.45.0.1")
+	return err
+}
+
+func TestUEAttachServiceRequestDetach(t *testing.T) {
+	ctx := context.Background()
+	c := setUp(ctx, t)
+
+	eventually(t, "srsue attached with an IP", 180*time.Second,
+		logContains(ctx, "Network attach successful. IP: 10.45.", "logs", "--no-color", "srsue"))
+	eventually(t, "open5gs MME attach complete", 30*time.Second, mmeLog(ctx, "[001010000000001] Attach complete"))
+	eventually(t, "user plane up", 30*time.Second, func() error { return ping(ctx) })
+
+	eventually(t, "UE connection in /api/v1/ue-connections", 10*time.Second, func() error {
+		items, err := ueConnections(ctx, c)
+		if err != nil {
+			return err
+		}
+
+		if len(items) != 1 {
+			return fmt.Errorf("want 1 UE connection, got %+v", items)
+		}
+
+		u := items[0]
+		if u.Operator != operatorName || u.PLMN != (plmn{MCC: "001", MNC: "01"}) || u.Radio.Ref != "001-01:macro:411" ||
+			len(u.MME.TNLAddresses) != 1 || u.MME.TNLAddresses[0] != mmeAddress || u.MME.MMEUES1APID == nil ||
+			u.TAI == nil || u.TAI.TAC != 1 {
+			return fmt.Errorf("UE connection = %+v", u)
+		}
+
+		var r radio
+		if _, err := c.do(ctx, http.MethodGet, "/api/v1/radios/001-01:macro:411", nil, &r); err != nil {
+			return err
+		}
+
+		if r.UEConnections != 1 {
+			return fmt.Errorf("radio ue_connections = %d, want 1", r.UEConnections)
+		}
+
+		return nil
+	})
+
+	eventually(t, "UE context released on inactivity", 120*time.Second, func() error {
+		items, err := ueConnections(ctx, c)
+		if err != nil {
+			return err
+		}
+
+		if len(items) != 0 {
+			return fmt.Errorf("%d UE connections left", len(items))
+		}
+
+		return mmeLog(ctx, "Number of eNB-UEs is now 0")()
+	})
+
+	if err := ping(ctx); err != nil {
+		t.Fatalf("ping after release: %v", err)
+	}
+
+	eventually(t, "open5gs MME service request", 30*time.Second, mmeLog(ctx, "[001010000000001] Service request"))
+
+	if items, err := ueConnections(ctx, c); err != nil || len(items) != 1 {
+		t.Fatalf("UE connections after service request = %+v, %v", items, err)
+	}
+
+	if _, err := compose(ctx, "exec", "-T", "srsue", "pkill", "-INT", "srsue"); err != nil {
+		t.Fatal(err)
+	}
+
+	eventually(t, "open5gs MME detach", 30*time.Second, mmeLog(ctx, "Detach request"))
+
+	eventually(t, "UE context released after detach", 30*time.Second, func() error {
+		items, err := ueConnections(ctx, c)
+		if err != nil {
+			return err
+		}
+
+		if len(items) != 0 {
+			return fmt.Errorf("%d UE connections left", len(items))
+		}
+
+		return nil
+	})
+
+	eventually(t, "relay metrics", 10*time.Second, func() error {
+		var text string
+		if _, err := c.do(ctx, http.MethodGet, "/api/v1/metrics", nil, &text); err != nil {
+			return err
+		}
+
+		relayed := map[string]string{"interface": "s1", "result": "relayed"}
+		if v, ok := metric(text, "ellamocn_initial_ue_messages_total", relayed); !ok || v < 2 {
+			return fmt.Errorf("relayed INITIAL UE MESSAGEs = %v", v)
+		}
+
+		ues := map[string]string{"interface": "s1", "operator": operatorName}
+		if v, ok := metric(text, "ellamocn_ue_connections", ues); !ok || v != 0 {
+			return fmt.Errorf("ellamocn_ue_connections = %v, %v", v, ok)
 		}
 
 		return nil

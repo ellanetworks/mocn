@@ -123,7 +123,7 @@ func (g *Gateway) ranDisconnected(conn *sctp.SCTPConn) {
 	}
 
 	g.log.Info("radio disconnected", slog.Any("tnl_addresses", n.addrs))
-	g.cfg.Relay.RANLost(n)
+	g.cfg.Relay.RANLost(n, causeTransportUnavailable)
 }
 
 func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []byte) {
@@ -176,7 +176,7 @@ func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []by
 		return
 	}
 
-	g.cfg.Relay.FromRAN(ctx, n, pdu)
+	g.cfg.Relay.FromRAN(ctx, n, pdu, msg)
 }
 
 func ranSetupFrom(req *s1ap.S1SetupRequest) (ranSetup, error) {
@@ -210,26 +210,26 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 	g.mu.Unlock()
 
 	if wasUp {
-		g.cfg.Relay.RANLost(n)
+		g.cfg.Relay.RANLost(n, causeEUTRANRelease)
 	}
 
 	req, err := s1ap.ParseS1SetupRequest(value)
 	if err != nil {
 		if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
 			diag := ase.OutcomeDiagnostics()
-			g.rejectS1Setup(ctx, n, ase.Cause, nil, &diag, err.Error())
+			g.rejectS1Setup(ctx, n, setupInvalid, ase.Cause, nil, &diag, err.Error())
 
 			return
 		}
 
-		g.rejectS1Setup(ctx, n, causeMiscUnspecified, nil, nil, err.Error())
+		g.rejectS1Setup(ctx, n, setupInvalid, causeMiscUnspecified, nil, nil, err.Error())
 
 		return
 	}
 
 	setup, err := ranSetupFrom(req)
 	if err != nil {
-		g.rejectS1Setup(ctx, n, causeSemanticError, nil, nil, err.Error())
+		g.rejectS1Setup(ctx, n, setupInvalid, causeSemanticError, nil, nil, err.Error())
 		return
 	}
 
@@ -238,7 +238,7 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 	serving := servingOperators(setup.tas, g.operators)
 	if len(serving) == 0 {
 		g.mu.Unlock()
-		g.rejectS1Setup(ctx, n, causeUnknownPLMN, nil, nil, "no operator serves a broadcast PLMN")
+		g.rejectS1Setup(ctx, n, setupUnknownPLMN, causeUnknownPLMN, nil, nil, "no operator serves a broadcast PLMN")
 
 		return
 	}
@@ -265,6 +265,8 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 
 		if g.ranNodes[n.conn] != n {
 			g.mu.Unlock()
+			g.countSetup(sideRadio, setupError)
+
 			return
 		}
 
@@ -280,7 +282,7 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 		g.mu.Unlock()
 
 		if failed {
-			g.rejectS1Setup(ctx, n, cause, ttw, nil, "S1 Setup toward the operator's MMEs failed: "+cause.String())
+			g.rejectS1Setup(ctx, n, setupMMEFailure, cause, ttw, nil, "S1 Setup toward the operator's MMEs failed: "+cause.String())
 			return
 		}
 
@@ -292,15 +294,16 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 			g.mu.Unlock()
 
 			if failed {
-				g.rejectS1Setup(ctx, n, cause, ttw, nil, "S1 Setup toward the operator's MMEs failed: "+cause.String())
+				g.rejectS1Setup(ctx, n, setupMMEFailure, cause, ttw, nil, "S1 Setup toward the operator's MMEs failed: "+cause.String())
 				return
 			}
 
-			g.rejectS1Setup(ctx, n, causeTransportUnavailable, s1ap.Ptr(noMMETimeToWait), nil,
+			g.rejectS1Setup(ctx, n, setupNoMME, causeTransportUnavailable, s1ap.Ptr(noMMETimeToWait), nil,
 				"no MME of the serving operators is up")
 
 			return
 		case <-ctx.Done():
+			g.countSetup(sideRadio, setupError)
 			return
 		}
 	}
@@ -348,7 +351,9 @@ func (g *Gateway) mmeSetupFailureLocked(operators []int64, since time.Time) (s1a
 func (g *Gateway) acceptS1SetupLocked(ctx context.Context, n *RANAssociation, served []ServedGUMMEIs, d s1ap.Diagnostics) {
 	gummeis, err := gummeisTo(served)
 	if err != nil {
+		g.countSetup(sideRadio, setupError)
 		g.log.ErrorContext(ctx, "failed to encode Served GUMMEIs", slog.Any("error", err))
+
 		return
 	}
 
@@ -358,26 +363,30 @@ func (g *Gateway) acceptS1SetupLocked(ctx context.Context, n *RANAssociation, se
 		CriticalityDiagnostics: responseDiagnostics(s1ap.ProcS1Setup, d),
 	}).Marshal()
 	if err != nil {
+		g.countSetup(sideRadio, setupError)
 		g.log.ErrorContext(ctx, "failed to marshal S1 Setup Response", slog.Any("error", err))
+
 		return
 	}
 
 	if err := n.Send(out, nonUEStream); err != nil {
+		g.countSetup(sideRadio, setupError)
 		g.log.WarnContext(ctx, "failed to send S1 Setup Response", slog.Any("error", err))
+
 		return
 	}
 
 	n.up = true
 	n.mmeConfig.acked = served
 
-	g.setups.WithLabelValues(sideRAN, outcomeSuccess).Inc()
+	g.countSetup(sideRadio, setupSuccess)
 
 	g.log.InfoContext(ctx, "radio S1 Setup accepted", slog.String("enb_name", n.setup.name),
 		slog.String("global_enb_id", formatGlobalENBID(n.setup.globalENBID)))
 }
 
-func (g *Gateway) rejectS1Setup(ctx context.Context, n *RANAssociation, cause s1ap.Cause, ttw *s1ap.TimeToWait,
-	diag *s1ap.CriticalityDiagnostics, reason string,
+func (g *Gateway) rejectS1Setup(ctx context.Context, n *RANAssociation, result string, cause s1ap.Cause,
+	ttw *s1ap.TimeToWait, diag *s1ap.CriticalityDiagnostics, reason string,
 ) {
 	g.mu.Lock()
 
@@ -388,7 +397,7 @@ func (g *Gateway) rejectS1Setup(ctx context.Context, n *RANAssociation, cause s1
 	n.setup, n.up = nil, false
 	g.mu.Unlock()
 
-	g.setups.WithLabelValues(sideRAN, outcomeFailure).Inc()
+	g.countSetup(sideRadio, result)
 
 	g.log.WarnContext(ctx, "radio S1 Setup rejected", slog.String("cause", cause.String()), slog.String("reason", reason),
 		slog.Any("tnl_addresses", n.addrs))

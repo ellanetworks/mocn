@@ -23,6 +23,13 @@ export interface Radio {
   state: RadioState;
   connected_since: string;
   tnl_addresses: string[];
+  ue_connections: number;
+  ue_connections_by_operator?: OperatorUEConnections[];
+}
+
+export interface OperatorUEConnections {
+  operator: string;
+  ue_connections: number;
 }
 
 export const listRadios = async (): Promise<Radio[]> => {

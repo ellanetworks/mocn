@@ -15,6 +15,7 @@ export interface SettingRow {
   label: string;
   help: string;
   value: ReactNode;
+  dense?: boolean;
   onEdit?: () => void;
 }
 
@@ -30,14 +31,19 @@ export default function SettingsTable({
       <Table aria-label={label}>
         <TableBody>
           {rows.map((row) => (
-            <TableRow key={row.label}>
+            <TableRow key={row.label} sx={{ height: 63 }}>
               <TableCell sx={{ fontWeight: 600, width: "35%" }}>
                 <Tooltip title={row.help} arrow describeChild>
                   <span>{row.label}</span>
                 </Tooltip>
               </TableCell>
               <TableCell
-                sx={{ width: "55%", maxWidth: 0, overflowWrap: "anywhere" }}
+                sx={{
+                  width: "55%",
+                  maxWidth: 0,
+                  overflowWrap: "anywhere",
+                  ...(row.dense && { py: 0 }),
+                }}
               >
                 {row.value}
               </TableCell>

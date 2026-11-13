@@ -213,6 +213,12 @@ func TestUsersOverHTTP(t *testing.T) {
 		ops[0].MMEs[i].Status = nil
 	}
 
+	if n := ops[0].UEConnections; n == nil || *n != 0 {
+		t.Fatalf("operator ue_connections = %v, want 0", n)
+	}
+
+	ops[0].UEConnections = nil
+
 	if !reflect.DeepEqual(ops[0], operator) {
 		t.Fatalf("list operators = %+v, want %+v", ops[0], operator)
 	}

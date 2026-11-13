@@ -3,8 +3,9 @@ module github.com/ellanetworks/mocn
 go 1.27.3
 
 require (
-	github.com/ellanetworks/core/s1ap v0.0.0-20261112022906-4ba47dcee72b
-	github.com/ellanetworks/core/sctp v0.0.0-20261112022906-4ba47dcee72b
+	github.com/ellanetworks/core/per v0.0.0-20261113115507-ee5cecc48307
+	github.com/ellanetworks/core/s1ap v0.0.0-20261113115507-ee5cecc48307
+	github.com/ellanetworks/core/sctp v0.0.0-20261113115507-ee5cecc48307
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/prometheus/client_golang v1.25.0
@@ -16,7 +17,6 @@ require (
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/ellanetworks/core/per v0.0.0-20261112022906-4ba47dcee72b // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pandatix/go-abnf v0.5.3 // indirect
