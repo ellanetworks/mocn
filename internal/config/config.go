@@ -18,10 +18,16 @@ const (
 )
 
 type Config struct {
-	Logging Logging `yaml:"logging"`
-	DB      DB      `yaml:"db"`
-	API     API     `yaml:"api"`
-	S1      S1      `yaml:"s1"`
+	Logging   Logging   `yaml:"logging"`
+	DB        DB        `yaml:"db"`
+	API       API       `yaml:"api"`
+	S1        S1        `yaml:"s1"`
+	Telemetry Telemetry `yaml:"telemetry"`
+}
+
+type Telemetry struct {
+	Enabled      bool   `yaml:"enabled"`
+	OTLPEndpoint string `yaml:"otlp_endpoint"`
 }
 
 type Logging struct {
@@ -130,6 +136,8 @@ func (c Config) validate() error {
 		return errors.New("s1.port must be between 1 and 65535")
 	case c.S1.Address.Zone() != "":
 		return errors.New("s1.address must not have a zone")
+	case c.Telemetry.Enabled && c.Telemetry.OTLPEndpoint == "":
+		return errors.New("telemetry.otlp_endpoint is required when telemetry.enabled is true")
 	}
 
 	return c.API.TLS.validate("api")

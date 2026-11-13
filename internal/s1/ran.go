@@ -27,6 +27,7 @@ var (
 const noMMETimeToWait = s1ap.TimeToWaitV5s
 
 type RANAssociation struct {
+	g           *Gateway
 	conn        *sctp.SCTPConn
 	addrs       []string
 	connectedAt time.Time
@@ -42,8 +43,8 @@ type mmeConfigPush struct {
 	retryAt time.Time
 }
 
-func (n *RANAssociation) Send(msg []byte, stream uint16) error {
-	return send(n.conn, msg, stream)
+func (n *RANAssociation) Send(ctx context.Context, msg []byte, stream uint16) error {
+	return n.g.send(ctx, sideRadio, n.conn, "", msg, stream)
 }
 
 func (n *RANAssociation) TNLAddresses() []string {
@@ -91,7 +92,7 @@ func addrStrings(a any) []string {
 }
 
 func (g *Gateway) ranConnected(conn *sctp.SCTPConn) {
-	n := &RANAssociation{conn: conn, addrs: addrStrings(conn.RemoteAddr()), connectedAt: g.cfg.Now()}
+	n := &RANAssociation{g: g, conn: conn, addrs: addrStrings(conn.RemoteAddr()), connectedAt: g.cfg.Now()}
 
 	g.mu.Lock()
 	g.ranNodes[conn] = n
@@ -136,7 +137,12 @@ func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []by
 	}
 
 	pdu, err := s1ap.Unmarshal(msg)
+
+	ctx, span := g.receiveFromRAN(ctx, n, pdu, msg)
+	defer span.End()
+
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		g.log.WarnContext(ctx, "undecodable S1AP message from radio", slog.Any("error", err),
 			slog.Any("tnl_addresses", n.addrs))
 
@@ -155,7 +161,7 @@ func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []by
 		}
 	case *s1ap.SuccessfulOutcome:
 		if p.ProcedureCode == s1ap.ProcMMEConfigurationUpdate {
-			g.handleMMEConfigurationUpdateAcknowledge(n)
+			g.handleMMEConfigurationUpdateAcknowledge(ctx, n)
 			return
 		}
 	case *s1ap.UnsuccessfulOutcome:
@@ -170,6 +176,7 @@ func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []by
 	g.mu.Unlock()
 
 	if !up {
+		spanFailed(ctx, errTypeNoSetup)
 		g.log.DebugContext(ctx, "dropped S1AP message before S1 Setup", slog.String("procedure", procedureOf(pdu).String()),
 			slog.Any("tnl_addresses", n.addrs))
 
@@ -266,6 +273,7 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 		if g.ranNodes[n.conn] != n {
 			g.mu.Unlock()
 			g.countSetup(sideRadio, setupError)
+			spanFailed(ctx, setupError)
 
 			return
 		}
@@ -304,6 +312,8 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 			return
 		case <-ctx.Done():
 			g.countSetup(sideRadio, setupError)
+			spanFailed(ctx, setupError)
+
 			return
 		}
 	}
@@ -352,6 +362,7 @@ func (g *Gateway) acceptS1SetupLocked(ctx context.Context, n *RANAssociation, se
 	gummeis, err := gummeisTo(served)
 	if err != nil {
 		g.countSetup(sideRadio, setupError)
+		spanFailed(ctx, setupError)
 		g.log.ErrorContext(ctx, "failed to encode Served GUMMEIs", slog.Any("error", err))
 
 		return
@@ -364,13 +375,15 @@ func (g *Gateway) acceptS1SetupLocked(ctx context.Context, n *RANAssociation, se
 	}).Marshal()
 	if err != nil {
 		g.countSetup(sideRadio, setupError)
+		spanFailed(ctx, setupError)
 		g.log.ErrorContext(ctx, "failed to marshal S1 Setup Response", slog.Any("error", err))
 
 		return
 	}
 
-	if err := n.Send(out, nonUEStream); err != nil {
+	if err := n.Send(ctx, out, nonUEStream); err != nil {
 		g.countSetup(sideRadio, setupError)
+		spanFailed(ctx, setupError)
 		g.log.WarnContext(ctx, "failed to send S1 Setup Response", slog.Any("error", err))
 
 		return
@@ -400,6 +413,7 @@ func (g *Gateway) rejectS1Setup(ctx context.Context, n *RANAssociation, result s
 	g.mu.Unlock()
 
 	g.countSetup(sideRadio, result)
+	spanFailed(ctx, result)
 
 	g.log.WarnContext(ctx, "radio S1 Setup rejected", slog.String("cause", cause.String()), slog.String("reason", reason),
 		slog.Any("tnl_addresses", n.addrs))
@@ -410,7 +424,7 @@ func (g *Gateway) rejectS1Setup(ctx context.Context, n *RANAssociation, result s
 		return
 	}
 
-	if err := n.Send(out, nonUEStream); err != nil {
+	if err := n.Send(ctx, out, nonUEStream); err != nil {
 		g.log.WarnContext(ctx, "failed to send S1 Setup Failure", slog.Any("error", err))
 	}
 }
@@ -422,7 +436,7 @@ func (g *Gateway) handleENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 	g.mu.Unlock()
 
 	if !up {
-		g.rejectENBConfigurationUpdate(ctx, n, causeNotCompatibleWithState, nil, "no S1 Setup")
+		g.rejectENBConfigurationUpdate(ctx, n, errTypeNoSetup, causeNotCompatibleWithState, nil, "no S1 Setup")
 		return
 	}
 
@@ -430,12 +444,12 @@ func (g *Gateway) handleENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 	if err != nil {
 		if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
 			diag := ase.OutcomeDiagnostics()
-			g.rejectENBConfigurationUpdate(ctx, n, ase.Cause, &diag, err.Error())
+			g.rejectENBConfigurationUpdate(ctx, n, errTypeInvalid, ase.Cause, &diag, err.Error())
 
 			return
 		}
 
-		g.rejectENBConfigurationUpdate(ctx, n, causeMiscUnspecified, nil, err.Error())
+		g.rejectENBConfigurationUpdate(ctx, n, errTypeInvalid, causeMiscUnspecified, nil, err.Error())
 
 		return
 	}
@@ -444,7 +458,7 @@ func (g *Gateway) handleENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 
 	if len(upd.SupportedTAs) > 0 {
 		if tas, err = tasFrom(upd.SupportedTAs); err != nil {
-			g.rejectENBConfigurationUpdate(ctx, n, causeSemanticError, nil, err.Error())
+			g.rejectENBConfigurationUpdate(ctx, n, errTypeInvalid, causeSemanticError, nil, err.Error())
 			return
 		}
 	}
@@ -461,7 +475,7 @@ func (g *Gateway) handleENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 
 	if tas != nil && len(servingOperators(tas, g.operators)) == 0 {
 		g.mu.Unlock()
-		g.rejectENBConfigurationUpdate(ctx, n, causeUnknownPLMN, nil, "no operator serves a broadcast PLMN")
+		g.rejectENBConfigurationUpdate(ctx, n, setupUnknownPLMN, causeUnknownPLMN, nil, "no operator serves a broadcast PLMN")
 
 		return
 	}
@@ -487,7 +501,7 @@ func (g *Gateway) handleENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 
 	n.setup = &s
 
-	if err := n.Send(out, nonUEStream); err != nil {
+	if err := n.Send(ctx, out, nonUEStream); err != nil {
 		g.log.WarnContext(ctx, "failed to send eNB Configuration Update Acknowledge", slog.Any("error", err))
 	}
 
@@ -498,9 +512,11 @@ func (g *Gateway) handleENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 		slog.String("global_enb_id", formatGlobalENBID(s.globalENBID)))
 }
 
-func (g *Gateway) rejectENBConfigurationUpdate(ctx context.Context, n *RANAssociation, cause s1ap.Cause,
-	diag *s1ap.CriticalityDiagnostics, reason string,
+func (g *Gateway) rejectENBConfigurationUpdate(ctx context.Context, n *RANAssociation, errType string,
+	cause s1ap.Cause, diag *s1ap.CriticalityDiagnostics, reason string,
 ) {
+	spanFailed(ctx, errType)
+
 	g.log.WarnContext(ctx, "radio eNB Configuration Update rejected", slog.String("cause", cause.String()),
 		slog.String("reason", reason), slog.Any("tnl_addresses", n.addrs))
 
@@ -510,13 +526,13 @@ func (g *Gateway) rejectENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 		return
 	}
 
-	if err := n.Send(out, nonUEStream); err != nil {
+	if err := n.Send(ctx, out, nonUEStream); err != nil {
 		g.log.WarnContext(ctx, "failed to send eNB Configuration Update Failure", slog.Any("error", err))
 	}
 }
 
 // TS 36.413 clause 8.7.5
-func (g *Gateway) syncRANLocked(n *RANAssociation) {
+func (g *Gateway) syncRANLocked(ctx context.Context, n *RANAssociation) {
 	p := &n.mmeConfig
 	if !n.up || p.pending != nil || g.cfg.Now().Before(p.retryAt) {
 		return
@@ -527,24 +543,24 @@ func (g *Gateway) syncRANLocked(n *RANAssociation) {
 		return
 	}
 
-	g.sendMMEConfigurationUpdateLocked(n, served)
+	g.sendMMEConfigurationUpdateLocked(withOperator(ctx, ""), n, served)
 }
 
-func (g *Gateway) sendMMEConfigurationUpdateLocked(n *RANAssociation, served []ServedGUMMEIs) {
+func (g *Gateway) sendMMEConfigurationUpdateLocked(ctx context.Context, n *RANAssociation, served []ServedGUMMEIs) {
 	gummeis, err := gummeisTo(served)
 	if err != nil {
-		g.log.Error("failed to encode Served GUMMEIs", slog.Any("error", err))
+		g.log.ErrorContext(ctx, "failed to encode Served GUMMEIs", slog.Any("error", err))
 		return
 	}
 
 	out, err := (&s1ap.MMEConfigurationUpdate{ServedGUMMEIs: gummeis}).Marshal()
 	if err != nil {
-		g.log.Error("failed to marshal MME Configuration Update", slog.Any("error", err))
+		g.log.ErrorContext(ctx, "failed to marshal MME Configuration Update", slog.Any("error", err))
 		return
 	}
 
-	if err := n.Send(out, nonUEStream); err != nil {
-		g.log.Warn("failed to send MME Configuration Update", slog.Any("error", err))
+	if err := n.Send(ctx, out, nonUEStream); err != nil {
+		g.log.WarnContext(ctx, "failed to send MME Configuration Update", slog.Any("error", err))
 		return
 	}
 
@@ -554,12 +570,12 @@ func (g *Gateway) sendMMEConfigurationUpdateLocked(n *RANAssociation, served []S
 		defer g.mu.Unlock()
 
 		if g.ranNodes[n.conn] == n && n.up && gummeisEqual(n.mmeConfig.pending, served) {
-			g.sendMMEConfigurationUpdateLocked(n, served)
+			g.sendMMEConfigurationUpdateLocked(ctx, n, served)
 		}
 	})
 }
 
-func (g *Gateway) handleMMEConfigurationUpdateAcknowledge(n *RANAssociation) {
+func (g *Gateway) handleMMEConfigurationUpdateAcknowledge(ctx context.Context, n *RANAssociation) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -574,7 +590,7 @@ func (g *Gateway) handleMMEConfigurationUpdateAcknowledge(n *RANAssociation) {
 
 	p.acked, p.pending = p.pending, nil
 
-	g.syncRANLocked(n)
+	g.syncRANLocked(ctx, n)
 }
 
 func (g *Gateway) handleMMEConfigurationUpdateFailure(ctx context.Context, n *RANAssociation, value []byte) {
@@ -589,6 +605,8 @@ func (g *Gateway) handleMMEConfigurationUpdateFailure(ctx context.Context, n *RA
 	cause := "undecodable"
 	if err == nil {
 		cause = causeText(fail.Cause)
+	} else {
+		spanFailed(ctx, errTypeInvalid)
 	}
 
 	g.log.WarnContext(ctx, "radio rejected MME Configuration Update", slog.String("cause", cause),
@@ -613,7 +631,7 @@ func (g *Gateway) handleMMEConfigurationUpdateFailure(ctx context.Context, n *RA
 		defer g.mu.Unlock()
 
 		if g.ranNodes[n.conn] == n {
-			g.syncRANLocked(n)
+			g.syncRANLocked(ctx, n)
 		}
 	})
 }

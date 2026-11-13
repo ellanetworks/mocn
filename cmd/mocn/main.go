@@ -61,6 +61,7 @@ func start(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	return server.Run(ctx, server.Config{
-		Listener: ln, TLS: tlsConfig, S1Listener: s1ln, DBPath: cfg.DB.Path, Frontend: ui.FS(), Logger: logger,
+		Listener: ln, TLS: tlsConfig, S1Listener: s1ln, DBPath: cfg.DB.Path, Frontend: ui.FS(), Telemetry: cfg.Telemetry,
+		Logger: logger,
 	})
 }

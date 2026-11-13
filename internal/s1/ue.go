@@ -7,6 +7,7 @@ import (
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/tracing"
 )
 
 const maxENBUES1APID = 1<<24 - 1
@@ -55,6 +56,7 @@ type ueContext struct {
 	tai        *TAI
 	ecgi       *ECGI
 	release    *time.Timer
+	traceID    tracing.RANTraceID
 }
 
 type ranUEKey struct {
@@ -141,6 +143,8 @@ func (t *ueTable) remove(us ...*ueContext) []*ueContext {
 		if u.release != nil {
 			u.release.Stop()
 		}
+
+		u.traceID = tracing.RANTraceID{}
 
 		if u.mmeIDKnown {
 			delete(t.byMMEID, mmeUEKey{u.mme, u.mmeID})

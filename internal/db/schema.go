@@ -41,7 +41,7 @@ func (d *DB) Migrate(ctx context.Context, target int) (err error) {
 func applyMigrate(a *applyCtx, p migrate) (struct{}, error) {
 	var current int
 
-	if err := a.tx.QueryRowContext(a.ctx, `PRAGMA user_version`).Scan(&current); err != nil {
+	if err := a.tx.untraced().row(a.ctx, "PRAGMA", "", `PRAGMA user_version`).Scan(&current); err != nil {
 		return struct{}{}, err
 	}
 
@@ -54,11 +54,11 @@ func applyMigrate(a *applyCtx, p migrate) (struct{}, error) {
 		return struct{}{}, errors.New("the log needs a newer binary: schema " + fmt.Sprint(p.Target))
 	}
 
-	if _, err := a.tx.ExecContext(a.ctx, migrations[current]); err != nil {
+	if _, err := a.tx.exec(a.ctx, "", "", migrations[current]); err != nil {
 		return struct{}{}, fmt.Errorf("migration %d: %w", p.Target, err)
 	}
 
-	if _, err := a.tx.ExecContext(a.ctx, fmt.Sprintf("PRAGMA user_version = %d", p.Target)); err != nil {
+	if _, err := a.tx.untraced().exec(a.ctx, "PRAGMA", "", fmt.Sprintf("PRAGMA user_version = %d", p.Target)); err != nil {
 		return struct{}{}, err
 	}
 

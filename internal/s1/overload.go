@@ -158,6 +158,7 @@ func (g *Gateway) countOverload(proc, result string) {
 
 func (g *Gateway) rejectOverload(ctx context.Context, a *MMEAssociation, log *slog.Logger, proc string, err error) {
 	g.countOverload(proc, overloadInvalid)
+	spanFailed(ctx, overloadInvalid)
 	log.WarnContext(ctx, "rejected "+proc+" from MME", slog.Any("error", err))
 
 	if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
@@ -220,6 +221,7 @@ func (g *Gateway) overloadStart(ctx context.Context, a *MMEAssociation, log *slo
 	}).Marshal()
 	if err != nil {
 		g.countOverload(procOverloadStart, overloadInvalid)
+		spanFailed(ctx, overloadInvalid)
 		log.ErrorContext(ctx, "failed to marshal Overload Start", slog.Any("error", err))
 
 		return
@@ -229,6 +231,7 @@ func (g *Gateway) overloadStart(ctx context.Context, a *MMEAssociation, log *slo
 
 	if len(radios) == 0 {
 		g.countOverload(procOverloadStart, overloadNoRadio)
+		spanFailed(ctx, overloadNoRadio)
 		log.InfoContext(ctx, "Overload Start from MME, no radio of the operator is up")
 
 		return
@@ -323,7 +326,7 @@ func (g *Gateway) replayOverloadLocked(ctx context.Context, n *RANAssociation) {
 				continue
 			}
 
-			if err := n.Send(out, nonUEStream); err != nil {
+			if err := n.Send(withOperator(ctx, o.name), out, nonUEStream); err != nil {
 				log.WarnContext(ctx, "failed to send Overload Start to radio", slog.Any("error", err))
 				continue
 			}
@@ -382,6 +385,7 @@ func (g *Gateway) overloadStop(ctx context.Context, a *MMEAssociation, log *slog
 
 	if len(radios) == 0 {
 		g.countOverload(procOverloadStop, overloadNoRadio)
+		spanFailed(ctx, overloadNoRadio)
 		log.InfoContext(ctx, "Overload Stop from MME, no radio of the operator is up", slog.Int("gummeis", len(ended)))
 
 		return
@@ -427,7 +431,7 @@ func (g *Gateway) sendOverloadStop(ctx context.Context, radios []*RANAssociation
 
 func sendRadios(ctx context.Context, radios []*RANAssociation, log *slog.Logger, what string, out []byte) {
 	for _, n := range radios {
-		if err := n.Send(out, nonUEStream); err != nil {
+		if err := n.Send(ctx, out, nonUEStream); err != nil {
 			ranLog(log, n).WarnContext(ctx, "failed to send "+what+" to radio", slog.Any("error", err))
 		}
 	}

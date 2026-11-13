@@ -133,7 +133,7 @@ test.describe("Admin", () => {
       nodes.getByRole("gridcell", { name: "10.0.0.1, 10.0.0.2", exact: true }),
     ).toBeVisible();
     await expect(
-      nodes.getByRole("gridcell", { name: "MME", exact: true }),
+      nodes.getByRole("gridcell", { name: "MME (4G)", exact: true }),
     ).toBeVisible();
     ({ identity, lte, nr } = await editIdentity());
     await expect(lte.getByRole("switch", { name: "Set" })).toBeDisabled();

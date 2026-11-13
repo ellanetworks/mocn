@@ -49,8 +49,8 @@ func applyCreateSession(a *applyCtx, p createSessionCmd) (int64, error) {
 	return createSession(a.ctx, a.tx, p.Session, p.MaxPerUser)
 }
 
-func createSession(ctx context.Context, tx *sql.Tx, s NewSession, maxPerUser int) (int64, error) {
-	res, err := tx.ExecContext(ctx, `INSERT INTO sessions (user_id, token_hash, method, identity_id, created_at, expires_at)
+func createSession(ctx context.Context, tx conn, s NewSession, maxPerUser int) (int64, error) {
+	res, err := tx.exec(ctx, "INSERT", "sessions", `INSERT INTO sessions (user_id, token_hash, method, identity_id, created_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?)`, s.UserID, s.TokenHash, s.Method, sql.NullInt64{Int64: s.IdentityID, Valid: s.IdentityID != 0},
 		s.CreatedAt.UnixNano(), s.ExpiresAt.UnixNano())
 	if err != nil {
@@ -62,7 +62,7 @@ func createSession(ctx context.Context, tx *sql.Tx, s NewSession, maxPerUser int
 		return 0, err
 	}
 
-	_, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ? AND id NOT IN
+	_, err = tx.exec(ctx, "DELETE", "sessions", `DELETE FROM sessions WHERE user_id = ? AND id NOT IN
 		(SELECT id FROM sessions WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?)`,
 		s.UserID, s.UserID, maxPerUser)
 
@@ -72,19 +72,19 @@ func createSession(ctx context.Context, tx *sql.Tx, s NewSession, maxPerUser int
 func (d *DB) GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (_ Session, err error) {
 	defer d.observe(poolRead, &err)()
 
-	return getSession(d.reader().QueryRowContext(ctx, `SELECT `+sessionColumns+` FROM sessions WHERE token_hash = ?`,
+	return getSession(d.read().row(ctx, "SELECT", "sessions", `SELECT `+sessionColumns+` FROM sessions WHERE token_hash = ?`,
 		tokenHash))
 }
 
 func (d *DB) GetSession(ctx context.Context, id int64) (_ Session, err error) {
 	defer d.observe(poolRead, &err)()
 
-	return getSession(d.reader().QueryRowContext(ctx, `SELECT `+sessionColumns+` FROM sessions WHERE id = ?`, id))
+	return getSession(d.read().row(ctx, "SELECT", "sessions", `SELECT `+sessionColumns+` FROM sessions WHERE id = ?`, id))
 }
 
 const sessionColumns = `id, user_id, token_hash, method, identity_id, created_at, expires_at`
 
-func getSession(row *sql.Row) (Session, error) {
+func getSession(row scanner) (Session, error) {
 	var (
 		s                    Session
 		identityID           sql.NullInt64
@@ -116,7 +116,7 @@ func (d *DB) DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) (er
 }
 
 func applyDeleteSession(a *applyCtx, tokenHash []byte) (struct{}, error) {
-	_, err := a.tx.ExecContext(a.ctx, `DELETE FROM sessions WHERE token_hash = ?`, tokenHash)
+	_, err := a.tx.exec(a.ctx, "DELETE", "sessions", `DELETE FROM sessions WHERE token_hash = ?`, tokenHash)
 
 	return struct{}{}, err
 }
@@ -130,7 +130,7 @@ func (d *DB) DeleteExpiredSessions(ctx context.Context, now time.Time) (err erro
 }
 
 func applyDeleteExpiredSessions(a *applyCtx, now int64) (struct{}, error) {
-	_, err := a.tx.ExecContext(a.ctx, `DELETE FROM sessions WHERE expires_at <= ?`, now)
+	_, err := a.tx.exec(a.ctx, "DELETE", "sessions", `DELETE FROM sessions WHERE expires_at <= ?`, now)
 
 	return struct{}{}, err
 }

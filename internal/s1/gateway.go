@@ -14,6 +14,7 @@ import (
 	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // TS 36.412 clause 7
@@ -36,6 +37,7 @@ type Config struct {
 	Listener        *sctp.Listener
 	Operators       func(ctx context.Context) ([]db.Operator, error)
 	Relay           Relay
+	TracerProvider  trace.TracerProvider
 	Logger          *slog.Logger
 	MMEPort         int
 	SetupWait       time.Duration
@@ -50,6 +52,7 @@ type Config struct {
 type Gateway struct {
 	cfg       Config
 	log       *slog.Logger
+	tracer    trace.Tracer
 	setups    *prometheus.CounterVec
 	overloads *prometheus.CounterVec
 	relay     *relay
@@ -103,6 +106,10 @@ func New(cfg Config) *Gateway {
 		changed:   make(chan struct{}),
 		setups:    newSetupCounter(),
 		overloads: newOverloadCounter(),
+	}
+
+	if cfg.TracerProvider != nil {
+		g.tracer = cfg.TracerProvider.Tracer(tracerName)
 	}
 
 	g.relay = newRelay(g, cfg.IntN)
@@ -197,7 +204,7 @@ func (g *Gateway) Reconcile(ctx context.Context) error {
 		return err
 	}
 
-	g.apply(ops)
+	g.apply(ctx, ops)
 
 	return nil
 }
@@ -208,7 +215,7 @@ func mmeKey(o db.Operator, addrs []string) string {
 	return fmt.Sprintf("%d|%s|%s|%d|%s", o.ID, e.PLMN, e.Type, e.ID, strings.Join(addrs, ","))
 }
 
-func (g *Gateway) apply(ops []db.Operator) {
+func (g *Gateway) apply(ctx context.Context, ops []db.Operator) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -228,11 +235,16 @@ func (g *Gateway) apply(ops []db.Operator) {
 			key := mmeKey(o, m.TNLAddresses)
 			wanted[key] = true
 
-			if _, ok := g.mmes[key]; ok || g.runCtx == nil {
+			if c, ok := g.mmes[key]; ok {
+				c.setOperatorName(o.Name)
 				continue
 			}
 
-			c := newMMEClient(g, o.ID, *o.GlobalENBID, m.TNLAddresses)
+			if g.runCtx == nil {
+				continue
+			}
+
+			c := newMMEClient(g, o.ID, o.Name, *o.GlobalENBID, m.TNLAddresses)
 			g.mmes[key] = c
 			added = append(added, c)
 		}
@@ -251,7 +263,7 @@ func (g *Gateway) apply(ops []db.Operator) {
 	}
 
 	g.kickMMEsLocked()
-	g.mmeChangedLocked()
+	g.mmeChangedLocked(ctx)
 }
 
 // TS 36.412 clause 7
@@ -355,12 +367,12 @@ func (g *Gateway) kickMMEsLocked() {
 	}
 }
 
-func (g *Gateway) mmeChangedLocked() {
+func (g *Gateway) mmeChangedLocked(ctx context.Context) {
 	close(g.changed)
 	g.changed = make(chan struct{})
 
 	for _, n := range g.ranNodes {
-		g.syncRANLocked(n)
+		g.syncRANLocked(ctx, n)
 	}
 }
 

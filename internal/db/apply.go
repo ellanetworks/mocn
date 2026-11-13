@@ -23,7 +23,7 @@ func (e *Events) merge(o Events) {
 type applyCtx struct {
 	ctx        context.Context
 	schema     int
-	tx         *sql.Tx
+	tx         conn
 	index      uint64
 	term       uint64
 	leaderTime int64
@@ -64,10 +64,10 @@ type fsmState struct {
 	leaderTime   int64
 }
 
-func readFSMState(ctx context.Context, q querier) (fsmState, error) {
+func readFSMState(ctx context.Context, q conn) (fsmState, error) {
 	var s fsmState
 
-	err := q.QueryRowContext(ctx, `SELECT applied_index, applied_term, leader_time FROM fsm_state WHERE id = 1`).
+	err := q.row(ctx, "SELECT", "fsm_state", `SELECT applied_index, applied_term, leader_time FROM fsm_state WHERE id = 1`).
 		Scan(&s.appliedIndex, &s.appliedTerm, &s.leaderTime)
 
 	return s, err
@@ -118,8 +118,8 @@ type Entry struct {
 	Data  []byte
 }
 
-func (d *DB) Apply(index, term uint64, entry []byte) ([]Result, error) {
-	results, err := d.ApplyEntries([]Entry{{Index: index, Term: term, Data: entry}})
+func (d *DB) Apply(ctx context.Context, index, term uint64, entry []byte) ([]Result, error) {
+	results, err := d.ApplyEntries(ctx, []Entry{{Index: index, Term: term, Data: entry}})
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (d *DB) Apply(index, term uint64, entry []byte) ([]Result, error) {
 	return results[0], nil
 }
 
-func (d *DB) ApplyEntries(entries []Entry) ([][]Result, error) {
+func (d *DB) ApplyEntries(ctx context.Context, entries []Entry) ([][]Result, error) {
 	batches := make([]Batch, len(entries))
 
 	for i, e := range entries {
@@ -142,31 +142,31 @@ func (d *DB) ApplyEntries(entries []Entry) ([][]Result, error) {
 	d.applyMu.Lock()
 	defer d.applyMu.Unlock()
 
-	return d.applyBatches(entries, batches)
+	return d.applyBatches(context.WithoutCancel(ctx), entries, batches)
 }
 
-func (d *DB) applyBatches(entries []Entry, batches []Batch) ([][]Result, error) {
-	ctx := context.Background()
-
+func (d *DB) applyBatches(ctx context.Context, entries []Entry, batches []Batch) ([][]Result, error) {
 	fatal := func(i int, err error) ([][]Result, error) {
 		return nil, &FatalError{Index: entries[i].Index, Err: err}
 	}
 
-	tx, err := d.writer.BeginTx(ctx, nil)
+	sqlTx, err := d.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return fatal(0, err)
 	}
 
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = sqlTx.Rollback() }()
 
-	state, err := readFSMState(ctx, tx)
+	tx := conn{q: sqlTx, tracer: d.tracer}
+
+	state, err := readFSMState(ctx, tx.untraced())
 	if err != nil {
 		return fatal(0, err)
 	}
 
 	var schema int
 
-	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&schema); err != nil {
+	if err := tx.untraced().row(ctx, "PRAGMA", "", `PRAGMA user_version`).Scan(&schema); err != nil {
 		return fatal(0, err)
 	}
 
@@ -216,17 +216,17 @@ func (d *DB) applyBatches(entries []Entry, batches []Batch) ([][]Result, error) 
 
 	last := len(entries) - 1
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM applied_requests WHERE applied_at < ?`,
+	if _, err := tx.untraced().exec(ctx, "DELETE", "applied_requests", `DELETE FROM applied_requests WHERE applied_at < ?`,
 		state.leaderTime-int64(appliedRequestsWindow)); err != nil {
 		return fatal(last, err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `UPDATE fsm_state SET applied_index = ?, applied_term = ?,
+	if _, err := tx.untraced().exec(ctx, "UPDATE", "fsm_state", `UPDATE fsm_state SET applied_index = ?, applied_term = ?,
 		leader_time = ? WHERE id = 1`, state.appliedIndex, state.appliedTerm, state.leaderTime); err != nil {
 		return fatal(last, err)
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := sqlTx.Commit(); err != nil {
 		return fatal(last, err)
 	}
 
@@ -255,7 +255,7 @@ func applyCommand(a *applyCtx, c Command) (Result, Events, error) {
 	if c.Retryable {
 		var stored []byte
 
-		err := tx.QueryRowContext(ctx, `SELECT result FROM applied_requests WHERE request_id = ? AND applied_at >= ?`,
+		err := tx.untraced().row(ctx, "SELECT", "applied_requests", `SELECT result FROM applied_requests WHERE request_id = ? AND applied_at >= ?`,
 			c.RequestID[:], a.leaderTime-int64(appliedRequestsWindow)).Scan(&stored)
 		if err == nil {
 			var r Result
@@ -273,7 +273,7 @@ func applyCommand(a *applyCtx, c Command) (Result, Events, error) {
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `SAVEPOINT command`); err != nil {
+	if _, err := tx.untraced().exec(ctx, "SAVEPOINT", "", `SAVEPOINT command`); err != nil {
 		return Result{}, Events{}, err
 	}
 
@@ -291,7 +291,7 @@ func applyCommand(a *applyCtx, c Command) (Result, Events, error) {
 			return Result{}, Events{}, herr
 		}
 
-		if _, err := tx.ExecContext(ctx, `ROLLBACK TO command`); err != nil {
+		if _, err := tx.untraced().exec(ctx, "ROLLBACK", "", `ROLLBACK TO command`); err != nil {
 			return Result{}, Events{}, err
 		}
 
@@ -306,7 +306,7 @@ func applyCommand(a *applyCtx, c Command) (Result, Events, error) {
 		r.Value = v
 	}
 
-	if _, err := tx.ExecContext(ctx, `RELEASE command`); err != nil {
+	if _, err := tx.untraced().exec(ctx, "RELEASE", "", `RELEASE command`); err != nil {
 		return Result{}, Events{}, err
 	}
 
@@ -316,7 +316,7 @@ func applyCommand(a *applyCtx, c Command) (Result, Events, error) {
 			return Result{}, Events{}, err
 		}
 
-		if _, err := tx.ExecContext(ctx, `INSERT INTO applied_requests (request_id, result, applied_at)
+		if _, err := tx.untraced().exec(ctx, "INSERT", "applied_requests", `INSERT INTO applied_requests (request_id, result, applied_at)
 			VALUES (?, ?, ?) ON CONFLICT (request_id) DO UPDATE SET result = excluded.result,
 			applied_at = excluded.applied_at`, c.RequestID[:], stored, a.leaderTime); err != nil {
 			return Result{}, Events{}, err
@@ -358,7 +358,7 @@ func (l *localProposer) Propose(ctx context.Context, cmds []Command) ([]Result, 
 		return nil, err
 	}
 
-	return l.d.Apply(l.d.AppliedIndex()+1, 1, entry)
+	return l.d.Apply(ctx, l.d.AppliedIndex()+1, 1, entry)
 }
 
 func submit[R any](ctx context.Context, d *DB, t CommandType, payload any) (R, error) {

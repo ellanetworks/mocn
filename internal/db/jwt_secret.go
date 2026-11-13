@@ -21,13 +21,13 @@ func (d *DB) Secrets(ctx context.Context) (Secrets, error) {
 func (d *DB) ReadSecrets(ctx context.Context) (_ Secrets, err error) {
 	defer d.observe(poolRead, &err)()
 
-	return readSecrets(ctx, d.reader())
+	return readSecrets(ctx, d.read())
 }
 
 func (d *DB) InitSecrets(ctx context.Context, via Proposer) (_ Secrets, err error) {
 	defer d.observe(poolWrite, &err)()
 
-	s, err := readSecrets(ctx, d.reader())
+	s, err := readSecrets(ctx, d.read())
 	if err == nil {
 		return s, nil
 	}
@@ -53,7 +53,7 @@ func (d *DB) JWTSecret(ctx context.Context) ([]byte, error) {
 }
 
 func applyInitSecrets(a *applyCtx, candidate Secrets) (Secrets, error) {
-	if _, err := a.tx.ExecContext(a.ctx, `INSERT OR IGNORE INTO jwt_secret (id, secret) VALUES (1, ?)`,
+	if _, err := a.tx.exec(a.ctx, "INSERT", "jwt_secret", `INSERT OR IGNORE INTO jwt_secret (id, secret) VALUES (1, ?)`,
 		candidate.JWT); err != nil {
 		return Secrets{}, err
 	}
@@ -61,10 +61,10 @@ func applyInitSecrets(a *applyCtx, candidate Secrets) (Secrets, error) {
 	return readSecrets(a.ctx, a.tx)
 }
 
-func readSecrets(ctx context.Context, q querier) (Secrets, error) {
+func readSecrets(ctx context.Context, q conn) (Secrets, error) {
 	var s Secrets
 
-	err := q.QueryRowContext(ctx, `SELECT secret FROM jwt_secret WHERE id = 1`).Scan(&s.JWT)
+	err := q.row(ctx, "SELECT", "jwt_secret", `SELECT secret FROM jwt_secret WHERE id = 1`).Scan(&s.JWT)
 
 	return s, err
 }

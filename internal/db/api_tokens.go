@@ -37,7 +37,7 @@ func (d *DB) CreateAPIToken(ctx context.Context, t NewAPIToken) (_ int64, err er
 }
 
 func applyCreateAPIToken(a *applyCtx, t NewAPIToken) (int64, error) {
-	res, err := a.tx.ExecContext(a.ctx, `INSERT INTO api_tokens (token_id, name, token_hash, user_id, created_at,
+	res, err := a.tx.exec(a.ctx, "INSERT", "api_tokens", `INSERT INTO api_tokens (token_id, name, token_hash, user_id, created_at,
 		expires_at) VALUES (?, ?, ?, ?, ?, ?)`, t.TokenID, t.Name, t.TokenHash, t.UserID, t.CreatedAt.UnixNano(),
 		nullTime(t.ExpiresAt))
 	if isConstraint(err, sqlite3.ErrConstraintUnique) {
@@ -54,7 +54,7 @@ func applyCreateAPIToken(a *applyCtx, t NewAPIToken) (int64, error) {
 func (d *DB) GetAPITokenByTokenID(ctx context.Context, tokenID string) (_ APIToken, err error) {
 	defer d.observe(poolRead, &err)()
 
-	t, err := scanAPIToken(d.reader().QueryRowContext(ctx, `SELECT `+apiTokenColumns+` FROM api_tokens WHERE token_id = ?`,
+	t, err := scanAPIToken(d.read().row(ctx, "SELECT", "api_tokens", `SELECT `+apiTokenColumns+` FROM api_tokens WHERE token_id = ?`,
 		tokenID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return APIToken{}, ErrNotFound
@@ -71,31 +71,24 @@ func (d *DB) ListAPITokens(ctx context.Context, userID int64, page, perPage int)
 	defer d.observe(poolRead, &err)()
 
 	var total int
-	if err := d.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM api_tokens WHERE user_id = ?`, userID).
+	if err := d.read().row(ctx, "SELECT", "api_tokens", `SELECT COUNT(*) FROM api_tokens WHERE user_id = ?`, userID).
 		Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("list API tokens: %w", err)
 	}
 
-	rows, err := d.reader().QueryContext(ctx, `SELECT `+apiTokenColumns+` FROM api_tokens WHERE user_id = ?
-		ORDER BY id LIMIT ? OFFSET ?`, userID, perPage, (page-1)*perPage)
-	if err != nil {
-		return nil, 0, fmt.Errorf("list API tokens: %w", err)
-	}
-
-	defer func() { _ = rows.Close() }()
-
 	tokens := []APIToken{}
 
-	for rows.Next() {
-		t, err := scanAPIToken(rows)
+	if err := d.read().each(ctx, "api_tokens", `SELECT `+apiTokenColumns+` FROM api_tokens WHERE user_id = ?
+		ORDER BY id LIMIT ? OFFSET ?`, func(s scanner) error {
+		t, err := scanAPIToken(s)
 		if err != nil {
-			return nil, 0, fmt.Errorf("list API tokens: %w", err)
+			return err
 		}
 
 		tokens = append(tokens, t)
-	}
 
-	if err := rows.Err(); err != nil {
+		return nil
+	}, userID, perPage, (page-1)*perPage); err != nil {
 		return nil, 0, fmt.Errorf("list API tokens: %w", err)
 	}
 
@@ -106,7 +99,7 @@ func (d *DB) CountAPITokens(ctx context.Context, userID int64) (_ int, err error
 	defer d.observe(poolRead, &err)()
 
 	var n int
-	if err := d.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM api_tokens WHERE user_id = ?`, userID).
+	if err := d.read().row(ctx, "SELECT", "api_tokens", `SELECT COUNT(*) FROM api_tokens WHERE user_id = ?`, userID).
 		Scan(&n); err != nil {
 		return 0, fmt.Errorf("count API tokens: %w", err)
 	}
@@ -131,7 +124,7 @@ type deleteAPIToken struct {
 }
 
 func applyDeleteAPIToken(a *applyCtx, p deleteAPIToken) (struct{}, error) {
-	res, err := a.tx.ExecContext(a.ctx, `DELETE FROM api_tokens WHERE token_id = ? AND user_id = ?`, p.TokenID,
+	res, err := a.tx.exec(a.ctx, "DELETE", "api_tokens", `DELETE FROM api_tokens WHERE token_id = ? AND user_id = ?`, p.TokenID,
 		p.UserID)
 	if err != nil {
 		return struct{}{}, err
@@ -154,7 +147,7 @@ type touchAPIToken struct {
 }
 
 func applyTouchAPIToken(a *applyCtx, p touchAPIToken) (struct{}, error) {
-	_, err := a.tx.ExecContext(a.ctx, `UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, p.At, p.ID)
+	_, err := a.tx.exec(a.ctx, "UPDATE", "api_tokens", `UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, p.At, p.ID)
 
 	return struct{}{}, err
 }

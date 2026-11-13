@@ -27,7 +27,7 @@ These paths take no token: `GET /api/v1/livez`, `GET /api/v1/readyz`, `GET /api/
 | Read Only       | `2`       | Reading [operators](operators.md), [radios](radios.md) and [UE connections](ue_connections.md). |
 | Network Manager | `3`       | Read Only, plus creating, updating and deleting operators. |
 
-Only an Admin manages [users](users.md). Every user reads its own user, changes its own password, and manages its own API tokens.
+Only an Admin manages [users](users.md) and reads [profiles](pprof.md). Every user reads its own user, changes its own password, and manages its own API tokens.
 
 An API token has the role of its user, but cannot create API tokens, change a password, or manage users.
 

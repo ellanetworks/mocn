@@ -78,6 +78,7 @@ func (r *relay) paging(ctx context.Context, a *MMEAssociation, log *slog.Logger,
 	p, err := s1ap.ParsePaging(value)
 	if err != nil {
 		r.paged.WithLabelValues(interfaceS1, pagingInvalid).Inc()
+		spanFailed(ctx, pagingInvalid)
 		log.WarnContext(ctx, "rejected Paging from MME", slog.Any("error", err))
 
 		if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
@@ -93,6 +94,7 @@ func (r *relay) paging(ctx context.Context, a *MMEAssociation, log *slog.Logger,
 
 	if len(radios) == 0 {
 		r.paged.WithLabelValues(interfaceS1, pagingNoRadio).Inc()
+		spanFailed(ctx, pagingNoRadio)
 		log.DebugContext(ctx, "Paging from MME not relayed: no radio serves a TAI of the list", slog.Int("tais", len(p.TAIList)))
 
 		return

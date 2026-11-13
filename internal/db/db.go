@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mattn/go-sqlite3"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -36,6 +37,7 @@ type DB struct {
 	appliedMu   sync.Mutex
 	appliedCh   chan struct{}
 	schema      atomic.Int64
+	tracer      trace.Tracer
 }
 
 const (
@@ -164,18 +166,22 @@ var migrations = []string{
 	CREATE INDEX amf_tnl_addresses_amf_id ON amf_tnl_addresses (amf_id, operator_id);`,
 }
 
-func Open(ctx context.Context, path string) (*DB, error) {
+func Open(ctx context.Context, path string, opts ...Option) (*DB, error) {
 	if err := restrict(path); err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
 	d := &DB{path: path, metrics: newMetrics()}
 
+	for _, o := range opts {
+		o(d)
+	}
+
 	if err := d.openConns(ctx); err != nil {
 		return nil, err
 	}
 
-	state, err := readFSMState(ctx, d.writer)
+	state, err := readFSMState(ctx, conn{q: d.writer})
 	if err != nil {
 		_ = d.Close()
 		return nil, fmt.Errorf("open database: read state: %w", err)

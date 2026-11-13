@@ -13,6 +13,8 @@ import (
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Relay interface {
@@ -23,7 +25,7 @@ type Relay interface {
 }
 
 type sender interface {
-	Send(msg []byte, stream uint16) error
+	Send(ctx context.Context, msg []byte, stream uint16) error
 }
 
 const (
@@ -61,7 +63,7 @@ type relay struct {
 
 	mu      sync.Mutex
 	ues     ueTable
-	sendMME func(*MMEAssociation, []byte, uint16) error
+	sendMME func(*MMEAssociation, context.Context, []byte, uint16) error
 }
 
 func newRelay(g *Gateway, intN func(int) int) *relay {
@@ -175,7 +177,9 @@ func (r *relay) FromMME(ctx context.Context, from *MMEAssociation, pdu s1ap.PDU,
 func uePDU(ctx context.Context, log *slog.Logger, from string, msg []byte) (*s1ap.RawPDU, bool) {
 	p, err := s1ap.ParseRawPDU(msg)
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		log.WarnContext(ctx, "undecodable S1AP message from "+from, slog.Any("error", err))
+
 		return nil, false
 	}
 
@@ -208,7 +212,7 @@ func (r *relay) MMELost(from *MMEAssociation) {
 		mmeLog(r.log, from).Info("MME lost, UE contexts released", slog.Int("ues", len(gone)))
 	}
 
-	r.resetRANs(context.Background(), gone, causeTransportUnavailable)
+	r.resetRANs(withOperator(context.Background(), from.client.operator()), gone, causeTransportUnavailable)
 }
 
 func getIE[T any, P interface {
@@ -281,6 +285,7 @@ func (r *relay) initialUEMessage(ctx context.Context, n *RANAssociation, log *sl
 		r.mu.Unlock()
 
 		r.initialUE.WithLabelValues(interfaceS1, initialUERejected).Inc()
+		spanFailed(ctx, initialUERejected)
 		log.WarnContext(ctx, "INITIAL UE MESSAGE reuses an allocated eNB UE S1AP ID")
 		sendUEErrorIndication(ctx, n, log, causeUnknownENBUEID, nil, &enbID)
 		r.resetMMEs(ctx, gone, causeUnknownENBUEID)
@@ -290,15 +295,19 @@ func (r *relay) initialUEMessage(ctx context.Context, n *RANAssociation, log *sl
 
 	if !found {
 		r.initialUE.WithLabelValues(interfaceS1, initialUEUnknownPLMN).Inc()
+		spanFailed(ctx, initialUEUnknownPLMN)
 		log.WarnContext(ctx, "INITIAL UE MESSAGE not routed: no operator serves the PLMN")
 		r.releaseUnrouted(ctx, n, log, enbID, causeUnknownPLMN)
 
 		return
 	}
 
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String(attrOperator, op.name))
+
 	mme, rule := selectMME(slices.DeleteFunc(cands, func(c mmeCandidate) bool { return c.assoc.lost }), id, r.intN)
 	if mme == nil {
 		r.initialUE.WithLabelValues(interfaceS1, initialUENoMME).Inc()
+		spanFailed(ctx, initialUENoMME)
 		log.WarnContext(ctx, "INITIAL UE MESSAGE not routed: no selectable MME of the operator", slog.String("operator", op.name))
 		r.releaseUnrouted(ctx, n, log, enbID, causeTransportUnavailable)
 
@@ -331,8 +340,9 @@ func (r *relay) initialUEMessage(ctx context.Context, n *RANAssociation, log *sl
 	send := r.sendMME
 	r.mu.Unlock()
 
-	if err := send(mme, out, ueStream); err != nil {
+	if err := send(mme, ctx, out, ueStream); err != nil {
 		r.initialUE.WithLabelValues(interfaceS1, initialUEError).Inc()
+		spanFailed(ctx, initialUEError)
 		log.WarnContext(ctx, "failed to send INITIAL UE MESSAGE to MME", slog.Any("error", err))
 
 		r.mu.Lock()
@@ -398,7 +408,7 @@ func (r *relay) releaseUnrouted(ctx context.Context, n *RANAssociation, log *slo
 	})
 	r.mu.Unlock()
 
-	if err := n.Send(out, ueStream); err != nil {
+	if err := n.Send(ctx, out, ueStream); err != nil {
 		r.mu.Lock()
 		r.ues.remove(u)
 		r.mu.Unlock()
@@ -412,6 +422,7 @@ func (r *relay) releaseUnrouted(ctx context.Context, n *RANAssociation, log *slo
 
 func (r *relay) rejectInitialUE(ctx context.Context, log *slog.Logger, result, reason string, err error) {
 	r.initialUE.WithLabelValues(interfaceS1, result).Inc()
+	spanFailed(ctx, result)
 	log.WarnContext(ctx, reason, slog.Any("error", err))
 }
 
@@ -496,7 +507,9 @@ func (r *relay) uplink(ctx context.Context, n *RANAssociation, log *slog.Logger,
 
 	ids, _, err := readUEIDs(p)
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		log.WarnContext(ctx, "dropped S1AP message from radio with invalid UE S1AP IDs", slog.Any("error", err))
+
 		return
 	}
 
@@ -509,6 +522,7 @@ func (r *relay) uplink(ctx context.Context, n *RANAssociation, log *slog.Logger,
 		gone := r.ues.remove(r.ues.onRAN(n, ids.mme, ids.enb)...)
 		r.mu.Unlock()
 
+		spanFailed(ctx, errTypeUnknown)
 		log.WarnContext(ctx, "S1AP message from radio for an unknown UE", slog.String("cause", cause.String()),
 			slog.Any("mme_ue_s1ap_id", ids.mme), slog.Any("enb_ue_s1ap_id", ids.enb))
 
@@ -549,6 +563,7 @@ func (r *relay) uplink(ctx context.Context, n *RANAssociation, log *slog.Logger,
 	out, err := rewrite(p, &u.mmeID, &u.mmeENBID)
 	if err != nil {
 		r.mu.Unlock()
+		spanFailed(ctx, errTypeError)
 		log.WarnContext(ctx, "failed to relay S1AP message to MME", slog.Any("error", err))
 
 		return
@@ -563,7 +578,7 @@ func (r *relay) uplink(ctx context.Context, n *RANAssociation, log *slog.Logger,
 
 	log.DebugContext(ctx, "relayed S1AP message to MME", slog.Uint64("mme_enb_ue_s1ap_id", uint64(u.mmeENBID)))
 
-	if err := mme.Send(out, ueStream); err != nil {
+	if err := mme.Send(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send S1AP message to MME", slog.Any("error", err))
 	}
 }
@@ -592,7 +607,9 @@ func (r *relay) downlink(ctx context.Context, a *MMEAssociation, log *slog.Logge
 
 	ids, pair, err := readUEIDs(p)
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		log.WarnContext(ctx, "dropped S1AP message from MME with invalid UE S1AP IDs", slog.Any("error", err))
+
 		return
 	}
 
@@ -603,6 +620,7 @@ func (r *relay) downlink(ctx context.Context, a *MMEAssociation, log *slog.Logge
 		gone := r.ues.remove(append(others, r.ues.onMME(a, ids.mme, ids.enb)...)...)
 		r.mu.Unlock()
 
+		spanFailed(ctx, errTypeUnknown)
 		log.WarnContext(ctx, "S1AP message from MME for an unknown UE", slog.String("cause", cause.String()),
 			slog.Any("mme_ue_s1ap_id", ids.mme), slog.Any("enb_ue_s1ap_id", ids.enb))
 		sendUEErrorIndication(ctx, a, log, cause, ids.mme, ids.enb)
@@ -626,17 +644,23 @@ func (r *relay) downlink(ctx context.Context, a *MMEAssociation, log *slog.Logge
 		out, err = rewrite(p, &u.ranMMEID, &u.enbID)
 	}
 
+	if err == nil {
+		u.trace(p)
+	}
+
 	ran := u.ran
 	r.mu.Unlock()
 
 	if err != nil {
+		spanFailed(ctx, errTypeError)
 		log.WarnContext(ctx, "failed to relay S1AP message to radio", slog.Any("error", err))
+
 		return
 	}
 
 	log.DebugContext(ctx, "relayed S1AP message to radio", slog.Uint64("mme_ue_s1ap_id", uint64(u.ranMMEID)))
 
-	if err := ran.Send(out, ueStream); err != nil {
+	if err := ran.Send(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send S1AP message to radio", slog.Any("error", err))
 	}
 }
@@ -723,7 +747,7 @@ func (r *relay) errorIndicationFromRAN(ctx context.Context, n *RANAssociation, l
 
 	log.InfoContext(ctx, "relayed Error Indication to MME", slog.String("cause", causeText(ind.Cause)))
 
-	if err := mme.Send(out, ueStream); err != nil {
+	if err := mme.Send(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send Error Indication to MME", slog.Any("error", err))
 	}
 }
@@ -762,7 +786,7 @@ func (r *relay) errorIndicationFromMME(ctx context.Context, a *MMEAssociation, l
 
 	log.InfoContext(ctx, "relayed Error Indication to radio", slog.String("cause", causeText(ind.Cause)))
 
-	if err := ran.Send(out, ueStream); err != nil {
+	if err := ran.Send(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send Error Indication to radio", slog.Any("error", err))
 	}
 }
@@ -904,7 +928,7 @@ func sendResets(ctx context.Context, peer sender, log *slog.Logger, to string, c
 			return
 		}
 
-		if err := peer.Send(out, nonUEStream); err != nil {
+		if err := peer.Send(ctx, out, nonUEStream); err != nil {
 			log.WarnContext(ctx, "failed to send Reset to "+to, slog.Any("error", err))
 			return
 		}
@@ -952,6 +976,7 @@ func terminate(ctx context.Context, from string, log *slog.Logger, pdu s1ap.PDU)
 func parseReset(ctx context.Context, peer sender, from string, log *slog.Logger, value []byte) (*s1ap.Reset, bool) {
 	reset, err := s1ap.ParseReset(value)
 	if err != nil {
+		spanFailed(ctx, errTypeInvalid)
 		log.WarnContext(ctx, "rejected Reset from "+from, slog.Any("error", err))
 
 		if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
@@ -975,7 +1000,7 @@ func acknowledgeReset(ctx context.Context, peer sender, from string, log *slog.L
 		return
 	}
 
-	if err := peer.Send(out, nonUEStream); err != nil {
+	if err := peer.Send(ctx, out, nonUEStream); err != nil {
 		log.WarnContext(ctx, "failed to send Reset Acknowledge", slog.Any("error", err))
 		return
 	}
@@ -994,7 +1019,7 @@ func sendErrorIndication(ctx context.Context, peer sender, log *slog.Logger, cau
 		return
 	}
 
-	if err := peer.Send(out, nonUEStream); err != nil {
+	if err := peer.Send(ctx, out, nonUEStream); err != nil {
 		log.WarnContext(ctx, "failed to send Error Indication", slog.Any("error", err))
 	}
 }
@@ -1009,7 +1034,7 @@ func sendUEErrorIndication(ctx context.Context, peer sender, log *slog.Logger, c
 		return
 	}
 
-	if err := peer.Send(out, ueStream); err != nil {
+	if err := peer.Send(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send Error Indication", slog.Any("error", err))
 	}
 }
