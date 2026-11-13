@@ -239,7 +239,7 @@ func (g *Gateway) overloadStart(ctx context.Context, a *MMEAssociation, log *slo
 
 	g.countOverload(procOverloadStart, overloadRelayed)
 	log.InfoContext(ctx, "Overload Start from MME relayed to radios", slog.Int("radios", len(radios)))
-	sendRadios(ctx, radios, log, "Overload Start", out)
+	sendRadios(ctx, radios, a.client.operator(), log, "Overload Start", out)
 }
 
 func overloadActionTo(a OverloadAction) (s1ap.OverloadAction, bool) {
@@ -326,7 +326,7 @@ func (g *Gateway) replayOverloadLocked(ctx context.Context, n *RANAssociation) {
 				continue
 			}
 
-			if err := n.Send(withOperator(ctx, o.name), out, nonUEStream); err != nil {
+			if err := (operatorRAN{n: n, operator: o.name}).Send(ctx, out, nonUEStream); err != nil {
 				log.WarnContext(ctx, "failed to send Overload Start to radio", slog.Any("error", err))
 				continue
 			}
@@ -394,11 +394,13 @@ func (g *Gateway) overloadStop(ctx context.Context, a *MMEAssociation, log *slog
 	g.countOverload(procOverloadStop, overloadRelayed)
 	log.InfoContext(ctx, "Overload Stop from MME relayed to radios", slog.Int("gummeis", len(ended)),
 		slog.Int("radios", len(radios)))
-	g.sendOverloadStop(ctx, radios, log, ended)
+	g.sendOverloadStop(ctx, radios, a.client.operator(), log, ended)
 }
 
 // TS 36.413 clause 8.7.3.1
-func (g *Gateway) overloadCleared(ctx context.Context, radios []*RANAssociation, log *slog.Logger, cleared []Overload) {
+func (g *Gateway) overloadCleared(ctx context.Context, radios []*RANAssociation, operator string, log *slog.Logger,
+	cleared []Overload,
+) {
 	if len(cleared) == 0 || len(radios) == 0 {
 		return
 	}
@@ -410,10 +412,12 @@ func (g *Gateway) overloadCleared(ctx context.Context, radios []*RANAssociation,
 
 	log.InfoContext(ctx, "MME overload state cleared, Overload Stop sent to radios", slog.Int("gummeis", len(ended)),
 		slog.Int("radios", len(radios)))
-	g.sendOverloadStop(ctx, radios, log, ended)
+	g.sendOverloadStop(ctx, radios, operator, log, ended)
 }
 
-func (g *Gateway) sendOverloadStop(ctx context.Context, radios []*RANAssociation, log *slog.Logger, ended []GUMMEI) {
+func (g *Gateway) sendOverloadStop(ctx context.Context, radios []*RANAssociation, operator string, log *slog.Logger,
+	ended []GUMMEI,
+) {
 	list, err := gummeiListTo(ended)
 	if err != nil {
 		log.ErrorContext(ctx, "failed to encode the GUMMEI List", slog.Any("error", err))
@@ -426,12 +430,14 @@ func (g *Gateway) sendOverloadStop(ctx context.Context, radios []*RANAssociation
 		return
 	}
 
-	sendRadios(ctx, radios, log, "Overload Stop", out)
+	sendRadios(ctx, radios, operator, log, "Overload Stop", out)
 }
 
-func sendRadios(ctx context.Context, radios []*RANAssociation, log *slog.Logger, what string, out []byte) {
+func sendRadios(ctx context.Context, radios []*RANAssociation, operator string, log *slog.Logger, what string,
+	out []byte,
+) {
 	for _, n := range radios {
-		if err := n.Send(ctx, out, nonUEStream); err != nil {
+		if err := (operatorRAN{n: n, operator: operator}).Send(ctx, out, nonUEStream); err != nil {
 			ranLog(log, n).WarnContext(ctx, "failed to send "+what+" to radio", slog.Any("error", err))
 		}
 	}

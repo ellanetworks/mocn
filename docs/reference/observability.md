@@ -47,7 +47,7 @@ Ella MOCN exposes Prometheus metrics at [`GET /api/v1/metrics`](api/metrics.md).
 | `ellamocn_overload_messages_total` | Counter | `interface`, `procedure` (`overload_start`, `overload_stop`), `result` (`relayed`, `no_radio`, `ignored`, `invalid`) | OVERLOAD START and OVERLOAD STOP messages received from MMEs. `relayed`: sent to the radios that broadcast one of the operator's PLMNs, including the replay of an ongoing OVERLOAD START to a radio after its S1 Setup. `no_radio`: no such radio is up. `ignored` (`overload_stop` only): no ongoing overload action for the GUMMEIs. `invalid`: undecodable or with an invalid GUMMEI. |
 | `ellamocn_ue_connections` | Gauge | `interface`, `operator` | UE-associated logical S1-connections (TS 36.413 clause 3.1) relayed, by operator name. |
 | `ellamocn_api_request_duration_seconds` | Histogram | `method`, `route`, `code` | Duration of API requests, by route (`/api/v1/operators/{name}`). Requests to `/api/v1/pprof/` and to no route are left out. |
-| `ellamocn_database_query_duration_seconds` | Histogram | `pool` (`write`, `read`) | Duration of database calls, statements, transaction and row scanning included. |
+| `ellamocn_database_query_duration_seconds` | Histogram | `pool` (`write`, `read`) | Duration of database calls, statements, transaction and row scanning included. Exemplars: `trace_id`, `span_id`. |
 | `ellamocn_database_query_errors_total` | Counter | `pool` (`write`, `read`) | Failed database calls. A record not found or in conflict is a result, not a failure. |
 | `ellamocn_database_storage_bytes` | Gauge | `file` (`main`, `wal`) | Size of the database on disk. |
 | `ellamocn_build_info` | Gauge | `version`, `revision`, `branch`, `goversion`, `goos`, `goarch`, `tags` | Always 1. |
@@ -73,7 +73,7 @@ Ella MOCN exports [OpenTelemetry](https://opentelemetry.io/) traces when `teleme
 | `{method} {route}` | Server | A request to the API, except `/api/v1/livez`, `/api/v1/readyz`, `/api/v1/metrics` and `/api/v1/pprof/`. Links to the caller's `traceparent`. |
 | `s1ap/receive` | Server, Consumer | An S1AP message from a radio or an MME. |
 | `s1ap/send` | Client, Producer | An S1AP message to a radio or an MME, a child of the `s1ap/receive` that caused it. |
-| `{operation} {table}` | Client | An SQL statement, such as `SELECT users`. |
+| `db.{call}`, such as `db.CreateUser` | Internal | A database call within a trace. |
 
 ### RAN trace correlation
 

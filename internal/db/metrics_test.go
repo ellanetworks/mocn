@@ -1,11 +1,11 @@
 package db
 
 import (
-	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,7 +14,7 @@ import (
 
 func TestMetricsCountFailuresOnly(t *testing.T) {
 	d := openTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := d.CountUsers(ctx); err != nil {
 		t.Fatal(err)
@@ -64,8 +64,7 @@ func TestMetricsLint(t *testing.T) {
 
 func TestEveryCallIsObserved(t *testing.T) {
 	unobserved := map[string]bool{
-		"Close": true, "Collectors": true, "Ping": true, "Apply": true, "ApplyEntries": true, "AppliedIndex": true,
-		"WaitApplied": true, "SetProposer": true, "JWTSecret": true, "Schema": true, "Secrets": true,
+		"Close": true, "Collectors": true, "Ping": true, "JWTSecret": true,
 	}
 
 	files, err := filepath.Glob("*.go")
@@ -92,7 +91,8 @@ func TestEveryCallIsObserved(t *testing.T) {
 			}
 
 			if !startsObserved(fn) {
-				t.Errorf("%s: DB.%s does not start with defer d.observe(...)()", fset.Position(fn.Pos()), fn.Name.Name)
+				t.Errorf("%s: DB.%s does not start with d.observe(ctx, %q, ...) and defer done(&err)",
+					fset.Position(fn.Pos()), fn.Name.Name, fn.Name.Name)
 			}
 		}
 	}
@@ -110,21 +110,41 @@ func onDB(fn *ast.FuncDecl) bool {
 }
 
 func startsObserved(fn *ast.FuncDecl) bool {
-	if fn.Body == nil || len(fn.Body.List) == 0 {
+	if fn.Body == nil || len(fn.Body.List) < 2 {
 		return false
 	}
 
-	d, ok := fn.Body.List[0].(*ast.DeferStmt)
-	if !ok {
+	assign, ok := fn.Body.List[0].(*ast.AssignStmt)
+	if !ok || len(assign.Lhs) != 2 || len(assign.Rhs) != 1 {
 		return false
 	}
 
-	call, ok := d.Call.Fun.(*ast.CallExpr)
-	if !ok {
+	call, ok := assign.Rhs[0].(*ast.CallExpr)
+	if !ok || len(call.Args) != 3 {
 		return false
 	}
 
 	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "observe" {
+		return false
+	}
 
-	return ok && sel.Sel.Name == "observe"
+	name, ok := call.Args[1].(*ast.BasicLit)
+	if !ok || name.Kind != token.STRING || name.Value != strconv.Quote(fn.Name.Name) {
+		return false
+	}
+
+	done, ok := assign.Lhs[1].(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	d, ok := fn.Body.List[1].(*ast.DeferStmt)
+	if !ok {
+		return false
+	}
+
+	callee, ok := d.Call.Fun.(*ast.Ident)
+
+	return ok && callee.Name == done.Name
 }

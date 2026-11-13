@@ -2,13 +2,12 @@ package db
 
 import (
 	"bytes"
-	"context"
 	"path/filepath"
 	"testing"
 )
 
 func TestJWTSecretSurvivesReopening(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "mocn.db")
 
 	var secrets [][]byte

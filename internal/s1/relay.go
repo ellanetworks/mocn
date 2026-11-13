@@ -20,8 +20,8 @@ import (
 type Relay interface {
 	FromRAN(ctx context.Context, from *RANAssociation, pdu s1ap.PDU, msg []byte)
 	FromMME(ctx context.Context, from *MMEAssociation, pdu s1ap.PDU, msg []byte)
-	RANLost(from *RANAssociation, cause s1ap.Cause)
-	MMELost(from *MMEAssociation)
+	RANLost(ctx context.Context, from *RANAssociation, cause s1ap.Cause)
+	MMELost(ctx context.Context, from *MMEAssociation)
 }
 
 type sender interface {
@@ -63,7 +63,7 @@ type relay struct {
 
 	mu      sync.Mutex
 	ues     ueTable
-	sendMME func(*MMEAssociation, context.Context, []byte, uint16) error
+	sendMME func(context.Context, *MMEAssociation, []byte, uint16) error
 }
 
 func newRelay(g *Gateway, intN func(int) int) *relay {
@@ -72,7 +72,7 @@ func newRelay(g *Gateway, intN func(int) int) *relay {
 	}
 
 	r := &relay{
-		g: g, log: g.log, intN: intN, ues: newUETable(), sendMME: (*MMEAssociation).Send,
+		g: g, log: g.log, intN: intN, ues: newUETable(), sendMME: sendMME,
 		initialUE: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "ellamocn_initial_ue_messages_total",
 			Help: "INITIAL UE MESSAGEs received from radios, by interface (s1) and result " +
@@ -90,6 +90,10 @@ func newRelay(g *Gateway, intN func(int) int) *relay {
 	r.paged = newPagingCounter()
 
 	return r
+}
+
+func sendMME(ctx context.Context, a *MMEAssociation, msg []byte, stream uint16) error {
+	return a.Send(ctx, msg, stream)
 }
 
 func ranLog(log *slog.Logger, n *RANAssociation) *slog.Logger {
@@ -190,29 +194,30 @@ func uePDU(ctx context.Context, log *slog.Logger, from string, msg []byte) (*s1a
 	return p, true
 }
 
-func (r *relay) RANLost(from *RANAssociation, cause s1ap.Cause) {
+func (r *relay) RANLost(ctx context.Context, from *RANAssociation, cause s1ap.Cause) {
 	r.mu.Lock()
 	gone := r.ues.remove(r.ues.where(func(u *ueContext) bool { return u.ran == from })...)
 	r.mu.Unlock()
 
 	if len(gone) > 0 {
-		ranLog(r.log, from).Info("radio UE contexts released", slog.Int("ues", len(gone)), slog.String("cause", cause.String()))
+		ranLog(r.log, from).InfoContext(ctx, "radio UE contexts released", slog.Int("ues", len(gone)),
+			slog.String("cause", cause.String()))
 	}
 
-	r.resetMMEs(context.Background(), gone, cause)
+	r.resetMMEs(ctx, gone, cause)
 }
 
-func (r *relay) MMELost(from *MMEAssociation) {
+func (r *relay) MMELost(ctx context.Context, from *MMEAssociation) {
 	r.mu.Lock()
 	from.lost = true
 	gone := r.ues.remove(r.ues.where(func(u *ueContext) bool { return u.mme == from })...)
 	r.mu.Unlock()
 
 	if len(gone) > 0 {
-		mmeLog(r.log, from).Info("MME lost, UE contexts released", slog.Int("ues", len(gone)))
+		mmeLog(r.log, from).InfoContext(ctx, "MME lost, UE contexts released", slog.Int("ues", len(gone)))
 	}
 
-	r.resetRANs(withOperator(context.Background(), from.client.operator()), gone, causeTransportUnavailable)
+	r.resetRANs(ctx, from.client.operator(), gone, causeTransportUnavailable)
 }
 
 func getIE[T any, P interface {
@@ -340,7 +345,7 @@ func (r *relay) initialUEMessage(ctx context.Context, n *RANAssociation, log *sl
 	send := r.sendMME
 	r.mu.Unlock()
 
-	if err := send(mme, ctx, out, ueStream); err != nil {
+	if err := send(ctx, mme, out, ueStream); err != nil {
 		r.initialUE.WithLabelValues(interfaceS1, initialUEError).Inc()
 		spanFailed(ctx, initialUEError)
 		log.WarnContext(ctx, "failed to send INITIAL UE MESSAGE to MME", slog.Any("error", err))
@@ -519,15 +524,21 @@ func (r *relay) uplink(ctx context.Context, n *RANAssociation, log *slog.Logger,
 
 	u, cause := r.ranUE(n, ids)
 	if u == nil {
+		traced := r.tracedRANUELocked(n, ids)
 		gone := r.ues.remove(r.ues.onRAN(n, ids.mme, ids.enb)...)
 		r.mu.Unlock()
+
+		var peer sender = n
+		if traced != nil {
+			peer = operatorRAN{n: n, operator: r.g.operatorName(traced.operatorID)}
+		}
 
 		spanFailed(ctx, errTypeUnknown)
 		log.WarnContext(ctx, "S1AP message from radio for an unknown UE", slog.String("cause", cause.String()),
 			slog.Any("mme_ue_s1ap_id", ids.mme), slog.Any("enb_ue_s1ap_id", ids.enb))
 
 		if !last {
-			sendUEErrorIndication(ctx, n, log, cause, ids.mme, ids.enb)
+			sendUEErrorIndication(ctx, peer, log, cause, ids.mme, ids.enb)
 		}
 
 		r.resetMMEs(ctx, gone, cause)
@@ -624,7 +635,7 @@ func (r *relay) downlink(ctx context.Context, a *MMEAssociation, log *slog.Logge
 		log.WarnContext(ctx, "S1AP message from MME for an unknown UE", slog.String("cause", cause.String()),
 			slog.Any("mme_ue_s1ap_id", ids.mme), slog.Any("enb_ue_s1ap_id", ids.enb))
 		sendUEErrorIndication(ctx, a, log, cause, ids.mme, ids.enb)
-		r.resetRANs(ctx, gone, cause)
+		r.resetRANs(ctx, a.client.operator(), gone, cause)
 
 		return
 	}
@@ -660,7 +671,7 @@ func (r *relay) downlink(ctx context.Context, a *MMEAssociation, log *slog.Logge
 
 	log.DebugContext(ctx, "relayed S1AP message to radio", slog.Uint64("mme_ue_s1ap_id", uint64(u.ranMMEID)))
 
-	if err := ran.Send(ctx, out, ueStream); err != nil {
+	if err := (operatorRAN{n: ran, operator: a.client.operator()}).Send(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send S1AP message to radio", slog.Any("error", err))
 	}
 }
@@ -786,7 +797,7 @@ func (r *relay) errorIndicationFromMME(ctx context.Context, a *MMEAssociation, l
 
 	log.InfoContext(ctx, "relayed Error Indication to radio", slog.String("cause", causeText(ind.Cause)))
 
-	if err := ran.Send(ctx, out, ueStream); err != nil {
+	if err := (operatorRAN{n: ran, operator: a.client.operator()}).Send(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send Error Indication to radio", slog.Any("error", err))
 	}
 }
@@ -855,7 +866,7 @@ func (r *relay) resetFromMME(ctx context.Context, a *MMEAssociation, log *slog.L
 	r.mu.Unlock()
 
 	acknowledgeReset(ctx, a, sourceMME, log, reset)
-	r.resetRANs(ctx, gone, causeOr(reset.Cause))
+	r.resetRANs(ctx, a.client.operator(), gone, causeOr(reset.Cause))
 }
 
 func causeOr(c *s1ap.Cause) s1ap.Cause {
@@ -895,7 +906,7 @@ func (r *relay) resetMMEs(ctx context.Context, ues []*ueContext, cause s1ap.Caus
 }
 
 // TS 36.413 clause 8.7.1.2.1
-func (r *relay) resetRANs(ctx context.Context, ues []*ueContext, cause s1ap.Cause) {
+func (r *relay) resetRANs(ctx context.Context, operator string, ues []*ueContext, cause s1ap.Cause) {
 	groups := map[*RANAssociation][]s1ap.UEAssociatedLogicalS1ConnectionItem{}
 
 	var order []*RANAssociation
@@ -914,7 +925,7 @@ func (r *relay) resetRANs(ctx context.Context, ues []*ueContext, cause s1ap.Caus
 	}
 
 	for _, n := range order {
-		sendResets(ctx, n, ranLog(r.log, n), sourceRadio, cause, groups[n])
+		sendResets(ctx, operatorRAN{n: n, operator: operator}, ranLog(r.log, n), sourceRadio, cause, groups[n])
 	}
 }
 

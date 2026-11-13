@@ -452,3 +452,57 @@ func TestRANTraceCorrelation(t *testing.T) {
 
 	assertNoSecrets(t, sp)
 }
+
+func TestMMEConfigurationUpdateRetransmissionDetachedFromRequestSpan(t *testing.T) {
+	skipWithoutSCTP(t)
+
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec), sdktrace.WithIDGenerator(tracing.IDGenerator()))
+	sp := spans{rec: rec}
+
+	mmeListener := listenMME(t, "127.0.0.37")
+	h := startGatewayWith(t, s1.Config{MMEPort: mmeListener.port(), TracerProvider: tp}, operatorA("127.0.0.37"))
+	mme := mmeListener.accept(t)
+
+	enb := h.connectENB(t)
+	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv128, ta(t, 1, "00101")))
+
+	gummeis := served(t, 1, 1)
+	gummeis[0].ServedPLMNs = append(gummeis[0].ServedPLMNs, plmnID(t, "002", "002"))
+	answerS1Setup(t, mme, s1ap.SupportedTAs{ta(t, 1, "00101")}, &s1ap.S1SetupResponse{
+		ServedGUMMEIs: gummeis, RelativeMMECapacity: s1ap.Ptr(uint8(1)),
+	})
+	expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
+
+	changed := operatorA("127.0.0.37")
+	changed.PLMNs = append(changed.PLMNs, plmnB)
+	h.ops.set(changed)
+
+	ctx, api := tp.Tracer("test").Start(t.Context(), "PUT /api/v1/operators/A")
+
+	if err := h.gw.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	api.End()
+
+	expect(t, enb, "initiating", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdate)
+	expect(t, enb, "initiating", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdate)
+
+	first := sp.wait(t, "s1ap/send", "radio", "MMEConfigurationUpdate", nil)
+	if first.Parent().SpanID() != api.SpanContext().SpanID() {
+		t.Fatalf("first MME Configuration Update parent = %v, want the API span", first.Parent())
+	}
+
+	resent := sp.wait(t, "s1ap/send", "radio", "MMEConfigurationUpdate", func(s sdktrace.ReadOnlySpan) bool {
+		return s.SpanContext().SpanID() != first.SpanContext().SpanID()
+	})
+
+	if resent.Parent().IsValid() {
+		t.Fatalf("retransmitted MME Configuration Update has parent %v", resent.Parent())
+	}
+
+	if resent.SpanContext().TraceID() == api.SpanContext().TraceID() {
+		t.Fatal("retransmitted MME Configuration Update is in the API trace")
+	}
+}

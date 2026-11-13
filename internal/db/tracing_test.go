@@ -1,33 +1,34 @@
 package db
 
 import (
-	"context"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
-func openTracedDB(t *testing.T) (*DB, *tracetest.SpanRecorder) {
+func openTracedDB(t *testing.T) (*DB, *tracetest.SpanRecorder, trace.Tracer) {
 	t.Helper()
 
 	rec := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
 
-	d, err := Open(context.Background(), filepath.Join(t.TempDir(), "mocn.db"), WithTracerProvider(tp))
+	d, err := Open(t.Context(), filepath.Join(t.TempDir(), "mocn.db"), WithTracerProvider(tp))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() { _ = d.Close() })
 
-	return d, rec
+	return d, rec, tp.Tracer("test")
 }
 
 func spanAttr(s sdktrace.ReadOnlySpan, key string) string {
@@ -49,48 +50,21 @@ func childrenOf(rec *tracetest.SpanRecorder, parent trace.Span) []sdktrace.ReadO
 	return out
 }
 
-func findSpan(t *testing.T, spans []sdktrace.ReadOnlySpan, name string) sdktrace.ReadOnlySpan {
+func onlyChild(t *testing.T, rec *tracetest.SpanRecorder, parent trace.Span) sdktrace.ReadOnlySpan {
 	t.Helper()
 
-	i := slices.IndexFunc(spans, func(s sdktrace.ReadOnlySpan) bool { return s.Name() == name })
-	if i < 0 {
-		names := make([]string, 0, len(spans))
-		for _, s := range spans {
-			names = append(names, s.Name())
-		}
-
-		t.Fatalf("no span %q in %q", name, names)
+	spans := childrenOf(rec, parent)
+	if len(spans) != 1 {
+		t.Fatalf("%d spans under %v, want 1", len(spans), parent)
 	}
 
-	return spans[i]
+	return spans[0]
 }
 
-func assertStatementSpan(t *testing.T, s sdktrace.ReadOnlySpan, operation, table string) {
-	t.Helper()
+func TestMethodSpans(t *testing.T) {
+	d, rec, tracer := openTracedDB(t)
 
-	if s.SpanKind() != trace.SpanKindClient || s.Status().Code == codes.Error {
-		t.Fatalf("span %s kind %v status %v", s.Name(), s.SpanKind(), s.Status())
-	}
-
-	want := map[string]string{"db.system.name": "sqlite", "db.operation.name": operation, "db.collection.name": table}
-	for key, v := range want {
-		if got := spanAttr(s, key); got != v {
-			t.Errorf("span %s %s = %q, want %q", s.Name(), key, got, v)
-		}
-	}
-
-	for _, a := range s.Attributes() {
-		if strings.HasPrefix(string(a.Key), "db.query.") {
-			t.Errorf("span %s carries %s", s.Name(), a.Key)
-		}
-	}
-}
-
-func TestStatementSpans(t *testing.T) {
-	d, rec := openTracedDB(t)
-	tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)).Tracer("test")
-
-	ctx, write := tracer.Start(context.Background(), "write")
+	ctx, write := tracer.Start(t.Context(), "write")
 
 	if _, err := d.CreateUser(ctx, NewUser{Email: "secret@example.com", Role: RoleAdmin, PasswordHash: "hash"}, 10); err != nil {
 		t.Fatal(err)
@@ -98,32 +72,7 @@ func TestStatementSpans(t *testing.T) {
 
 	write.End()
 
-	var names []string
-
-	for _, s := range childrenOf(rec, write) {
-		names = append(names, s.Name())
-	}
-
-	if !slices.Equal(names, []string{"SELECT users", "INSERT users"}) {
-		t.Fatalf("spans of a write = %q, want SELECT users and INSERT users only", names)
-	}
-
-	insert := findSpan(t, childrenOf(rec, write), "INSERT users")
-	assertStatementSpan(t, insert, "INSERT", "users")
-
-	if insert.SpanContext().TraceID() != write.SpanContext().TraceID() {
-		t.Fatal("INSERT users is not in the caller's trace")
-	}
-
-	for _, s := range rec.Ended() {
-		for _, a := range s.Attributes() {
-			if strings.Contains(a.Value.String(), "secret@example.com") || strings.Contains(a.Value.String(), "hash") {
-				t.Fatalf("span %s carries a parameter: %s=%s", s.Name(), a.Key, a.Value.String())
-			}
-		}
-	}
-
-	ctx, read := tracer.Start(context.Background(), "read")
+	ctx, read := tracer.Start(t.Context(), "read")
 
 	if _, err := d.GetUser(ctx, "secret@example.com"); err != nil {
 		t.Fatal(err)
@@ -131,18 +80,7 @@ func TestStatementSpans(t *testing.T) {
 
 	read.End()
 
-	reads := childrenOf(rec, read)
-	if len(reads) != 1 {
-		t.Fatalf("%d spans for one SELECT", len(reads))
-	}
-
-	assertStatementSpan(t, reads[0], "SELECT", "users")
-
-	if reads[0].Name() != "SELECT users" {
-		t.Fatalf("span name %q", reads[0].Name())
-	}
-
-	ctx, missing := tracer.Start(context.Background(), "missing")
+	ctx, missing := tracer.Start(t.Context(), "missing")
 
 	if _, err := d.GetUser(ctx, "nobody@example.com"); err == nil {
 		t.Fatal("found a missing user")
@@ -150,18 +88,47 @@ func TestStatementSpans(t *testing.T) {
 
 	missing.End()
 
-	assertStatementSpan(t, findSpan(t, childrenOf(rec, missing), "SELECT users"), "SELECT", "users")
+	for _, c := range []struct {
+		parent     trace.Span
+		name, pool string
+	}{
+		{write, "db.CreateUser", poolWrite},
+		{read, "db.GetUser", poolRead},
+		{missing, "db.GetUser", poolRead},
+	} {
+		s := onlyChild(t, rec, c.parent)
+
+		if s.Name() != c.name || s.SpanKind() != trace.SpanKindInternal || s.Status().Code != codes.Unset {
+			t.Errorf("span %s %s %v, want %s internal unset", s.Name(), s.SpanKind(), s.Status(), c.name)
+		}
+
+		if got := spanAttr(s, string(poolKey)); got != c.pool {
+			t.Errorf("span %s pool %q, want %q", s.Name(), got, c.pool)
+		}
+
+		if s.SpanContext().TraceID() != c.parent.SpanContext().TraceID() {
+			t.Errorf("span %s is not in the caller's trace", s.Name())
+		}
+	}
+
+	for _, s := range rec.Ended() {
+		for _, a := range s.Attributes() {
+			if strings.HasPrefix(string(a.Key), "db.") || strings.Contains(a.Value.String(), "secret@example.com") ||
+				strings.Contains(a.Value.String(), "hash") {
+				t.Fatalf("span %s carries %s=%s", s.Name(), a.Key, a.Value.String())
+			}
+		}
+	}
 }
 
-func TestFailedStatementSpan(t *testing.T) {
-	d, rec := openTracedDB(t)
+func TestFailedMethodSpan(t *testing.T) {
+	d, rec, tracer := openTracedDB(t)
 
-	if _, err := d.writer.ExecContext(context.Background(), `DROP TABLE api_tokens`); err != nil {
+	if _, err := d.writer.ExecContext(t.Context(), `DROP TABLE api_tokens`); err != nil {
 		t.Fatal(err)
 	}
 
-	tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)).Tracer("test")
-	ctx, parent := tracer.Start(context.Background(), "count")
+	ctx, parent := tracer.Start(t.Context(), "count")
 
 	if _, err := d.CountAPITokens(ctx, 1); err == nil {
 		t.Fatal("counted API tokens without the table")
@@ -169,21 +136,60 @@ func TestFailedStatementSpan(t *testing.T) {
 
 	parent.End()
 
-	s := findSpan(t, childrenOf(rec, parent), "SELECT api_tokens")
-	if s.Status().Code != codes.Error || spanAttr(s, "error.type") != "1" || spanAttr(s, "db.response.status_code") != "1" {
-		t.Fatalf("status %v error.type %q db.response.status_code %q", s.Status(), spanAttr(s, "error.type"),
-			spanAttr(s, "db.response.status_code"))
+	s := onlyChild(t, rec, parent)
+	if s.Name() != "db.CountAPITokens" || s.Status().Code != codes.Error || s.Status().Description != "" ||
+		spanAttr(s, "error.type") != "1" {
+		t.Fatalf("span %s status %v error.type %q", s.Name(), s.Status(), spanAttr(s, "error.type"))
 	}
 }
 
-func TestNoStatementSpansWithoutTracerProvider(t *testing.T) {
-	d := openTestDB(t)
+func TestNoSpanOutsideATrace(t *testing.T) {
+	d, rec, _ := openTracedDB(t)
 
-	if d.tracer != nil {
-		t.Fatal("tracer without a tracer provider")
-	}
-
-	if _, err := d.CountUsers(context.Background()); err != nil {
+	if _, err := d.CountUsers(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+
+	if n := len(rec.Ended()); n != 0 {
+		t.Fatalf("a call outside a trace started %d spans", n)
+	}
+}
+
+func TestNoSpanWithoutTracerProvider(t *testing.T) {
+	if _, ok := openTestDB(t).tracer.(noop.Tracer); !ok {
+		t.Fatal("a tracer without a tracer provider")
+	}
+}
+
+func TestDurationExemplar(t *testing.T) {
+	d, _, tracer := openTracedDB(t)
+
+	ctx, span := tracer.Start(t.Context(), "count")
+	defer span.End()
+
+	if _, err := d.CountUsers(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var m dto.Metric
+	if err := d.metrics.duration.WithLabelValues(poolRead).(prometheus.Metric).Write(&m); err != nil {
+		t.Fatal(err)
+	}
+
+	exemplars := m.GetHistogram().GetExemplars()
+	for _, b := range m.GetHistogram().GetBucket() {
+		if e := b.GetExemplar(); e != nil {
+			exemplars = append(exemplars, e)
+		}
+	}
+
+	for _, e := range exemplars {
+		for _, l := range e.GetLabel() {
+			if l.GetName() == "trace_id" && l.GetValue() == span.SpanContext().TraceID().String() {
+				return
+			}
+		}
+	}
+
+	t.Fatal("no exemplar with the caller's trace ID")
 }

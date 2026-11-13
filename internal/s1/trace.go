@@ -204,17 +204,6 @@ func (u *ueContext) trace(p *s1ap.RawPDU) {
 	}
 }
 
-type operatorKey struct{}
-
-func withOperator(ctx context.Context, name string) context.Context {
-	return context.WithValue(ctx, operatorKey{}, name)
-}
-
-func operatorFrom(ctx context.Context) string {
-	name, _ := ctx.Value(operatorKey{}).(string)
-	return name
-}
-
 func (g *Gateway) startSpan(ctx context.Context, name, side string, conn *sctp.SCTPConn, info msgInfo, size int,
 	operator string,
 ) (context.Context, trace.Span) {
@@ -267,7 +256,6 @@ func (g *Gateway) receiveFromRAN(ctx context.Context, n *RANAssociation, pdu s1a
 	id, operatorID, ok := g.relay.ranUETrace(n, info.ids)
 	if ok {
 		operator = g.operatorName(operatorID)
-		ctx = withOperator(ctx, operator)
 	}
 
 	return g.startSpan(tracing.WithPinnedTraceID(ctx, id), spanReceive, sideRadio, n.conn, info, len(msg), operator)
@@ -279,11 +267,9 @@ func (g *Gateway) receiveFromMME(ctx context.Context, a *MMEAssociation, pdu s1a
 	}
 
 	info := inspect(pdu, msg)
-	operator := a.client.operator()
-	ctx = withOperator(ctx, operator)
 	id := g.relay.mmeUETrace(a, info)
 
-	return g.startSpan(tracing.WithPinnedTraceID(ctx, id), spanReceive, sideCore, a.conn, info, len(msg), operator)
+	return g.startSpan(tracing.WithPinnedTraceID(ctx, id), spanReceive, sideCore, a.conn, info, len(msg), a.client.operator())
 }
 
 func (g *Gateway) operatorName(id int64) string {
@@ -303,12 +289,25 @@ func (r *relay) ranUETrace(n *RANAssociation, ids ueIDs) (tracing.RANTraceID, in
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	u := r.ues.byRANMMEID[*ids.mme]
-	if u == nil || u.ran != n || u.mme == nil {
+	u := r.tracedRANUELocked(n, ids)
+	if u == nil {
 		return tracing.RANTraceID{}, 0, false
 	}
 
 	return u.traceID, u.operatorID, true
+}
+
+func (r *relay) tracedRANUELocked(n *RANAssociation, ids ueIDs) *ueContext {
+	if ids.mme == nil {
+		return nil
+	}
+
+	u := r.ues.byRANMMEID[*ids.mme]
+	if u == nil || u.ran != n || u.mme == nil {
+		return nil
+	}
+
+	return u
 }
 
 func (r *relay) mmeUETrace(a *MMEAssociation, info msgInfo) tracing.RANTraceID {
@@ -342,10 +341,6 @@ func (g *Gateway) send(ctx context.Context, side string, conn *sctp.SCTPConn, op
 		return send(conn, msg, stream)
 	}
 
-	if operator == "" {
-		operator = operatorFrom(ctx)
-	}
-
 	_, span := g.startSpan(ctx, spanSend, side, conn, inspect(nil, msg), len(msg), operator)
 	defer span.End()
 
@@ -360,6 +355,10 @@ func (g *Gateway) send(ctx context.Context, side string, conn *sctp.SCTPConn, op
 	}
 
 	return err
+}
+
+func detachedRoot(ctx context.Context) context.Context {
+	return trace.ContextWithSpanContext(context.WithoutCancel(ctx), trace.SpanContext{})
 }
 
 func spanFailed(ctx context.Context, errType string) {

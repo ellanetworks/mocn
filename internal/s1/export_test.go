@@ -23,7 +23,7 @@ func (g *Gateway) HoldMMEAssociation(addrs ...string) (release func()) {
 
 func (g *Gateway) FailMMESends(err error) {
 	g.relay.mu.Lock()
-	g.relay.sendMME = func(*MMEAssociation, context.Context, []byte, uint16) error { return err }
+	g.relay.sendMME = func(context.Context, *MMEAssociation, []byte, uint16) error { return err }
 	g.relay.mu.Unlock()
 }
 
@@ -35,7 +35,7 @@ func (g *Gateway) OverloadCounter() *prometheus.CounterVec {
 
 func (g *Gateway) CloseMMESends() {
 	g.relay.mu.Lock()
-	g.relay.sendMME = func(a *MMEAssociation, ctx context.Context, msg []byte, stream uint16) error {
+	g.relay.sendMME = func(ctx context.Context, a *MMEAssociation, msg []byte, stream uint16) error {
 		return g.send(ctx, sideCore, nil, a.client.operator(), msg, stream)
 	}
 	g.relay.mu.Unlock()

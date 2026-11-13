@@ -123,7 +123,7 @@ func (c *client) do(ctx context.Context, method, path string, body any, out any)
 	return resp.StatusCode, json.Unmarshal(envelope.Result, out)
 }
 
-func eventually(t *testing.T, what string, timeout time.Duration, check func() error) {
+func eventually(ctx context.Context, t *testing.T, what string, timeout time.Duration, check func() error) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
@@ -139,7 +139,11 @@ func eventually(t *testing.T, what string, timeout time.Duration, check func() e
 			t.Fatalf("timed out after %s waiting for %s: %v", timeout, what, err)
 		}
 
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			t.Fatalf("stopped waiting for %s: %v (last error: %v)", what, ctx.Err(), err)
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 
@@ -241,7 +245,7 @@ func setUp(ctx context.Context, t *testing.T) *client {
 
 	c := newClient()
 
-	eventually(t, "Ella MOCN API", 120*time.Second, func() error {
+	eventually(ctx, t, "Ella MOCN API", 120*time.Second, func() error {
 		_, err := c.do(ctx, http.MethodGet, "/api/v1/status", nil, nil)
 		return err
 	})
@@ -285,10 +289,10 @@ func setUp(ctx context.Context, t *testing.T) *client {
 }
 
 func TestS1Setup(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	c := setUp(ctx, t)
 
-	eventually(t, "radios up", 120*time.Second, func() error {
+	eventually(ctx, t, "radios up", 120*time.Second, func() error {
 		var nodes struct {
 			Items []radio `json:"items"`
 		}
@@ -317,7 +321,7 @@ func TestS1Setup(t *testing.T) {
 			t.Fatalf("GET radio by ref = %+v, %v", one, err)
 		}
 
-		eventually(t, l.operator+" MME up", 120*time.Second, func() error {
+		eventually(ctx, t, l.operator+" MME up", 120*time.Second, func() error {
 			var got operator
 			if _, err := c.do(ctx, http.MethodGet, "/api/v1/operators/"+l.operator, nil, &got); err != nil {
 				return err
@@ -339,10 +343,10 @@ func TestS1Setup(t *testing.T) {
 			return nil
 		})
 
-		eventually(t, l.operator+" MME accepted Ella MOCN", 30*time.Second, mmeLog(ctx, l.core, "eNB-S1 accepted[10.90.0.30]"))
+		eventually(ctx, t, l.operator+" MME accepted Ella MOCN", 30*time.Second, mmeLog(ctx, l.core, "eNB-S1 accepted[10.90.0.30]"))
 	}
 
-	eventually(t, "S1 Setup metrics", 30*time.Second, func() error {
+	eventually(ctx, t, "S1 Setup metrics", 30*time.Second, func() error {
 		var text string
 		if _, err := c.do(ctx, http.MethodGet, "/api/v1/metrics", nil, &text); err != nil {
 			return err
@@ -456,22 +460,22 @@ func operatorUEs(ctx context.Context, c *client, l lab) ([]ueConnection, error) 
 }
 
 func TestUEAttachServiceRequestDetach(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	c := setUp(ctx, t)
 
 	for _, l := range labs {
 		t.Run(l.operator, func(t *testing.T) {
 			t.Parallel()
-			ueLifecycle(ctx, t, c, l)
+			ueLifecycle(t.Context(), t, c, l)
 		})
 	}
 }
 
 func TestRelayMetrics(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	c := setUp(ctx, t)
 
-	eventually(t, "relay metrics", 10*time.Second, func() error {
+	eventually(ctx, t, "relay metrics", 10*time.Second, func() error {
 		var text string
 		if _, err := c.do(ctx, http.MethodGet, "/api/v1/metrics", nil, &text); err != nil {
 			return err
@@ -498,12 +502,12 @@ func TestRelayMetrics(t *testing.T) {
 }
 
 func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
-	eventually(t, l.srsue+" attached with an IP", 180*time.Second,
+	eventually(ctx, t, l.srsue+" attached with an IP", 180*time.Second,
 		logContains(ctx, "Network attach successful. IP: "+l.ueNet, "logs", "--no-color", l.srsue))
-	eventually(t, l.core+" MME attach complete", 30*time.Second, mmeLog(ctx, l.core, "["+l.imsi+"] Attach complete"))
-	eventually(t, l.operator+" user plane up", 30*time.Second, func() error { return ping(ctx, l) })
+	eventually(ctx, t, l.core+" MME attach complete", 30*time.Second, mmeLog(ctx, l.core, "["+l.imsi+"] Attach complete"))
+	eventually(ctx, t, l.operator+" user plane up", 30*time.Second, func() error { return ping(ctx, l) })
 
-	eventually(t, l.operator+" UE connection in /api/v1/ue-connections", 10*time.Second, func() error {
+	eventually(ctx, t, l.operator+" UE connection in /api/v1/ue-connections", 10*time.Second, func() error {
 		items, err := operatorUEs(ctx, c, l)
 		if err != nil {
 			return err
@@ -531,7 +535,7 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 		return nil
 	})
 
-	eventually(t, l.operator+" UE context released on inactivity", 120*time.Second, func() error {
+	eventually(ctx, t, l.operator+" UE context released on inactivity", 120*time.Second, func() error {
 		items, err := operatorUEs(ctx, c, l)
 		if err != nil {
 			return err
@@ -557,7 +561,7 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 		t.Fatalf("ping after release: %v", err)
 	}
 
-	eventually(t, l.core+" MME service request", 30*time.Second, mmeLog(ctx, l.core, "["+l.imsi+"] Service request"))
+	eventually(ctx, t, l.core+" MME service request", 30*time.Second, mmeLog(ctx, l.core, "["+l.imsi+"] Service request"))
 
 	if items, err := operatorUEs(ctx, c, l); err != nil || len(items) != 1 {
 		t.Fatalf("UE connections after service request = %+v, %v", items, err)
@@ -567,9 +571,9 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 		t.Fatal(err)
 	}
 
-	eventually(t, l.core+" MME detach", 30*time.Second, mmeLog(ctx, l.core, "Detach request"))
+	eventually(ctx, t, l.core+" MME detach", 30*time.Second, mmeLog(ctx, l.core, "Detach request"))
 
-	eventually(t, l.operator+" UE context released after detach", 30*time.Second, func() error {
+	eventually(ctx, t, l.operator+" UE context released after detach", 30*time.Second, func() error {
 		items, err := operatorUEs(ctx, c, l)
 		if err != nil {
 			return err

@@ -153,6 +153,10 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		cfg.Logger.ErrorContext(shutdownCtx, "api shutdown", "error", err)
+
+		if err := srv.Close(); err != nil {
+			cfg.Logger.ErrorContext(shutdownCtx, "api close", "error", err)
+		}
 	}
 
 	if failed != nil {

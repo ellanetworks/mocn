@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/ellanetworks/mocn/internal/logging"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type Recorder struct {
@@ -61,30 +60,4 @@ func (r *Recorder) Messages(t *testing.T, msg string) []map[string]any {
 	}
 
 	return out
-}
-
-func InSpan(t *testing.T, rec map[string]any, span trace.SpanContext) {
-	t.Helper()
-
-	want := map[string]string{
-		logging.TraceIDKey:    span.TraceID().String(),
-		logging.SpanIDKey:     span.SpanID().String(),
-		logging.TraceFlagsKey: span.TraceFlags().String(),
-	}
-
-	for key, v := range want {
-		if rec[key] != v {
-			t.Errorf("log %q: %s = %v, want %s", rec["msg"], key, rec[key], v)
-		}
-	}
-}
-
-func NoSpan(t *testing.T, rec map[string]any) {
-	t.Helper()
-
-	for _, key := range []string{logging.TraceIDKey, logging.SpanIDKey, logging.TraceFlagsKey} {
-		if v, ok := rec[key]; ok {
-			t.Errorf("log %q: %s = %v, want none", rec["msg"], key, v)
-		}
-	}
 }

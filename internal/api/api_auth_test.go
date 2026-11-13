@@ -1,7 +1,6 @@
 package api_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -193,7 +192,7 @@ func TestLogin(t *testing.T) {
 func TestLoginWithoutAPasswordIsRefused(t *testing.T) {
 	a := newTestAPI(t)
 
-	if _, err := a.store.CreateUser(context.Background(), db.NewUser{Email: "sso@example.com", Role: db.RoleAdmin}, api.MaxNumUsers); err != nil {
+	if _, err := a.store.CreateUser(t.Context(), db.NewUser{Email: "sso@example.com", Role: db.RoleAdmin}, api.MaxNumUsers); err != nil {
 		t.Fatal(err)
 	}
 

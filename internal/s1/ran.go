@@ -47,6 +47,15 @@ func (n *RANAssociation) Send(ctx context.Context, msg []byte, stream uint16) er
 	return n.g.send(ctx, sideRadio, n.conn, "", msg, stream)
 }
 
+type operatorRAN struct {
+	n        *RANAssociation
+	operator string
+}
+
+func (r operatorRAN) Send(ctx context.Context, msg []byte, stream uint16) error {
+	return r.n.g.send(ctx, sideRadio, r.n.conn, r.operator, msg, stream)
+}
+
 func (n *RANAssociation) TNLAddresses() []string {
 	return slices.Clone(n.addrs)
 }
@@ -124,7 +133,7 @@ func (g *Gateway) ranDisconnected(conn *sctp.SCTPConn) {
 	}
 
 	g.log.Info("radio disconnected", slog.Any("tnl_addresses", n.addrs))
-	g.cfg.Relay.RANLost(n, causeTransportUnavailable)
+	g.cfg.Relay.RANLost(context.TODO(), n, causeTransportUnavailable)
 }
 
 func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []byte) {
@@ -217,7 +226,7 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 	g.mu.Unlock()
 
 	if wasUp {
-		g.cfg.Relay.RANLost(n, causeEUTRANRelease)
+		g.cfg.Relay.RANLost(ctx, n, causeEUTRANRelease)
 	}
 
 	req, err := s1ap.ParseS1SetupRequest(value)
@@ -543,7 +552,7 @@ func (g *Gateway) syncRANLocked(ctx context.Context, n *RANAssociation) {
 		return
 	}
 
-	g.sendMMEConfigurationUpdateLocked(withOperator(ctx, ""), n, served)
+	g.sendMMEConfigurationUpdateLocked(ctx, n, served)
 }
 
 func (g *Gateway) sendMMEConfigurationUpdateLocked(ctx context.Context, n *RANAssociation, served []ServedGUMMEIs) {
@@ -565,12 +574,13 @@ func (g *Gateway) sendMMEConfigurationUpdateLocked(ctx context.Context, n *RANAs
 	}
 
 	n.mmeConfig.pending = served
+	retryCtx := detachedRoot(ctx)
 	n.mmeConfig.timer = time.AfterFunc(g.cfg.ResponseTimeout, func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 
 		if g.ranNodes[n.conn] == n && n.up && gummeisEqual(n.mmeConfig.pending, served) {
-			g.sendMMEConfigurationUpdateLocked(ctx, n, served)
+			g.sendMMEConfigurationUpdateLocked(retryCtx, n, served)
 		}
 	})
 }
@@ -626,12 +636,13 @@ func (g *Gateway) handleMMEConfigurationUpdateFailure(ctx context.Context, n *RA
 
 	p.pending = nil
 	p.retryAt = g.cfg.Now().Add(retry)
+	retryCtx := detachedRoot(ctx)
 	p.timer = time.AfterFunc(retry, func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 
 		if g.ranNodes[n.conn] == n {
-			g.syncRANLocked(ctx, n)
+			g.syncRANLocked(retryCtx, n)
 		}
 	})
 }

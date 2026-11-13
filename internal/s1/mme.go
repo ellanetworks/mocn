@@ -181,8 +181,9 @@ func (c *mmeClient) run(ctx context.Context) {
 
 		c.g.mu.Unlock()
 
-		c.g.overloadCleared(context.WithoutCancel(ctx), radios, log, cleared)
-		c.g.cfg.Relay.MMELost(assoc)
+		lostCtx := context.WithoutCancel(ctx)
+		c.g.overloadCleared(lostCtx, radios, c.operator(), log, cleared)
+		c.g.cfg.Relay.MMELost(lostCtx, assoc)
 
 		if ctx.Err() != nil {
 			return

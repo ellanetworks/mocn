@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestAPITokens(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 

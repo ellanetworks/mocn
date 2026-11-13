@@ -76,13 +76,13 @@ func TestRunServesHTTPS(t *testing.T) {
 
 	var lc net.ListenConfig
 
-	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	rec := &logtest.Recorder{}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 
 	go func() {
@@ -119,7 +119,7 @@ func TestRunServesHTTPS(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 
 	for {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, base+"/api/v1/status", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+"/api/v1/status", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -146,7 +146,7 @@ func TestRunServesHTTPS(t *testing.T) {
 		t.Error("Strict-Transport-Security missing over HTTPS")
 	}
 
-	plain, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+ln.Addr().String()+"/api/v1/status", nil)
+	plain, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+ln.Addr().String()+"/api/v1/status", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

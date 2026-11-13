@@ -76,7 +76,7 @@ func TestAPISpans(t *testing.T) {
 		}
 	}
 
-	if !slices.Contains(children, "SELECT users") {
-		t.Errorf("database spans of the request = %q, want SELECT users", children)
+	if !slices.Contains(children, "db.GetUser") {
+		t.Errorf("database spans of the request = %q, want db.GetUser", children)
 	}
 }

@@ -31,13 +31,13 @@ func start(t *testing.T, frontend fstest.MapFS) *running {
 
 	var lc net.ListenConfig
 
-	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	rec := &logtest.Recorder{}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 
 	go func() {
@@ -89,7 +89,7 @@ func (r *running) call(t *testing.T, client *http.Client, method, path, token st
 		reader = bytes.NewReader(b)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), method, r.base+path, reader)
+	req, err := http.NewRequestWithContext(t.Context(), method, r.base+path, reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestUsersOverHTTP(t *testing.T) {
 func TestRunServesFrontendAndStops(t *testing.T) {
 	r := start(t, fstest.MapFS{"index.html": {Data: []byte("<html></html>")}})
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, r.base+"/", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, r.base+"/", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestRunFailsWhenListenerCloses(t *testing.T) {
 
 	var lc net.ListenConfig
 
-	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestRunFailsWhenListenerCloses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := server.Run(context.Background(), server.Config{
+	if err := server.Run(t.Context(), server.Config{
 		Listener: ln, DBPath: filepath.Join(t.TempDir(), "mocn.db"), Frontend: fstest.MapFS{}, Logger: rec.Logger(),
 	}); err == nil {
 		t.Fatal("Run returned nil, want a serve error")
@@ -333,12 +333,12 @@ func TestRunFailsWithoutDatabase(t *testing.T) {
 
 	var lc net.ListenConfig
 
-	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := server.Run(context.Background(), server.Config{
+	if err := server.Run(t.Context(), server.Config{
 		Listener: ln, DBPath: filepath.Join(t.TempDir(), "missing", "mocn.db"), Frontend: fstest.MapFS{},
 		Logger: rec.Logger(),
 	}); err == nil {

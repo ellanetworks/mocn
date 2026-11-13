@@ -50,7 +50,7 @@ func testConfig(t *testing.T, store *db.DB) api.Config {
 func openStore(t *testing.T, opts ...db.Option) *db.DB {
 	t.Helper()
 
-	store, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "mocn.db"), opts...)
+	store, err := db.Open(t.Context(), filepath.Join(t.TempDir(), "mocn.db"), opts...)
 	if err != nil {
 		t.Fatal(err)
 	}

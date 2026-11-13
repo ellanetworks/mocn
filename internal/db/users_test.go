@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -11,7 +10,7 @@ import (
 func createTestUser(t *testing.T, d *DB, email string, role Role) int64 {
 	t.Helper()
 
-	id, err := d.CreateUser(context.Background(), NewUser{Email: email, Role: role, PasswordHash: "hash-" + email}, 100)
+	id, err := d.CreateUser(t.Context(), NewUser{Email: email, Role: role, PasswordHash: "hash-" + email}, 100)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -20,7 +19,7 @@ func createTestUser(t *testing.T, d *DB, email string, role Role) int64 {
 }
 
 func TestUserLifecycle(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	if n, err := d.CountUsers(ctx); err != nil || n != 0 {
@@ -71,7 +70,7 @@ func TestUserLifecycle(t *testing.T) {
 }
 
 func TestUserNotFound(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	for name, call := range map[string]func() error{
@@ -88,7 +87,7 @@ func TestUserNotFound(t *testing.T) {
 }
 
 func TestUserEmailIsUniqueWhateverItsCase(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	createTestUser(t, d, "ota@example.com", RoleNetworkManager)
@@ -100,7 +99,7 @@ func TestUserEmailIsUniqueWhateverItsCase(t *testing.T) {
 }
 
 func TestUserRoleIsChecked(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	for _, role := range []Role{0, 4} {
@@ -117,7 +116,7 @@ func TestUserRoleIsChecked(t *testing.T) {
 }
 
 func TestListUsers(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	ids := []int64{
@@ -155,7 +154,7 @@ func TestListUsers(t *testing.T) {
 }
 
 func TestUserUpdatesEndSessions(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 
@@ -214,7 +213,7 @@ func TestUserUpdatesEndSessions(t *testing.T) {
 }
 
 func TestDeleteUserDeletesSessionsAndTokens(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 
@@ -248,7 +247,7 @@ func TestDeleteUserDeletesSessionsAndTokens(t *testing.T) {
 }
 
 func TestUserWithoutPassword(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	createTestUser(t, d, "admin@example.com", RoleAdmin)
@@ -290,7 +289,7 @@ func TestUserWithoutPassword(t *testing.T) {
 }
 
 func TestCreateUserIsCapped(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	if _, err := d.CreateUser(ctx, NewUser{Email: "a@example.com", Role: RoleReadOnly, RolePinned: true}, 2); err != nil {
@@ -315,7 +314,7 @@ func TestCreateUserIsCapped(t *testing.T) {
 }
 
 func TestUserRolePinned(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
 
@@ -344,7 +343,7 @@ func TestUserRolePinned(t *testing.T) {
 }
 
 func TestLastAdminWithAPasswordIsKept(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := openTestDB(t)
 
 	admin := createTestUser(t, d, "admin@example.com", RoleAdmin)

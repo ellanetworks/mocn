@@ -31,13 +31,14 @@ type NewAPIToken struct {
 }
 
 func (d *DB) CreateAPIToken(ctx context.Context, t NewAPIToken) (_ int64, err error) {
-	defer d.observe(poolWrite, &err)()
+	ctx, done := d.observe(ctx, "CreateAPIToken", poolWrite)
+	defer done(&err)
 
-	return run[int64](ctx, d, cmdCreateAPIToken, "create API token", t)
+	return write(ctx, d, "create API token", func(tx querier) (int64, error) { return createAPIToken(ctx, tx, t) })
 }
 
-func applyCreateAPIToken(a *applyCtx, t NewAPIToken) (int64, error) {
-	res, err := a.tx.exec(a.ctx, "INSERT", "api_tokens", `INSERT INTO api_tokens (token_id, name, token_hash, user_id, created_at,
+func createAPIToken(ctx context.Context, tx querier, t NewAPIToken) (int64, error) {
+	res, err := tx.ExecContext(ctx, `INSERT INTO api_tokens (token_id, name, token_hash, user_id, created_at,
 		expires_at) VALUES (?, ?, ?, ?, ?, ?)`, t.TokenID, t.Name, t.TokenHash, t.UserID, t.CreatedAt.UnixNano(),
 		nullTime(t.ExpiresAt))
 	if isConstraint(err, sqlite3.ErrConstraintUnique) {
@@ -52,9 +53,10 @@ func applyCreateAPIToken(a *applyCtx, t NewAPIToken) (int64, error) {
 }
 
 func (d *DB) GetAPITokenByTokenID(ctx context.Context, tokenID string) (_ APIToken, err error) {
-	defer d.observe(poolRead, &err)()
+	ctx, done := d.observe(ctx, "GetAPITokenByTokenID", poolRead)
+	defer done(&err)
 
-	t, err := scanAPIToken(d.read().row(ctx, "SELECT", "api_tokens", `SELECT `+apiTokenColumns+` FROM api_tokens WHERE token_id = ?`,
+	t, err := scanAPIToken(d.reader().QueryRowContext(ctx, `SELECT `+apiTokenColumns+` FROM api_tokens WHERE token_id = ?`,
 		tokenID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return APIToken{}, ErrNotFound
@@ -68,17 +70,18 @@ func (d *DB) GetAPITokenByTokenID(ctx context.Context, tokenID string) (_ APITok
 }
 
 func (d *DB) ListAPITokens(ctx context.Context, userID int64, page, perPage int) (_ []APIToken, _ int, err error) {
-	defer d.observe(poolRead, &err)()
+	ctx, done := d.observe(ctx, "ListAPITokens", poolRead)
+	defer done(&err)
 
 	var total int
-	if err := d.read().row(ctx, "SELECT", "api_tokens", `SELECT COUNT(*) FROM api_tokens WHERE user_id = ?`, userID).
+	if err := d.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM api_tokens WHERE user_id = ?`, userID).
 		Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("list API tokens: %w", err)
 	}
 
 	tokens := []APIToken{}
 
-	if err := d.read().each(ctx, "api_tokens", `SELECT `+apiTokenColumns+` FROM api_tokens WHERE user_id = ?
+	if err := each(ctx, d.reader(), `SELECT `+apiTokenColumns+` FROM api_tokens WHERE user_id = ?
 		ORDER BY id LIMIT ? OFFSET ?`, func(s scanner) error {
 		t, err := scanAPIToken(s)
 		if err != nil {
@@ -96,10 +99,11 @@ func (d *DB) ListAPITokens(ctx context.Context, userID int64, page, perPage int)
 }
 
 func (d *DB) CountAPITokens(ctx context.Context, userID int64) (_ int, err error) {
-	defer d.observe(poolRead, &err)()
+	ctx, done := d.observe(ctx, "CountAPITokens", poolRead)
+	defer done(&err)
 
 	var n int
-	if err := d.read().row(ctx, "SELECT", "api_tokens", `SELECT COUNT(*) FROM api_tokens WHERE user_id = ?`, userID).
+	if err := d.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM api_tokens WHERE user_id = ?`, userID).
 		Scan(&n); err != nil {
 		return 0, fmt.Errorf("count API tokens: %w", err)
 	}
@@ -108,54 +112,28 @@ func (d *DB) CountAPITokens(ctx context.Context, userID int64) (_ int, err error
 }
 
 func (d *DB) DeleteAPIToken(ctx context.Context, userID int64, tokenID string) (err error) {
-	defer d.observe(poolWrite, &err)()
+	ctx, done := d.observe(ctx, "DeleteAPIToken", poolWrite)
+	defer done(&err)
 
-	_, err = run[struct{}](ctx, d, cmdDeleteAPIToken, "delete API token", deleteAPIToken{
-		UserID:  userID,
-		TokenID: tokenID,
+	return d.exec(ctx, "delete API token", func(tx querier) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM api_tokens WHERE token_id = ? AND user_id = ?`, tokenID, userID)
+		if err != nil {
+			return err
+		}
+
+		return checkAffected(res)
 	})
-
-	return err
-}
-
-type deleteAPIToken struct {
-	UserID  int64
-	TokenID string
-}
-
-func applyDeleteAPIToken(a *applyCtx, p deleteAPIToken) (struct{}, error) {
-	res, err := a.tx.exec(a.ctx, "DELETE", "api_tokens", `DELETE FROM api_tokens WHERE token_id = ? AND user_id = ?`, p.TokenID,
-		p.UserID)
-	if err != nil {
-		return struct{}{}, err
-	}
-
-	return struct{}{}, checkAffected(res)
 }
 
 func (d *DB) TouchAPIToken(ctx context.Context, id int64, at time.Time) (err error) {
-	defer d.observe(poolWrite, &err)()
+	ctx, done := d.observe(ctx, "TouchAPIToken", poolWrite)
+	defer done(&err)
 
-	_, err = run[struct{}](ctx, d, cmdTouchAPIToken, "touch API token", touchAPIToken{ID: id, At: at.UnixNano()})
+	return d.exec(ctx, "touch API token", func(tx querier) error {
+		_, err := tx.ExecContext(ctx, `UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, at.UnixNano(), id)
 
-	return err
-}
-
-type touchAPIToken struct {
-	ID int64
-	At int64
-}
-
-func applyTouchAPIToken(a *applyCtx, p touchAPIToken) (struct{}, error) {
-	_, err := a.tx.exec(a.ctx, "UPDATE", "api_tokens", `UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, p.At, p.ID)
-
-	return struct{}{}, err
-}
-
-func init() {
-	register(cmdCreateAPIToken, handle(applyCreateAPIToken))
-	register(cmdDeleteAPIToken, handle(applyDeleteAPIToken))
-	register(cmdTouchAPIToken, handle(applyTouchAPIToken))
+		return err
+	})
 }
 
 const apiTokenColumns = `id, token_id, name, token_hash, user_id, created_at, expires_at, last_used_at` // #nosec G101

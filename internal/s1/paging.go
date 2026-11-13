@@ -102,5 +102,5 @@ func (r *relay) paging(ctx context.Context, a *MMEAssociation, log *slog.Logger,
 
 	r.paged.WithLabelValues(interfaceS1, pagingRelayed).Inc()
 	log.DebugContext(ctx, "Paging from MME relayed to radios", slog.Int("radios", len(radios)))
-	sendRadios(ctx, radios, log, "Paging", msg)
+	sendRadios(ctx, radios, a.client.operator(), log, "Paging", msg)
 }
