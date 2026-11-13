@@ -6,7 +6,7 @@ require (
 	github.com/ellanetworks/core/s1ap v0.0.0-20261112022906-4ba47dcee72b
 	github.com/ellanetworks/core/sctp v0.0.0-20261112022906-4ba47dcee72b
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/prometheus/client_golang v1.25.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/crypto v0.58.0
