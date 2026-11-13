@@ -73,6 +73,60 @@ export interface MME extends CoreNode {
   status?: MMEStatus;
 }
 
+export type AMFOverloadAction = Extract<
+  OverloadAction,
+  | "reject_non_emergency_mo_dt"
+  | "reject_rrc_cr_signalling"
+  | "permit_emergency_sessions_and_mobile_terminated_services_only"
+  | "permit_high_priority_sessions_and_mobile_terminated_services_only"
+>;
+
+export interface GUAMI {
+  plmn: PLMN;
+  amf_region_id: number;
+  amf_set_id: number;
+  amf_pointer: number;
+}
+
+export interface SNSSAI {
+  sst: number;
+  sd?: string;
+}
+
+export interface PLMNSupport {
+  plmn: PLMN;
+  snssais: SNSSAI[];
+}
+
+export interface SliceOverload {
+  snssais: SNSSAI[];
+  overload_action?: AMFOverloadAction;
+  traffic_load_reduction_indication?: number;
+}
+
+export interface AMFOverload {
+  overload_action?: AMFOverloadAction;
+  traffic_load_reduction_indication?: number;
+  slices?: SliceOverload[];
+}
+
+export interface AMFStatus {
+  state: MMEState;
+  since: string;
+  primary_tnl_address?: string;
+  amf_name?: string;
+  served_guamis?: GUAMI[];
+  plmn_support?: PLMNSupport[];
+  relative_amf_capacity?: number;
+  unavailable_guamis?: GUAMI[];
+  overload?: AMFOverload;
+  ue_connections: number;
+}
+
+export interface AMF extends CoreNode {
+  status?: AMFStatus;
+}
+
 export interface Operator {
   name: string;
   pws_operator: boolean;
@@ -80,7 +134,7 @@ export interface Operator {
   global_enb_id?: GlobalENBID | null;
   global_gnb_id?: GlobalGNBID | null;
   mmes?: MME[] | null;
-  amfs?: CoreNode[] | null;
+  amfs?: AMF[] | null;
   ue_connections?: number;
   ue_connections_by_radio?: RadioUEConnections[];
 }

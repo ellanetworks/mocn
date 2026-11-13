@@ -5,13 +5,14 @@ import (
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gw"
 )
 
 func TestSelectMME(t *testing.T) {
 	plmnA := db.PLMN{MCC: "001", MNC: "01"}
 	plmnB := db.PLMN{MCC: "001", MNC: "02"}
 
-	idA, err := encodePLMN(plmnA)
+	idA, err := gw.EncodePLMN[s1ap.PLMNIdentity](plmnA)
 	if err != nil {
 		t.Fatal(err)
 	}

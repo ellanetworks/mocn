@@ -14,7 +14,7 @@ import {
 } from "@/queries/radios";
 import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
-import { formatGlobalENBID } from "@/utils/operators";
+import { formatRadioID, RADIO_TYPES } from "@/utils/radios";
 
 export const RADIOS_REFRESH_MS = 5000;
 
@@ -38,7 +38,8 @@ const columns: GridColDef<Row>[] = [
   {
     field: "enb_name",
     headerName: "Name",
-    description: "The name the radio sent in its S1 Setup Request.",
+    description:
+      "The name the radio sent in its S1 Setup Request (eNB name) or NG Setup Request (RAN node name).",
     flex: 0.8,
     minWidth: 140,
     renderCell: ({ row }) =>
@@ -56,14 +57,21 @@ const columns: GridColDef<Row>[] = [
       ),
   },
   {
-    field: "global_enb_id",
-    headerName: "Global eNB ID",
+    field: "interface",
+    headerName: "Type",
+    description: "eNB: a 4G radio, over S1. gNB: a 5G radio, over NG.",
+    flex: 0.3,
+    minWidth: 100,
+    valueGetter: (_value, row) => RADIO_TYPES[row.interface],
+  },
+  {
+    field: "global_id",
+    headerName: "Global ID",
     description:
-      "The identity the radio sent in its S1 Setup Request: PLMN, eNB ID type and eNB ID.",
+      "The identity the radio sent in its S1 or NG Setup Request: the Global eNB ID (PLMN, eNB ID type and eNB ID) or the Global gNB ID (PLMN, gNB ID and its length).",
     flex: 1,
     minWidth: 200,
-    valueGetter: (_value, row) =>
-      row.global_enb_id ? formatGlobalENBID(row.global_enb_id) : NONE,
+    valueGetter: (_value, row) => formatRadioID(row) ?? NONE,
   },
   {
     field: "tnl_addresses",
@@ -77,7 +85,7 @@ const columns: GridColDef<Row>[] = [
     field: "ue_connections",
     headerName: "UE connections",
     description:
-      "The UE-associated logical S1-connections Ella MOCN relays from the radio, one per UE in ECM-CONNECTED.",
+      "The UE-associated logical S1-connections or NG-connections Ella MOCN relays from the radio, one per connected UE.",
     flex: 0.5,
     minWidth: 140,
   },
@@ -85,7 +93,7 @@ const columns: GridColDef<Row>[] = [
     field: "state",
     headerName: "Status",
     description:
-      "Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded.",
+      "Connected: SCTP association up, S1 or NG Setup not done yet. Up: S1 or NG Setup succeeded.",
     flex: 0.4,
     minWidth: 120,
     renderCell: ({ row }) => (
@@ -111,7 +119,7 @@ export default function Radios() {
         id="radios-title"
         title="Radios"
         count={radios.data?.length}
-        description="The eNodeBs connected to Ella MOCN over S1."
+        description="The eNodeBs and gNodeBs connected to Ella MOCN over S1 and NG."
       />
       <QueryAlert query={radios} subject="radios" />
       <DataGrid<Row>

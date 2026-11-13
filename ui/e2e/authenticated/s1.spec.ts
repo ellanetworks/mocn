@@ -38,7 +38,8 @@ for (const { name, session } of SESSIONS) {
       await expect(grid).toContainText("No radios.");
       await expect(grid.getByRole("columnheader")).toHaveText([
         "Name",
-        "Global eNB ID",
+        "Type",
+        "Global ID",
         "Addresses",
         "UE connections",
         "Status",
@@ -99,6 +100,7 @@ test.describe("MME status", () => {
       "Type",
       "Name",
       "Served IDs",
+      "Capacity",
       "UE connections",
       "Overload",
       "Status",

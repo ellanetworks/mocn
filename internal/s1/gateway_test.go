@@ -94,12 +94,27 @@ func setUpMME(t *testing.T, mme *peer, wantTAs s1ap.SupportedTAs, wantDRX s1ap.P
 	}
 
 	assertTAs(t, req.SupportedTAs, wantTAs)
+	assertNodeName(t, req.ENBName)
 
 	if req.DefaultPagingDRX == nil || *req.DefaultPagingDRX != wantDRX {
 		t.Fatalf("Default Paging DRX = %v, want %v", req.DefaultPagingDRX, wantDRX)
 	}
 
 	mme.send(t, resp)
+}
+
+func assertNodeName(t *testing.T, name *string) {
+	t.Helper()
+
+	if name == nil || *name != "Ella MOCN" || len(*name) < 1 || len(*name) > 150 {
+		t.Fatalf("name = %v, want Ella MOCN", name)
+	}
+
+	for _, r := range *name {
+		if !strings.ContainsRune("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '()+,-./:=?", r) {
+			t.Fatalf("name %q is not a PrintableString", *name)
+		}
+	}
 }
 
 func assertTAs(t *testing.T, got, want s1ap.SupportedTAs) {
@@ -145,6 +160,8 @@ func TestS1SetupBothWays(t *testing.T) {
 	})
 
 	resp := expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
+	assertNodeName(t, resp.MMEName)
+
 	if resp.RelativeMMECapacity == nil || *resp.RelativeMMECapacity != 255 {
 		t.Fatalf("Relative MME Capacity = %v, want 255", resp.RelativeMMECapacity)
 	}
@@ -177,6 +194,8 @@ func TestS1SetupBothWays(t *testing.T) {
 		t.Fatalf("Default Paging DRX = %v, want v256", upd.DefaultPagingDRX)
 	}
 
+	assertNodeName(t, upd.ENBName)
+
 	mme.send(t, &s1ap.ENBConfigurationUpdateAcknowledge{})
 
 	enb2.send(t, &s1ap.ENBConfigurationUpdate{SupportedTAs: s1ap.SupportedTAs{ta(t, 3, "00101")}})
@@ -206,6 +225,7 @@ func TestS1SetupBothWays(t *testing.T) {
 	expect(t, mme, "successful", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdateAcknowledge)
 
 	mcu := expect(t, enb, "initiating", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdate)
+	assertNodeName(t, mcu.MMEName)
 	if !reflect.DeepEqual(mcu.ServedGUMMEIs, served(t, 0x8001, 1, 2)) {
 		t.Fatalf("Served GUMMEIs = %+v", mcu.ServedGUMMEIs)
 	}
@@ -218,16 +238,16 @@ func TestS1SetupBothWays(t *testing.T) {
 	registry.MustRegister(h.gw.Collectors()...)
 
 	want := `
-# HELP ellamocn_core_associations Core (MME) associations of the configured MMEs, by interface (s1), operator and state (disconnected: no SCTP association; connected: SCTP association up, S1 Setup not done; up: S1 Setup succeeded; setup_failed: the MME rejected S1 Setup).
+# HELP ellamocn_core_associations Core (MME, AMF) associations of the configured MMEs and AMFs, by interface (s1, ng), operator and state (disconnected: no SCTP association; connected: SCTP association up, S1 or NG Setup not done; up: S1 or NG Setup succeeded; setup_failed: the MME or AMF rejected the setup).
 # TYPE ellamocn_core_associations gauge
 ellamocn_core_associations{interface="s1",operator="A",state="connected"} 0
 ellamocn_core_associations{interface="s1",operator="A",state="disconnected"} 0
 ellamocn_core_associations{interface="s1",operator="A",state="setup_failed"} 0
 ellamocn_core_associations{interface="s1",operator="A",state="up"} 1
-# HELP ellamocn_core_overloaded Core (MME) associations of the configured MMEs with an ongoing overload action (TS 36.413 clause 8.7.6), by interface (s1) and operator.
+# HELP ellamocn_core_overloaded Core (MME, AMF) associations of the configured MMEs and AMFs with an ongoing overload action (TS 36.413 clause 8.7.6, TS 38.413 clause 8.7.7), by interface (s1, ng) and operator.
 # TYPE ellamocn_core_overloaded gauge
 ellamocn_core_overloaded{interface="s1",operator="A"} 0
-# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1) and result (relayed: sent to an MME; unknown_plmn: no operator serves the PLMN; no_mme: no selectable MME of the operator; rejected: reuses an allocated eNB UE S1AP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME).
+# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1, ng) and result (relayed: sent to an MME or AMF; unknown_plmn: no operator serves the PLMN; no_mme, no_amf: no selectable MME or AMF of the operator; rejected: reuses an allocated eNB UE S1AP ID or RAN UE NGAP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME or AMF).
 # TYPE ellamocn_initial_ue_messages_total counter
 ellamocn_initial_ue_messages_total{interface="s1",result="error"} 0
 ellamocn_initial_ue_messages_total{interface="s1",result="invalid"} 0
@@ -244,16 +264,16 @@ ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="invalid"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="no_radio"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="relayed"} 0
-# HELP ellamocn_paging_messages_total PAGING messages received from MMEs, by interface (s1) and result (relayed: sent to the radios that serve a TAI of the List of TAIs in one of the operator's PLMNs; no_radio: no radio that is up serves such a TAI; invalid: undecodable).
+# HELP ellamocn_paging_messages_total PAGING messages received from MMEs and AMFs, by interface (s1, ng) and result (relayed: sent to the radios that serve a TAI of the list in one of the operator's PLMNs; no_radio: no radio that is up serves such a TAI; invalid: undecodable).
 # TYPE ellamocn_paging_messages_total counter
 ellamocn_paging_messages_total{interface="s1",result="invalid"} 0
 ellamocn_paging_messages_total{interface="s1",result="no_radio"} 0
 ellamocn_paging_messages_total{interface="s1",result="relayed"} 0
-# HELP ellamocn_radio_associations Radio (eNodeB) associations, by interface (s1) and state (connected: SCTP association up, no successful S1 Setup; up: S1 Setup succeeded).
+# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded).
 # TYPE ellamocn_radio_associations gauge
 ellamocn_radio_associations{interface="s1",state="connected"} 0
 ellamocn_radio_associations{interface="s1",state="up"} 1
-# HELP ellamocn_setup_attempts_total Setup procedures (S1 Setup), by interface (s1), side and result. side=radio: received from radios; result success, invalid (undecodable or invalid request), unknown_plmn (no operator serves a broadcast PLMN), no_mme (no MME of the serving operators is up), mme_failure (the serving operators' MMEs rejected S1 Setup), error (the response could not be built or sent, or the radio left before the answer). side=core: sent to MMEs; result success, failure (the MME rejected the request or answered with an invalid response), timeout (no answer from the MME), error (the request could not be built or sent, or the association dropped before the answer).
+# HELP ellamocn_setup_attempts_total Setup procedures (S1 Setup, NG Setup), by interface (s1, ng), side and result. side=radio: received from radios; result success, invalid (undecodable or invalid request), unknown_plmn (no operator serves a broadcast PLMN), no_mme, no_amf (no MME or AMF of the serving operators is up), mme_failure, amf_failure (the serving operators' MMEs or AMFs rejected the setup), error (the response could not be built or sent, or the radio left before the answer). side=core: sent to MMEs and AMFs; result success, failure (the MME or AMF rejected the request or answered with an invalid response), timeout (no answer from the MME or AMF), error (the request could not be built or sent, or the association dropped before the answer).
 # TYPE ellamocn_setup_attempts_total counter
 ellamocn_setup_attempts_total{interface="s1",result="error",side="core"} 0
 ellamocn_setup_attempts_total{interface="s1",result="error",side="radio"} 0
@@ -265,7 +285,7 @@ ellamocn_setup_attempts_total{interface="s1",result="success",side="core"} 1
 ellamocn_setup_attempts_total{interface="s1",result="success",side="radio"} 2
 ellamocn_setup_attempts_total{interface="s1",result="timeout",side="core"} 0
 ellamocn_setup_attempts_total{interface="s1",result="unknown_plmn",side="radio"} 0
-# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) relayed, by interface (s1) and operator.
+# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) and NG-connections relayed, by interface (s1, ng) and operator.
 # TYPE ellamocn_ue_connections gauge
 ellamocn_ue_connections{interface="s1",operator="A"} 0
 `
@@ -454,6 +474,7 @@ func TestMMEReconnectsAndFollowsConfig(t *testing.T) {
 	})
 
 	mcu := expect(t, enb, "initiating", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdate)
+	assertNodeName(t, mcu.MMEName)
 	if !reflect.DeepEqual(mcu.ServedGUMMEIs, served(t, 1, 2)) {
 		t.Fatalf("Served GUMMEIs = %+v", mcu.ServedGUMMEIs)
 	}

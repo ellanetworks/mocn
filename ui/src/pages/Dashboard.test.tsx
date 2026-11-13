@@ -191,7 +191,7 @@ ellamocn_radio_associations{interface="s1",state="up"} 0
     fireEvent.mouseOver(await findPanel("Radios"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "Radios that completed S1 Setup with Ella MOCN.",
+        name: "Radios that completed S1 Setup or NG Setup with Ella MOCN.",
       }),
     ).toBeInTheDocument();
   });
@@ -203,7 +203,7 @@ ellamocn_radio_associations{interface="s1",state="up"} 0
     fireEvent.mouseOver(await findPanel("UE connections"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "UE-associated logical S1-connections that Ella MOCN relays, across every operator: one per connected UE.",
+        name: "UE-associated logical S1-connections and NG-connections that Ella MOCN relays, across every operator: one per connected UE.",
       }),
     ).toBeInTheDocument();
   });

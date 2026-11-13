@@ -6,10 +6,9 @@ import (
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/core/sctp"
+	"github.com/ellanetworks/mocn/internal/gw"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -338,34 +337,21 @@ func (g *Gateway) send(ctx context.Context, side string, conn *sctp.SCTPConn, op
 	stream uint16,
 ) error {
 	if g == nil || g.tracer == nil {
-		return send(conn, msg, stream)
+		return gw.Send(conn, PPID, msg, stream)
 	}
 
 	_, span := g.startSpan(ctx, spanSend, side, conn, inspect(nil, msg), len(msg), operator)
 	defer span.End()
 
-	err := send(conn, msg, stream)
+	err := gw.Send(conn, PPID, msg, stream)
 	if err != nil {
 		errType := errTypeSendFail
-		if errors.Is(err, errClosed) {
+		if errors.Is(err, gw.ErrClosed) {
 			errType = errTypeClosed
 		}
 
-		failSpan(span, errType)
+		tracing.FailSpan(span, errType)
 	}
 
 	return err
-}
-
-func detachedRoot(ctx context.Context) context.Context {
-	return trace.ContextWithSpanContext(context.WithoutCancel(ctx), trace.SpanContext{})
-}
-
-func spanFailed(ctx context.Context, errType string) {
-	failSpan(trace.SpanFromContext(ctx), errType)
-}
-
-func failSpan(span trace.Span, errType string) {
-	span.SetAttributes(semconv.ErrorTypeKey.String(errType))
-	span.SetStatus(codes.Error, errType)
 }

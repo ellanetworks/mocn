@@ -5,13 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/netip"
+	"maps"
 	"slices"
 	"time"
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gw"
+	"github.com/ellanetworks/mocn/internal/tracing"
 )
 
 const nonUEStream = 0
@@ -83,25 +85,8 @@ func (n *RANAssociation) snapshotLocked() RANNode {
 	return r
 }
 
-func addrStrings(a any) []string {
-	addr, ok := a.(*sctp.SCTPAddr)
-	if !ok || addr == nil {
-		return nil
-	}
-
-	out := make([]string, 0, len(addr.IPAddrs))
-
-	for _, ip := range addr.IPAddrs {
-		if a, ok := netip.AddrFromSlice(ip.IP); ok {
-			out = append(out, a.Unmap().String())
-		}
-	}
-
-	return out
-}
-
 func (g *Gateway) ranConnected(conn *sctp.SCTPConn) {
-	n := &RANAssociation{g: g, conn: conn, addrs: addrStrings(conn.RemoteAddr()), connectedAt: g.cfg.Now()}
+	n := &RANAssociation{g: g, conn: conn, addrs: gw.Addresses(conn.RemoteAddr()), connectedAt: g.cfg.Now()}
 
 	g.mu.Lock()
 	g.ranNodes[conn] = n
@@ -151,7 +136,7 @@ func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []by
 	defer span.End()
 
 	if err != nil {
-		spanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, errTypeInvalid)
 		g.log.WarnContext(ctx, "undecodable S1AP message from radio", slog.Any("error", err),
 			slog.Any("tnl_addresses", n.addrs))
 
@@ -185,7 +170,7 @@ func (g *Gateway) dispatchRAN(ctx context.Context, conn *sctp.SCTPConn, msg []by
 	g.mu.Unlock()
 
 	if !up {
-		spanFailed(ctx, errTypeNoSetup)
+		tracing.SpanFailed(ctx, errTypeNoSetup)
 		g.log.DebugContext(ctx, "dropped S1AP message before S1 Setup", slog.String("procedure", procedureOf(pdu).String()),
 			slog.Any("tnl_addresses", n.addrs))
 
@@ -282,7 +267,7 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 		if g.ranNodes[n.conn] != n {
 			g.mu.Unlock()
 			g.countSetup(sideRadio, setupError)
-			spanFailed(ctx, setupError)
+			tracing.SpanFailed(ctx, setupError)
 
 			return
 		}
@@ -321,7 +306,7 @@ func (g *Gateway) handleS1Setup(ctx context.Context, n *RANAssociation, value []
 			return
 		case <-ctx.Done():
 			g.countSetup(sideRadio, setupError)
-			spanFailed(ctx, setupError)
+			tracing.SpanFailed(ctx, setupError)
 
 			return
 		}
@@ -345,7 +330,7 @@ func (g *Gateway) mmeSetupFailureLocked(operators []int64, since time.Time) (s1a
 		found bool
 	)
 
-	for _, key := range sortedKeys(g.mmes) {
+	for _, key := range slices.Sorted(maps.Keys(g.mmes)) {
 		c := g.mmes[key]
 		if !slices.Contains(operators, c.operatorID) {
 			continue
@@ -367,24 +352,26 @@ func (g *Gateway) mmeSetupFailureLocked(operators []int64, since time.Time) (s1a
 	return cause, ttw, found
 }
 
+// TS 36.413 clause 9.1.8.5
 func (g *Gateway) acceptS1SetupLocked(ctx context.Context, n *RANAssociation, served []ServedGUMMEIs, d s1ap.Diagnostics) {
 	gummeis, err := gummeisTo(served)
 	if err != nil {
 		g.countSetup(sideRadio, setupError)
-		spanFailed(ctx, setupError)
+		tracing.SpanFailed(ctx, setupError)
 		g.log.ErrorContext(ctx, "failed to encode Served GUMMEIs", slog.Any("error", err))
 
 		return
 	}
 
 	out, err := (&s1ap.S1SetupResponse{
+		MMEName:                s1ap.Ptr(gw.NodeName),
 		ServedGUMMEIs:          gummeis,
 		RelativeMMECapacity:    s1ap.Ptr(relativeMMECapacity),
 		CriticalityDiagnostics: responseDiagnostics(s1ap.ProcS1Setup, d),
 	}).Marshal()
 	if err != nil {
 		g.countSetup(sideRadio, setupError)
-		spanFailed(ctx, setupError)
+		tracing.SpanFailed(ctx, setupError)
 		g.log.ErrorContext(ctx, "failed to marshal S1 Setup Response", slog.Any("error", err))
 
 		return
@@ -392,7 +379,7 @@ func (g *Gateway) acceptS1SetupLocked(ctx context.Context, n *RANAssociation, se
 
 	if err := n.Send(ctx, out, nonUEStream); err != nil {
 		g.countSetup(sideRadio, setupError)
-		spanFailed(ctx, setupError)
+		tracing.SpanFailed(ctx, setupError)
 		g.log.WarnContext(ctx, "failed to send S1 Setup Response", slog.Any("error", err))
 
 		return
@@ -422,7 +409,7 @@ func (g *Gateway) rejectS1Setup(ctx context.Context, n *RANAssociation, result s
 	g.mu.Unlock()
 
 	g.countSetup(sideRadio, result)
-	spanFailed(ctx, result)
+	tracing.SpanFailed(ctx, result)
 
 	g.log.WarnContext(ctx, "radio S1 Setup rejected", slog.String("cause", cause.String()), slog.String("reason", reason),
 		slog.Any("tnl_addresses", n.addrs))
@@ -524,7 +511,7 @@ func (g *Gateway) handleENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 func (g *Gateway) rejectENBConfigurationUpdate(ctx context.Context, n *RANAssociation, errType string,
 	cause s1ap.Cause, diag *s1ap.CriticalityDiagnostics, reason string,
 ) {
-	spanFailed(ctx, errType)
+	tracing.SpanFailed(ctx, errType)
 
 	g.log.WarnContext(ctx, "radio eNB Configuration Update rejected", slog.String("cause", cause.String()),
 		slog.String("reason", reason), slog.Any("tnl_addresses", n.addrs))
@@ -541,6 +528,7 @@ func (g *Gateway) rejectENBConfigurationUpdate(ctx context.Context, n *RANAssoci
 }
 
 // TS 36.413 clause 8.7.5
+// TS 36.413 clause 9.1.8.10
 func (g *Gateway) syncRANLocked(ctx context.Context, n *RANAssociation) {
 	p := &n.mmeConfig
 	if !n.up || p.pending != nil || g.cfg.Now().Before(p.retryAt) {
@@ -562,7 +550,7 @@ func (g *Gateway) sendMMEConfigurationUpdateLocked(ctx context.Context, n *RANAs
 		return
 	}
 
-	out, err := (&s1ap.MMEConfigurationUpdate{ServedGUMMEIs: gummeis}).Marshal()
+	out, err := (&s1ap.MMEConfigurationUpdate{MMEName: s1ap.Ptr(gw.NodeName), ServedGUMMEIs: gummeis}).Marshal()
 	if err != nil {
 		g.log.ErrorContext(ctx, "failed to marshal MME Configuration Update", slog.Any("error", err))
 		return
@@ -574,7 +562,7 @@ func (g *Gateway) sendMMEConfigurationUpdateLocked(ctx context.Context, n *RANAs
 	}
 
 	n.mmeConfig.pending = served
-	retryCtx := detachedRoot(ctx)
+	retryCtx := tracing.DetachedRoot(ctx)
 	n.mmeConfig.timer = time.AfterFunc(g.cfg.ResponseTimeout, func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()
@@ -616,7 +604,7 @@ func (g *Gateway) handleMMEConfigurationUpdateFailure(ctx context.Context, n *RA
 	if err == nil {
 		cause = causeText(fail.Cause)
 	} else {
-		spanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, errTypeInvalid)
 	}
 
 	g.log.WarnContext(ctx, "radio rejected MME Configuration Update", slog.String("cause", cause),
@@ -636,7 +624,7 @@ func (g *Gateway) handleMMEConfigurationUpdateFailure(ctx context.Context, n *RA
 
 	p.pending = nil
 	p.retryAt = g.cfg.Now().Add(retry)
-	retryCtx := detachedRoot(ctx)
+	retryCtx := tracing.DetachedRoot(ctx)
 	p.timer = time.AfterFunc(retry, func() {
 		g.mu.Lock()
 		defer g.mu.Unlock()

@@ -31,11 +31,13 @@ ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="invalid"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="no_radio"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="relayed"} 0
-# HELP ellamocn_radio_associations Radio (eNodeB) associations, by interface (s1) and state (connected: SCTP association up, no successful S1 Setup; up: S1 Setup succeeded).
+# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded).
 # TYPE ellamocn_radio_associations gauge
 ellamocn_radio_associations{interface="s1",state="connected"} 0
 ellamocn_radio_associations{interface="s1",state="up"} 2
-# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) relayed, by interface (s1) and operator.
+ellamocn_radio_associations{interface="ng",state="connected"} 0
+ellamocn_radio_associations{interface="ng",state="up"} 1
+# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) and NG-connections relayed, by interface (s1, ng) and operator.
 # TYPE ellamocn_ue_connections gauge
 ellamocn_ue_connections{interface="s1",operator="Operator A"} 2
 ellamocn_ue_connections{interface="s1",operator="Operator B"} 2

@@ -30,7 +30,7 @@ func (g *Gateway) FailMMESends(err error) {
 var MMEGUMMEIs = mmeGUMMEIs
 
 func (g *Gateway) OverloadCounter() *prometheus.CounterVec {
-	return g.overloads
+	return g.cfg.Metrics.Overload
 }
 
 func (g *Gateway) CloseMMESends() {

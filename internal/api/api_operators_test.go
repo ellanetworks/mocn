@@ -31,7 +31,7 @@ func TestOperators(t *testing.T) {
 		GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: db.ENBIDMacro, ID: 703710},
 		GlobalGNBID: &api.GlobalGNBID{PLMN: api.PLMN{MCC: "001", MNC: "002"}, ID: 74565, Length: 22},
 		MMEs:        []api.MME{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
-		AMFs:        []api.CoreNode{{TNLAddresses: []string{"2001:db8::1"}}},
+		AMFs:        []api.AMF{{TNLAddresses: []string{"2001:db8::1"}}},
 	}
 
 	if got := decode[api.Operator](t, result); !reflect.DeepEqual(got, want) {
@@ -97,7 +97,7 @@ func TestOperators(t *testing.T) {
 
 	code, result, _ = a.do(t, http.MethodGet, "/api/v1/operators/Operator%20C", "")
 	if got := decode[api.Operator](t, result); code != http.StatusOK || got.GlobalGNBID == nil || got.GlobalGNBID.ID != 4294967295 ||
-		!reflect.DeepEqual(got.AMFs, []api.CoreNode{{TNLAddresses: []string{"10.0.1.1"}}}) {
+		!reflect.DeepEqual(got.AMFs, []api.AMF{{TNLAddresses: []string{"10.0.1.1"}}}) {
 		t.Fatalf("GET renamed = %d %s", code, result)
 	}
 

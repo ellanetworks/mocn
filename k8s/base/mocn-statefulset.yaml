@@ -45,6 +45,9 @@ spec:
         - name: s1
           containerPort: 36412
           protocol: SCTP
+        - name: ng
+          containerPort: 38412
+          protocol: SCTP
         startupProbe:
           httpGet:
             path: /api/v1/livez

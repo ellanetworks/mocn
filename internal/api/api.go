@@ -24,6 +24,7 @@ type Config struct {
 	Auth           AuthStore
 	Operators      OperatorStore
 	S1             S1View
+	NG             NGView
 	JWTSecret      func() []byte
 	SecureCookie   bool
 	BcryptCost     int

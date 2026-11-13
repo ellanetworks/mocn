@@ -4,6 +4,7 @@ namespace: ella
 resources:
   - base
   - mocn-s1-service.yaml
+  - mocn-ng-service.yaml
 configMapGenerator:
   - name: mocn-config
     files:

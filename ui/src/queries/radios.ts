@@ -1,7 +1,9 @@
-import type { AnyENBIDType, PLMN } from "@/queries/operators";
+import type { AnyENBIDType, GlobalGNBID, PLMN } from "@/queries/operators";
 import { apiFetch } from "@/queries/utils";
 
 export type RadioState = "connected" | "up";
+
+export type RadioInterface = "s1" | "ng";
 
 export interface RadioGlobalENBID {
   plmn: PLMN;
@@ -16,8 +18,11 @@ export interface SupportedTA {
 
 export interface Radio {
   ref?: string;
-  global_enb_id: RadioGlobalENBID | null;
+  interface: RadioInterface;
+  global_enb_id?: RadioGlobalENBID | null;
+  global_gnb_id?: GlobalGNBID | null;
   enb_name?: string;
+  ran_node_name?: string;
   supported_tas: SupportedTA[];
   default_paging_drx?: number;
   state: RadioState;
@@ -42,5 +47,8 @@ export const radioPath = (ref: string) => `/radios/${encodeURIComponent(ref)}`;
 export const getRadio = (ref: string): Promise<Radio> =>
   apiFetch<Radio>(`/api/v1/radios/${encodeURIComponent(ref)}`);
 
+export const radioName = (radio: Radio) =>
+  radio.enb_name ?? radio.ran_node_name;
+
 export const radioLabel = (radio: Radio) =>
-  radio.enb_name ?? radio.ref ?? radio.tnl_addresses.join(", ");
+  radioName(radio) ?? radio.ref ?? radio.tnl_addresses.join(", ");

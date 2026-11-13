@@ -750,7 +750,7 @@ func TestInitialUEMessageForAnUnknownPLMN(t *testing.T) {
 	registry.MustRegister(h.gw.Collectors()...)
 
 	want := `
-# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1) and result (relayed: sent to an MME; unknown_plmn: no operator serves the PLMN; no_mme: no selectable MME of the operator; rejected: reuses an allocated eNB UE S1AP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME).
+# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1, ng) and result (relayed: sent to an MME or AMF; unknown_plmn: no operator serves the PLMN; no_mme, no_amf: no selectable MME or AMF of the operator; rejected: reuses an allocated eNB UE S1AP ID or RAN UE NGAP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME or AMF).
 # TYPE ellamocn_initial_ue_messages_total counter
 ellamocn_initial_ue_messages_total{interface="s1",result="error"} 0
 ellamocn_initial_ue_messages_total{interface="s1",result="invalid"} 0
@@ -758,7 +758,7 @@ ellamocn_initial_ue_messages_total{interface="s1",result="no_mme"} 0
 ellamocn_initial_ue_messages_total{interface="s1",result="rejected"} 1
 ellamocn_initial_ue_messages_total{interface="s1",result="relayed"} 1
 ellamocn_initial_ue_messages_total{interface="s1",result="unknown_plmn"} 2
-# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) relayed, by interface (s1) and operator.
+# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) and NG-connections relayed, by interface (s1, ng) and operator.
 # TYPE ellamocn_ue_connections gauge
 ellamocn_ue_connections{interface="s1",operator="A"} 1
 `
@@ -879,7 +879,7 @@ func TestInitialUEMessageWhoseSendToTheMMEFails(t *testing.T) {
 	registry.MustRegister(h.gw.Collectors()...)
 
 	want := `
-# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1) and result (relayed: sent to an MME; unknown_plmn: no operator serves the PLMN; no_mme: no selectable MME of the operator; rejected: reuses an allocated eNB UE S1AP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME).
+# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1, ng) and result (relayed: sent to an MME or AMF; unknown_plmn: no operator serves the PLMN; no_mme, no_amf: no selectable MME or AMF of the operator; rejected: reuses an allocated eNB UE S1AP ID or RAN UE NGAP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME or AMF).
 # TYPE ellamocn_initial_ue_messages_total counter
 ellamocn_initial_ue_messages_total{interface="s1",result="error"} 2
 ellamocn_initial_ue_messages_total{interface="s1",result="invalid"} 0
@@ -924,7 +924,7 @@ func TestInitialUEMessageWithNoSelectableMME(t *testing.T) {
 	registry.MustRegister(h.gw.Collectors()...)
 
 	want := `
-# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1) and result (relayed: sent to an MME; unknown_plmn: no operator serves the PLMN; no_mme: no selectable MME of the operator; rejected: reuses an allocated eNB UE S1AP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME).
+# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1, ng) and result (relayed: sent to an MME or AMF; unknown_plmn: no operator serves the PLMN; no_mme, no_amf: no selectable MME or AMF of the operator; rejected: reuses an allocated eNB UE S1AP ID or RAN UE NGAP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME or AMF).
 # TYPE ellamocn_initial_ue_messages_total counter
 ellamocn_initial_ue_messages_total{interface="s1",result="error"} 0
 ellamocn_initial_ue_messages_total{interface="s1",result="invalid"} 0

@@ -28,7 +28,9 @@ type lab struct {
 	operator string
 	plmn     plmn
 	enbID    int
+	gnbID    int
 	mme      string
+	amf      string
 	core     string
 	radio    string
 	srsue    string
@@ -39,11 +41,13 @@ type lab struct {
 
 var labs = []lab{
 	{
-		operator: "open5gs", plmn: plmn{MCC: "001", MNC: "01"}, enbID: 1, mme: "10.90.0.10", core: "open5gs",
+		operator: "open5gs", plmn: plmn{MCC: "001", MNC: "01"}, enbID: 1, gnbID: 1, mme: "10.90.0.10", amf: "10.90.0.12",
+		core:  "open5gs",
 		radio: "001-01:macro:411", srsue: "srsue", imsi: "001010000000001", ueNet: "10.45.",
 	},
 	{
-		operator: "open5gs-b", plmn: plmn{MCC: "001", MNC: "02"}, enbID: 2, mme: "10.90.0.11", core: "open5gs-b",
+		operator: "open5gs-b", plmn: plmn{MCC: "001", MNC: "02"}, enbID: 2, gnbID: 2, mme: "10.90.0.11", amf: "10.90.0.13",
+		core:  "open5gs-b",
 		radio: "001-02:macro:412", srsue: "srsue-b", imsi: "001020000000002", ueNet: "10.46.", pagedUE: true,
 	},
 }
@@ -169,33 +173,53 @@ type coreNode struct {
 	Status       *mmeStatus `json:"status,omitempty"`
 }
 
+type globalGNBID struct {
+	PLMN        plmn `json:"plmn"`
+	GNBID       int  `json:"gnb_id"`
+	GNBIDLength int  `json:"gnb_id_length"`
+}
+
 type operator struct {
 	Name        string       `json:"name"`
 	PLMNs       []plmn       `json:"plmns"`
 	GlobalENBID *globalENBID `json:"global_enb_id"`
+	GlobalGNBID *globalGNBID `json:"global_gnb_id"`
 	MMEs        []coreNode   `json:"mmes"`
+	AMFs        []coreNode   `json:"amfs"`
 }
 
 type ueConnection struct {
-	Radio struct {
+	Interface string `json:"interface"`
+	Radio     struct {
 		Ref         string `json:"ref"`
 		ENBUES1APID int    `json:"enb_ue_s1ap_id"`
 		MMEUES1APID int    `json:"mme_ue_s1ap_id"`
+		RANUENGAPID int    `json:"ran_ue_ngap_id"`
+		AMFUENGAPID int    `json:"amf_ue_ngap_id"`
 	} `json:"radio"`
 	MME struct {
 		TNLAddresses []string `json:"tnl_addresses"`
 		ENBUES1APID  int      `json:"enb_ue_s1ap_id"`
 		MMEUES1APID  *int     `json:"mme_ue_s1ap_id"`
 	} `json:"mme"`
+	AMF *struct {
+		TNLAddresses []string `json:"tnl_addresses"`
+		RANUENGAPID  int      `json:"ran_ue_ngap_id"`
+		AMFUENGAPID  *int     `json:"amf_ue_ngap_id"`
+	} `json:"amf"`
 	Operator string `json:"operator"`
 	PLMN     plmn   `json:"plmn"`
 	TAI      *struct {
 		TAC int `json:"tac"`
 	} `json:"tai"`
+	NRCGI *struct {
+		CellID int `json:"cell_id"`
+	} `json:"nr_cgi"`
 }
 
 type radio struct {
 	Ref           string       `json:"ref"`
+	Interface     string       `json:"interface"`
 	GlobalENBID   *globalENBID `json:"global_enb_id"`
 	ENBName       string       `json:"enb_name"`
 	State         string       `json:"state"`
@@ -272,7 +296,9 @@ func setUp(ctx context.Context, t *testing.T) *client {
 			Name:        l.operator,
 			PLMNs:       []plmn{l.plmn},
 			GlobalENBID: &globalENBID{PLMN: l.plmn, ENBIDType: "macro", ENBID: l.enbID},
+			GlobalGNBID: &globalGNBID{PLMN: l.plmn, GNBID: l.gnbID, GNBIDLength: 22},
 			MMEs:        []coreNode{{TNLAddresses: []string{l.mme}}},
+			AMFs:        []coreNode{{TNLAddresses: []string{l.amf}}},
 		}
 
 		status, err = c.do(ctx, http.MethodPost, "/api/v1/operators", op, nil)
@@ -301,11 +327,19 @@ func TestS1Setup(t *testing.T) {
 			return err
 		}
 
-		if len(nodes.Items) != len(labs) {
-			return fmt.Errorf("want %d radios, got %+v", len(labs), nodes.Items)
-		}
+		var enbs []radio
 
 		for _, n := range nodes.Items {
+			if n.Interface == "s1" {
+				enbs = append(enbs, n)
+			}
+		}
+
+		if len(enbs) != len(labs) {
+			return fmt.Errorf("want %d eNBs, got %+v", len(labs), nodes.Items)
+		}
+
+		for _, n := range enbs {
 			if n.State != "up" {
 				return fmt.Errorf("radio not up: %+v", n)
 			}
@@ -451,7 +485,7 @@ func operatorUEs(ctx context.Context, c *client, l lab) ([]ueConnection, error) 
 	var out []ueConnection
 
 	for _, u := range items {
-		if u.Operator == l.operator {
+		if u.Operator == l.operator && u.Interface == "s1" {
 			out = append(out, u)
 		}
 	}

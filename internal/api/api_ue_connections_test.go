@@ -44,16 +44,18 @@ func TestListUEConnections(t *testing.T) {
 
 	want := api.ListUEConnectionsResponse{Items: []api.UEConnection{
 		{
-			Radio:    api.UEConnectionRadio{Ref: "001-01:macro:411", ENBUES1APID: 7, MMEUES1APID: 1},
-			MME:      api.UEConnectionMME{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}, ENBUES1APID: 2, MMEUES1APID: &mmeID},
-			Operator: "Operator A", PLMN: api.PLMN{MCC: "001", MNC: "01"}, Since: since.UTC(),
+			Interface: "s1",
+			Radio:     api.UEConnectionRadio{Ref: "001-01:macro:411", ENBUES1APID: new(uint32(7)), MMEUES1APID: new(uint32(1))},
+			MME:       &api.UEConnectionMME{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}, ENBUES1APID: 2, MMEUES1APID: &mmeID},
+			Operator:  "Operator A", PLMN: api.PLMN{MCC: "001", MNC: "01"}, Since: since.UTC(),
 			TAI:  &api.TAI{PLMN: api.PLMN{MCC: "001", MNC: "01"}, TAC: 1},
 			ECGI: &api.ECGI{PLMN: api.PLMN{MCC: "001", MNC: "01"}, CellID: 0x19b01},
 		},
 		{
-			Radio:    api.UEConnectionRadio{Ref: "001-01:macro:411", ENBUES1APID: 8, MMEUES1APID: 3},
-			MME:      api.UEConnectionMME{TNLAddresses: []string{"10.0.0.1"}, ENBUES1APID: 4},
-			Operator: "Operator A", PLMN: api.PLMN{MCC: "001", MNC: "01"}, Since: since.UTC(),
+			Interface: "s1",
+			Radio:     api.UEConnectionRadio{Ref: "001-01:macro:411", ENBUES1APID: new(uint32(8)), MMEUES1APID: new(uint32(3))},
+			MME:       &api.UEConnectionMME{TNLAddresses: []string{"10.0.0.1"}, ENBUES1APID: 4},
+			Operator:  "Operator A", PLMN: api.PLMN{MCC: "001", MNC: "01"}, Since: since.UTC(),
 		},
 	}}
 
@@ -61,7 +63,7 @@ func TestListUEConnections(t *testing.T) {
 		t.Fatalf("GET = %+v, want %+v", got, want)
 	}
 
-	for _, field := range []string{`"mme_ue_s1ap_id":null`, `"tai":null`, `"ecgi":null`, `"cell_id":105217`} {
+	for _, field := range []string{`"mme_ue_s1ap_id":null`, `"tai":null`, `"cell_id":105217`, `"interface":"s1"`} {
 		if !strings.Contains(string(result), field) {
 			t.Errorf("%s missing from %s", field, result)
 		}
@@ -81,7 +83,7 @@ func TestListUEConnections(t *testing.T) {
 		got := []uint32{}
 
 		for _, c := range decode[api.ListUEConnectionsResponse](t, result).Items {
-			got = append(got, c.Radio.ENBUES1APID)
+			got = append(got, *c.Radio.ENBUES1APID)
 		}
 
 		if code != http.StatusOK || !slices.Equal(got, want) {

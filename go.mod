@@ -3,9 +3,10 @@ module github.com/ellanetworks/mocn
 go 1.27.3
 
 require (
-	github.com/ellanetworks/core/per v0.0.0-20261113115507-ee5cecc48307
-	github.com/ellanetworks/core/s1ap v0.0.0-20261113115507-ee5cecc48307
-	github.com/ellanetworks/core/sctp v0.0.0-20261113115507-ee5cecc48307
+	github.com/ellanetworks/core/ngap v0.0.0-20261113152432-80e97c8e6e4b
+	github.com/ellanetworks/core/per v0.0.0-20261113152432-80e97c8e6e4b
+	github.com/ellanetworks/core/s1ap v0.0.0-20261113152432-80e97c8e6e4b
+	github.com/ellanetworks/core/sctp v0.0.0-20261113152432-80e97c8e6e4b
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/prometheus/client_golang v1.25.0

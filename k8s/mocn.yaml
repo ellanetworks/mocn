@@ -8,3 +8,6 @@ api:
 s1:
   address: 0.0.0.0
   port: 36412
+ng:
+  address: 0.0.0.0
+  port: 38412

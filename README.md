@@ -8,11 +8,11 @@
 
 ## Key Features
 
-- **One gateway for every operator**: radios connect once, to Ella MOCN, which appears to them as a single MME and to each operator as one eNB with the Global eNB ID that operator assigned.
-- **Several operators**: each with its PLMNs and its own pool of MMEs, from any vendor.
-- **MME selection**: each UE goes to the operator of the PLMN it selected, and to the MME that already knows it, or one weighted by capacity.
+- **One gateway for every operator**: radios connect once, to Ella MOCN, which appears to them as a single MME (4G) or AMF (5G), and to each operator as one eNB and one gNB with the IDs that operator assigned.
+- **Several operators**: each with its PLMNs and its own pools of MMEs and AMFs, from any vendor.
+- **MME and AMF selection**: each UE goes to the operator of the PLMN it selected, and to the MME or AMF that already knows it, or one weighted by capacity.
 - **Untouched signalling**: NAS and security keys pass through byte for byte, never decoded, logged or stored.
-- **Visibility**: the state of every radio and MME, and UE connections by radio and operator.
+- **Visibility**: the state of every radio, MME and AMF, and UE connections by radio and operator.
 - **Easy to operate**: a single binary with an embedded database, a web UI, an HTTP API, and Prometheus metrics. Install with Docker or from source.
 
 ## Quick Links
