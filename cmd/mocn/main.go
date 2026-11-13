@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/config"
 	"github.com/ellanetworks/mocn/internal/logging"
 	"github.com/ellanetworks/mocn/internal/server"
@@ -46,5 +47,15 @@ func start(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("listen api: %w", err)
 	}
 
-	return server.Run(ctx, server.Config{Listener: ln, DBPath: cfg.DB.Path, Frontend: ui.FS(), Logger: logger})
+	var s1lc sctp.ListenConfig
+
+	s1ln, err := s1lc.Listen(ctx, &sctp.SCTPAddr{IPAddrs: []net.IPAddr{{IP: cfg.S1.Address.AsSlice()}}, Port: cfg.S1.Port})
+	if err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("listen s1: %w", err)
+	}
+
+	return server.Run(ctx, server.Config{
+		Listener: ln, S1Listener: s1ln, DBPath: cfg.DB.Path, Frontend: ui.FS(), Logger: logger,
+	})
 }

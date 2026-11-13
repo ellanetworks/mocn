@@ -17,6 +17,7 @@ type Config struct {
 	Requests     *RequestMetrics
 	Auth         AuthStore
 	Operators    OperatorStore
+	S1           S1View
 	JWTSecret    func() []byte
 	SecureCookie bool
 	BcryptCost   int
@@ -92,6 +93,9 @@ func routes(cfg Config, a *auth) []route {
 		{"GET /api/v1/operators/{name}", PermReadOperators, GetOperator(cfg)},
 		{"PUT /api/v1/operators/{name}", PermUpdateOperators, UpdateOperator(a)},
 		{"DELETE /api/v1/operators/{name}", PermUpdateOperators, DeleteOperator(a)},
+
+		{"GET /api/v1/radios", PermReadOperators, ListRadios(cfg)},
+		{"GET /api/v1/radios/{ref}", PermReadOperators, GetRadio(cfg)},
 
 		{"GET /api/v1/users", PermManageUsers, a.needsLogin(ListUsers(a))},
 		{"POST /api/v1/users", PermManageUsers, a.needsLogin(CreateUser(a))},

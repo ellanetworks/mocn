@@ -8,6 +8,8 @@ import Login from "@/pages/Login";
 import OperatorDetail from "@/pages/OperatorDetail";
 import Operators from "@/pages/Operators";
 import Profile from "@/pages/Profile";
+import RadioDetail from "@/pages/RadioDetail";
+import Radios from "@/pages/Radios";
 import UserDetail from "@/pages/UserDetail";
 import Users from "@/pages/Users";
 
@@ -42,6 +44,16 @@ const pages: { path: string; element: ReactElement; permission: Permission }[] =
       path: "/operators/:name",
       element: <OperatorDetail />,
       permission: "operator:read",
+    },
+    {
+      path: "/radios",
+      element: <Radios />,
+      permission: "radio:read",
+    },
+    {
+      path: "/radios/:ref",
+      element: <RadioDetail />,
+      permission: "radio:read",
     },
     { path: "/users", element: <Users />, permission: "user:admin" },
     {

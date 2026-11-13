@@ -2,6 +2,10 @@ import { apiFetch } from "@/queries/utils";
 
 export type ENBIDType = "macro" | "short_macro" | "long_macro";
 
+export type AnyENBIDType = ENBIDType | "home";
+
+export type MMEState = "disconnected" | "connected" | "up" | "setup_failed";
+
 export interface PLMN {
   mcc: string;
   mnc: string;
@@ -23,13 +27,32 @@ export interface CoreNode {
   tnl_addresses: string[];
 }
 
+export interface ServedGUMMEI {
+  served_plmns: PLMN[];
+  served_group_ids: number[];
+  served_mmecs: number[];
+}
+
+export interface MMEStatus {
+  state: MMEState;
+  since: string;
+  primary_tnl_address?: string;
+  mme_name?: string;
+  served_gummeis?: ServedGUMMEI[];
+  relative_mme_capacity?: number;
+}
+
+export interface MME extends CoreNode {
+  status?: MMEStatus;
+}
+
 export interface Operator {
   name: string;
   pws_operator: boolean;
   plmns: PLMN[];
   global_enb_id?: GlobalENBID | null;
   global_gnb_id?: GlobalGNBID | null;
-  mmes?: CoreNode[] | null;
+  mmes?: MME[] | null;
   amfs?: CoreNode[] | null;
 }
 

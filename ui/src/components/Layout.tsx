@@ -33,6 +33,7 @@ import {
   Menu as MenuIcon,
   OpenInNew as OpenInNewIcon,
   Person as PersonIcon,
+  SettingsInputAntenna as SettingsInputAntennaIcon,
 } from "@mui/icons-material";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import DeploymentIdentity from "@/components/DeploymentIdentity";
@@ -97,6 +98,17 @@ const navSections: { title?: string; items: NavItem[] }[] = [
         icon: <HubIcon color="primary" />,
         permission: "operator:read",
       },
+      {
+        to: "/radios",
+        label: "Radios",
+        icon: <SettingsInputAntennaIcon color="primary" />,
+        permission: "radio:read",
+      },
+    ],
+  },
+  {
+    title: "System",
+    items: [
       {
         to: "/users",
         label: "Users",

@@ -190,7 +190,7 @@ func TestUsersOverHTTP(t *testing.T) {
 		Name:        "Operator A",
 		PLMNs:       []api.PLMN{{MCC: "001", MNC: "01"}},
 		GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: "macro", ID: 703710},
-		MMEs:        []api.CoreNode{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
+		MMEs:        []api.MME{{TNLAddresses: []string{"192.0.2.1", "192.0.2.2"}}, {TNLAddresses: []string{"192.0.2.3"}}},
 		AMFs:        []api.CoreNode{},
 	}
 
@@ -199,9 +199,28 @@ func TestUsersOverHTTP(t *testing.T) {
 	}
 
 	code, result = r.call(t, client, http.MethodGet, "/api/v1/operators", token, nil)
-	if ops := decode[api.ListOperatorsResponse](t, result).Items; code != http.StatusOK || len(ops) != 1 ||
-		!reflect.DeepEqual(ops[0], operator) {
+
+	ops := decode[api.ListOperatorsResponse](t, result).Items
+	if code != http.StatusOK || len(ops) != 1 {
 		t.Fatalf("list operators = %d %s", code, result)
+	}
+
+	for i, m := range ops[0].MMEs {
+		if m.Status == nil || m.Status.State == "" {
+			t.Fatalf("MME %d status = %+v, want a runtime status", i, m.Status)
+		}
+
+		ops[0].MMEs[i].Status = nil
+	}
+
+	if !reflect.DeepEqual(ops[0], operator) {
+		t.Fatalf("list operators = %+v, want %+v", ops[0], operator)
+	}
+
+	code, result = r.call(t, client, http.MethodGet, "/api/v1/radios", token, nil)
+	if nodes := decode[api.ListRadiosResponse](t, result); code != http.StatusOK || nodes.Items == nil ||
+		len(nodes.Items) != 0 {
+		t.Fatalf("list radios = %d %s", code, result)
 	}
 
 	if code, result := r.call(t, client, http.MethodDelete, "/api/v1/operators/Operator%20A", token, nil); code != http.StatusOK {

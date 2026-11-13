@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/s1"
 )
 
 const (
@@ -50,12 +52,37 @@ type Operator struct {
 	PLMNs       []PLMN       `json:"plmns"`
 	GlobalENBID *GlobalENBID `json:"global_enb_id"`
 	GlobalGNBID *GlobalGNBID `json:"global_gnb_id"`
-	MMEs        []CoreNode   `json:"mmes"`
+	MMEs        []MME        `json:"mmes"`
 	AMFs        []CoreNode   `json:"amfs"`
 }
 
 type CoreNode struct {
 	TNLAddresses []string `json:"tnl_addresses"`
+}
+
+type MME struct {
+	TNLAddresses []string   `json:"tnl_addresses"`
+	Status       *MMEStatus `json:"status,omitempty"`
+}
+
+type ServedGUMMEIs struct {
+	ServedPLMNs    []PLMN   `json:"served_plmns"`
+	ServedGroupIDs []uint16 `json:"served_group_ids"`
+	ServedMMECs    []int    `json:"served_mmecs"`
+}
+
+type MMEStatus struct {
+	State               s1.MMEState     `json:"state"`
+	Since               time.Time       `json:"since"`
+	PrimaryTNLAddress   string          `json:"primary_tnl_address,omitempty"`
+	MMEName             string          `json:"mme_name,omitempty"`
+	ServedGUMMEIs       []ServedGUMMEIs `json:"served_gummeis,omitempty"`
+	RelativeMMECapacity *uint8          `json:"relative_mme_capacity,omitempty"`
+}
+
+type S1View interface {
+	MMEStatus(operatorID int64, tnlAddresses []string) (s1.MMEStatus, bool)
+	RANNodes() []s1.RANNode
 }
 
 type ListOperatorsResponse struct {
@@ -78,7 +105,7 @@ func ListOperators(cfg Config) http.Handler {
 
 		resp := ListOperatorsResponse{Items: make([]Operator, 0, len(ops))}
 		for _, o := range ops {
-			resp.Items = append(resp.Items, operatorResponse(o))
+			resp.Items = append(resp.Items, withStatus(cfg, o, operatorResponse(o)))
 		}
 
 		writeResponse(r.Context(), w, resp, http.StatusOK, cfg.Logger)
@@ -88,7 +115,7 @@ func ListOperators(cfg Config) http.Handler {
 func GetOperator(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if o, ok := lookupOperator(w, r, cfg); ok {
-			writeResponse(r.Context(), w, operatorResponse(o), http.StatusOK, cfg.Logger)
+			writeResponse(r.Context(), w, withStatus(cfg, o, operatorResponse(o)), http.StatusOK, cfg.Logger)
 		}
 	})
 }
@@ -286,7 +313,12 @@ func operatorOf(params Operator) (db.Operator, error) {
 
 	var err error
 
-	if o.MMEs, err = coreNodesOf(params.MMEs, "mmes", "MME"); err != nil {
+	mmes := make([]CoreNode, 0, len(params.MMEs))
+	for _, m := range params.MMEs {
+		mmes = append(mmes, CoreNode{TNLAddresses: m.TNLAddresses})
+	}
+
+	if o.MMEs, err = coreNodesOf(mmes, "mmes", "MME"); err != nil {
 		return db.Operator{}, err
 	}
 
@@ -409,7 +441,11 @@ func coreNodesResponse(in []db.CoreNode) []CoreNode {
 func operatorResponse(o db.Operator) Operator {
 	resp := Operator{
 		Name: o.Name, PWSOperator: o.PWSOperator, PLMNs: make([]PLMN, 0, len(o.PLMNs)),
-		MMEs: coreNodesResponse(o.MMEs), AMFs: coreNodesResponse(o.AMFs),
+		MMEs: make([]MME, 0, len(o.MMEs)), AMFs: coreNodesResponse(o.AMFs),
+	}
+
+	for _, m := range o.MMEs {
+		resp.MMEs = append(resp.MMEs, MME{TNLAddresses: append([]string{}, m.TNLAddresses...)})
 	}
 
 	for _, p := range o.PLMNs {
@@ -425,4 +461,53 @@ func operatorResponse(o db.Operator) Operator {
 	}
 
 	return resp
+}
+
+func withStatus(cfg Config, o db.Operator, resp Operator) Operator {
+	if cfg.S1 == nil {
+		return resp
+	}
+
+	for i, m := range o.MMEs {
+		if st, ok := cfg.S1.MMEStatus(o.ID, m.TNLAddresses); ok {
+			resp.MMEs[i].Status = mmeStatusResponse(st)
+		}
+	}
+
+	return resp
+}
+
+func plmnsResponse(in []db.PLMN) []PLMN {
+	out := make([]PLMN, 0, len(in))
+	for _, p := range in {
+		out = append(out, PLMN(p))
+	}
+
+	return out
+}
+
+func mmeStatusResponse(st s1.MMEStatus) *MMEStatus {
+	resp := &MMEStatus{
+		State: st.State, Since: st.Since.UTC(), PrimaryTNLAddress: st.PrimaryTNLAddress, MMEName: st.MMEName,
+		RelativeMMECapacity: st.RelativeMMECapacity,
+	}
+
+	for _, g := range st.ServedGUMMEIs {
+		resp.ServedGUMMEIs = append(resp.ServedGUMMEIs, ServedGUMMEIs{
+			ServedPLMNs:    plmnsResponse(g.PLMNs),
+			ServedGroupIDs: append([]uint16{}, g.GroupIDs...),
+			ServedMMECs:    mmecs(g.MMECodes),
+		})
+	}
+
+	return resp
+}
+
+func mmecs(codes []uint8) []int {
+	out := make([]int, len(codes))
+	for i, c := range codes {
+		out[i] = int(c)
+	}
+
+	return out
 }

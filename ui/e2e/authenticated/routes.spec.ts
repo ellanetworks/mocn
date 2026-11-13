@@ -63,6 +63,7 @@ const ROUTES: RouteCase[] = [
     ready: "Overview",
     prepare: createOperator,
   },
+  { label: "Radios", route: "/radios", heading: /^Radios/ },
   { label: "Users", route: "/users", heading: /^Users/ },
   {
     label: "User",

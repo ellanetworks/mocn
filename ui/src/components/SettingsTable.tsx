@@ -18,26 +18,6 @@ export interface SettingRow {
   onEdit?: () => void;
 }
 
-export function SubFields({ rows }: { rows: [string, ReactNode][] }) {
-  return (
-    <Table size="small" sx={{ m: -1 }}>
-      <TableBody>
-        {rows.map(([label, value]) => (
-          <TableRow
-            key={label}
-            sx={{ "& td": { borderBottom: "none", py: 0.5 } }}
-          >
-            <TableCell sx={{ fontWeight: 600, width: "40%", pl: 0 }}>
-              {label}
-            </TableCell>
-            <TableCell sx={{ pl: 0 }}>{value}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
 export default function SettingsTable({
   rows,
   label,
@@ -56,7 +36,9 @@ export default function SettingsTable({
                   <span>{row.label}</span>
                 </Tooltip>
               </TableCell>
-              <TableCell sx={{ width: "55%", overflowWrap: "anywhere" }}>
+              <TableCell
+                sx={{ width: "55%", maxWidth: 0, overflowWrap: "anywhere" }}
+              >
                 {row.value}
               </TableCell>
               <TableCell sx={{ width: "10%", textAlign: "right" }}>

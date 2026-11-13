@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/api"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/s1"
 	"github.com/ellanetworks/mocn/version"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -26,6 +28,7 @@ const (
 
 type Config struct {
 	Listener   net.Listener
+	S1Listener *sctp.Listener
 	DBPath     string
 	Frontend   fs.FS
 	BcryptCost int
@@ -53,14 +56,33 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	requests := api.NewRequestMetrics()
 
+	gateway := s1.New(s1.Config{Listener: cfg.S1Listener, Operators: database.ListOperators, Logger: cfg.Logger})
+
+	gatewayCtx, stopGateway := context.WithCancel(ctx)
+	defer stopGateway()
+
+	gatewayDone := make(chan struct{})
+
+	go func() {
+		defer close(gatewayDone)
+
+		_ = gateway.Run(gatewayCtx)
+	}()
+
+	defer func() {
+		stopGateway()
+		<-gatewayDone
+	}()
+
 	srv := &http.Server{
 		Handler: api.NewHandler(api.Config{
 			Frontend:   cfg.Frontend,
 			Ready:      readiness(database),
-			Metrics:    newRegistry(database, requests),
+			Metrics:    newRegistry(database, requests, gateway),
 			Requests:   requests,
 			Auth:       database,
-			Operators:  database,
+			Operators:  reconciling{DB: database, gateway: gateway, logger: cfg.Logger},
+			S1:         gateway,
 			JWTSecret:  func() []byte { return secret },
 			BcryptCost: cfg.BcryptCost,
 			Now:        time.Now,
@@ -77,8 +99,13 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	v := version.Get()
 
+	s1Address := ""
+	if cfg.S1Listener != nil {
+		s1Address = cfg.S1Listener.Addr().String()
+	}
+
 	cfg.Logger.InfoContext(ctx, "mocn started", "version", v.Version, "revision", v.Revision,
-		"api", cfg.Listener.Addr().String(), "db", cfg.DBPath)
+		"api", cfg.Listener.Addr().String(), "s1", s1Address, "db", cfg.DBPath)
 
 	var failed error
 
@@ -116,7 +143,7 @@ func readiness(database *db.DB) func(ctx context.Context) []api.Check {
 	}
 }
 
-func newRegistry(database *db.DB, requests *api.RequestMetrics) *prometheus.Registry {
+func newRegistry(database *db.DB, requests *api.RequestMetrics, gateway *s1.Gateway) *prometheus.Registry {
 	v := version.Get()
 
 	build := prometheus.Labels{"version": v.Version}
@@ -132,6 +159,46 @@ func newRegistry(database *db.DB, requests *api.RequestMetrics) *prometheus.Regi
 	)
 	registry.MustRegister(database.Collectors()...)
 	registry.MustRegister(requests.Collectors()...)
+	registry.MustRegister(gateway.Collectors()...)
 
 	return registry
+}
+
+type reconciling struct {
+	*db.DB
+	gateway *s1.Gateway
+	logger  *slog.Logger
+}
+
+func (r reconciling) reconcile(ctx context.Context) {
+	if err := r.gateway.Reconcile(context.WithoutCancel(ctx)); err != nil {
+		r.logger.ErrorContext(ctx, "failed to apply operator changes to S1", slog.Any("error", err))
+	}
+}
+
+func (r reconciling) CreateOperator(ctx context.Context, o db.Operator) (int64, error) {
+	id, err := r.DB.CreateOperator(ctx, o)
+	if err == nil {
+		r.reconcile(ctx)
+	}
+
+	return id, err
+}
+
+func (r reconciling) UpdateOperator(ctx context.Context, o db.Operator) error {
+	err := r.DB.UpdateOperator(ctx, o)
+	if err == nil {
+		r.reconcile(ctx)
+	}
+
+	return err
+}
+
+func (r reconciling) DeleteOperator(ctx context.Context, id int64) error {
+	err := r.DB.DeleteOperator(ctx, id)
+	if err == nil {
+		r.reconcile(ctx)
+	}
+
+	return err
 }

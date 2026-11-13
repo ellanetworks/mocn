@@ -1,0 +1,37 @@
+name: E2E S1
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-s1:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: "go.mod"
+
+      - name: Load the SCTP kernel module
+        run: |
+          sudo modprobe sctp || { sudo apt-get update && sudo apt-get install -y "linux-modules-extra-$(uname -r)" && sudo modprobe sctp; }
+
+      - name: Run the S1 lab
+        env:
+          E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
+        run: |
+          e2e/run.sh
+
+      - name: Upload the lab logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-s1-logs
+          path: e2e-artifacts/
+          retention-days: 7

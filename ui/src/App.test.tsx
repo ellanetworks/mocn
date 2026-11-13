@@ -34,6 +34,7 @@ const serve = (role: RoleID | null = RoleID.Admin) => {
         "/api/v1/users/me/api-tokens": () => json(200, { result: page([]) }),
         "/api/v1/metrics": () => new Response("", { status: 200 }),
         "/api/v1/operators": () => json(200, { result: { items: [] } }),
+        "/api/v1/radios": () => json(200, { result: { items: [] } }),
       }),
     ),
   );
@@ -66,8 +67,17 @@ describe("App", () => {
     ).toEqual([
       ["Dashboard", "/dashboard"],
       ["Operators", "/operators"],
+      ["Radios", "/radios"],
       ["Users", "/users"],
     ]);
+    const nav = within(screen.getByRole("navigation", { name: "Main" }));
+    const system = nav.getByText("System");
+    expect(
+      system.compareDocumentPosition(nav.getByRole("link", { name: "Radios" })),
+    ).toBe(Node.DOCUMENT_POSITION_PRECEDING);
+    expect(
+      system.compareDocumentPosition(nav.getByRole("link", { name: "Users" })),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.getByRole("contentinfo")).toBeInTheDocument();
 
@@ -117,7 +127,12 @@ describe("App", () => {
       within(screen.getByRole("navigation", { name: "Main" }))
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Dashboard", "Operators"]);
+    ).toEqual(["Dashboard", "Operators", "Radios"]);
+    expect(
+      within(screen.getByRole("navigation", { name: "Main" })).queryByText(
+        "System",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a Read Only user the Operators", async () => {
@@ -132,6 +147,22 @@ describe("App", () => {
       "page",
     );
   });
+
+  it.each([RoleID.Admin, RoleID.NetworkManager, RoleID.ReadOnly])(
+    "shows role %i the Radios",
+    async (role) => {
+      serve(role);
+      renderAt("/radios");
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "Radios (0)" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Radios" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    },
+  );
 
   it("opens the profile from the account menu", async () => {
     serve();
