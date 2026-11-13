@@ -57,6 +57,7 @@ type relay struct {
 	log       *slog.Logger
 	intN      func(int) int
 	initialUE *prometheus.CounterVec
+	paged     *prometheus.CounterVec
 
 	mu      sync.Mutex
 	ues     ueTable
@@ -83,6 +84,8 @@ func newRelay(g *Gateway, intN func(int) int) *relay {
 	for _, res := range initialUEResults {
 		r.initialUE.WithLabelValues(interfaceS1, res)
 	}
+
+	r.paged = newPagingCounter()
 
 	return r
 }
@@ -142,6 +145,15 @@ func (r *relay) FromMME(ctx context.Context, from *MMEAssociation, pdu s1ap.PDU,
 			return
 		case s1ap.ProcHandoverResourceAllocation:
 			terminate(ctx, sourceMME, log, pdu)
+			return
+		case s1ap.ProcPaging:
+			r.paging(ctx, from, log, m.Value, msg)
+			return
+		case s1ap.ProcOverloadStart:
+			r.g.overloadStart(ctx, from, log, m.Value)
+			return
+		case s1ap.ProcOverloadStop:
+			r.g.overloadStop(ctx, from, log, m.Value)
 			return
 		}
 	}

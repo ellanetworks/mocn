@@ -383,6 +383,8 @@ func (g *Gateway) acceptS1SetupLocked(ctx context.Context, n *RANAssociation, se
 
 	g.log.InfoContext(ctx, "radio S1 Setup accepted", slog.String("enb_name", n.setup.name),
 		slog.String("global_enb_id", formatGlobalENBID(n.setup.globalENBID)))
+
+	g.replayOverloadLocked(ctx, n)
 }
 
 func (g *Gateway) rejectS1Setup(ctx context.Context, n *RANAssociation, result string, cause s1ap.Cause,

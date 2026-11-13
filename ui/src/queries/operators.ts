@@ -37,6 +37,27 @@ export interface ServedGUMMEI {
   served_mmecs: number[];
 }
 
+export type OverloadAction =
+  | "reject_non_emergency_mo_dt"
+  | "reject_rrc_cr_signalling"
+  | "permit_emergency_sessions_and_mobile_terminated_services_only"
+  | "permit_high_priority_sessions_and_mobile_terminated_services_only"
+  | "reject_delay_tolerant_access"
+  | "permit_high_priority_sessions_and_exception_reporting_and_mobile_terminated_services_only"
+  | "not_accept_mo_data_or_delay_tolerant_access_from_cp_ciot";
+
+export interface GUMMEI {
+  plmn: PLMN;
+  mme_group_id: number;
+  mme_code: number;
+}
+
+export interface Overload {
+  gummei: GUMMEI;
+  overload_action: OverloadAction;
+  traffic_load_reduction_indication?: number;
+}
+
 export interface MMEStatus {
   state: MMEState;
   since: string;
@@ -44,6 +65,7 @@ export interface MMEStatus {
   mme_name?: string;
   served_gummeis?: ServedGUMMEI[];
   relative_mme_capacity?: number;
+  overload?: Overload[];
   ue_connections: number;
 }
 

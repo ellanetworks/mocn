@@ -129,6 +129,12 @@ func TestNonUEProceduresTerminatedLocally(t *testing.T) {
 	}})
 
 	enb.quiet(t, 200*time.Millisecond)
+
+	if ind := expect(t, mme, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication); ind.Cause == nil ||
+		ind.Cause.Group != s1ap.CauseGroupProtocol || ind.CriticalityDiagnostics == nil {
+		t.Fatalf("Error Indication = %+v, want a protocol cause with diagnostics", ind)
+	}
+
 	mme.quiet(t, 200*time.Millisecond)
 
 	enb.send(t, rawPDU{&s1ap.InitiatingMessage{

@@ -7,4 +7,4 @@ sgwu:
       - address: 127.0.0.6
   gtpu:
     server:
-      - address: 10.90.1.10
+      - address: ${GTPU_ADDR}

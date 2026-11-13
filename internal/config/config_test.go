@@ -61,6 +61,10 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("API.ListenAddress() = %q, want 0.0.0.0:5030", got)
 	}
 
+	if cfg.API.TLS != nil {
+		t.Errorf("API.TLS = %+v, want nil", cfg.API.TLS)
+	}
+
 	if want := (S1{Address: netip.IPv4Unspecified(), Port: 36412}); cfg.S1 != want {
 		t.Errorf("S1 = %+v, want %+v", cfg.S1, want)
 	}
@@ -81,6 +85,48 @@ func TestLoadErrors(t *testing.T) {
 		"s1 port":         {content: "db:\n  path: mocn.db\ns1:\n  port: 65536\n", want: "s1.port"},
 		"s1 address":      {content: "db:\n  path: mocn.db\ns1:\n  address: 36412\n", want: "parse config"},
 		"s1 zone":         {content: "db:\n  path: mocn.db\ns1:\n  address: fe80::1%eth0\n", want: "s1.address"},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tc.content))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadAPITLS(t *testing.T) {
+	dir := t.TempDir()
+	cert, key := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
+
+	for _, f := range []string{cert, key} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg, err := Load(writeConfig(t, "db:\n  path: mocn.db\napi:\n  tls:\n    cert: "+cert+"\n    key: "+key+"\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if want := (&TLS{Cert: cert, Key: key}); cfg.API.TLS == nil || *cfg.API.TLS != *want {
+		t.Errorf("API.TLS = %+v, want %+v", cfg.API.TLS, want)
+	}
+
+	if _, err := cfg.API.TLS.Load(); err == nil || !strings.Contains(err.Error(), "load the API certificate") {
+		t.Errorf("TLS.Load error = %v, want a certificate error", err)
+	}
+
+	tests := map[string]struct {
+		content string
+		want    string
+	}{
+		"missing key":  {content: "db:\n  path: mocn.db\napi:\n  tls:\n    cert: " + cert + "\n", want: "api.tls.cert and api.tls.key must both be set"},
+		"missing cert": {content: "db:\n  path: mocn.db\napi:\n  tls:\n    key: " + key + "\n", want: "api.tls.cert and api.tls.key must both be set"},
+		"absent file":  {content: "db:\n  path: mocn.db\napi:\n  tls:\n    cert: " + cert + "\n    key: " + filepath.Join(dir, "none.pem") + "\n", want: "api.tls.key"},
 	}
 
 	for name, tc := range tests {

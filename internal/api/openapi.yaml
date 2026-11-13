@@ -82,6 +82,8 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /api/v1/auth/refresh:
     post:
@@ -136,8 +138,9 @@ paths:
       operationId: updateMyPassword
       summary: Change my password
       description: >-
-        Ends the other sessions of the user. A wrong current password counts as a failed login of the account. A user
-        without a password gets a conflict.
+        Ends the sessions of the user, except the one of the session cookie the request carries: without that cookie,
+        it ends all of them. A wrong current password counts as a failed login of the account. A user without a
+        password gets a conflict.
       requestBody:
         required: true
         content:
@@ -159,6 +162,8 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   /api/v1/users/me/api-tokens:
     get:
@@ -552,7 +557,7 @@ paths:
       tags: [Users]
       operationId: updateUserPassword
       summary: Set the password of a user
-      description: Ends the sessions of the user.
+      description: Ends the sessions of the user. An admin cannot set its own password here (403).
       parameters:
         - $ref: "#/components/parameters/Email"
       requestBody:
@@ -726,9 +731,12 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [result]
                 properties:
                   result:
                     $ref: "#/components/schemas/Status"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   /api/v1/metrics:
     get:
@@ -738,7 +746,25 @@ paths:
       summary: Get the metrics of the MOCN in the Prometheus formats
       responses:
         "200":
-          description: The metrics, in the format the request's Accept header negotiates
+          description: >-
+            The metrics, in the format the request's Accept header negotiates: the Prometheus protobuf format, with
+            encoding delimited, text or compact-text, or else the Prometheus text format 0.0.4. The body is compressed
+            with gzip when Accept-Encoding asks for it.
+          content:
+            text/plain:
+              schema:
+                type: string
+            application/vnd.google.protobuf:
+              schema:
+                type: string
+        "500":
+          description: No metric could be gathered.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "503":
+          description: 32 requests already in flight, or gathering took more than 8 seconds.
           content:
             text/plain:
               schema:
@@ -929,13 +955,15 @@ components:
           $ref: "#/components/schemas/RoleID"
         role_pinned:
           type: boolean
-          description: The role was set by an admin and is not updated from identity provider groups.
+          description: >-
+            The role was set by an admin and will not be updated from identity provider groups. Stored, but without
+            effect until single sign-on is supported.
         password_set:
           type: boolean
           description: The user can sign in with a password.
         oidc_linked:
           type: boolean
-          description: The user is linked to an account at the current identity provider.
+          description: Always false until single sign-on is supported.
 
     ListUsersResponse:
       type: object
@@ -961,8 +989,12 @@ components:
           type: string
           format: email
         password:
-          $ref: "#/components/schemas/Password"
-          description: Empty or missing for a user without a password.
+          type: string
+          maxLength: 72
+          anyOf:
+            - const: ""
+            - minLength: 8
+          description: 8 to 72 bytes. Empty or missing for a user without a password.
         role_id:
           $ref: "#/components/schemas/RoleID"
         role_pinned:
@@ -1235,10 +1267,57 @@ components:
           type: integer
           minimum: 0
           maximum: 255
+        overload:
+          type: array
+          description: >-
+            The GUMMEIs of the MME with an ongoing overload action, from OVERLOAD START and OVERLOAD STOP. Absent when
+            none. Cleared when the S1 association is lost.
+          items:
+            $ref: "#/components/schemas/Overload"
         ue_connections:
           type: integer
           minimum: 0
           description: The number of UE-associated logical S1-connections relayed to the MME.
+
+    Overload:
+      type: object
+      required: [gummei, overload_action]
+      properties:
+        gummei:
+          $ref: "#/components/schemas/GUMMEI"
+        overload_action:
+          type: string
+          enum:
+            - reject_non_emergency_mo_dt
+            - reject_rrc_cr_signalling
+            - permit_emergency_sessions_and_mobile_terminated_services_only
+            - permit_high_priority_sessions_and_mobile_terminated_services_only
+            - reject_delay_tolerant_access
+            - permit_high_priority_sessions_and_exception_reporting_and_mobile_terminated_services_only
+            - not_accept_mo_data_or_delay_tolerant_access_from_cp_ciot
+          description: Overload Action from the last OVERLOAD START that applies to the GUMMEI (TS 36.413 clause 9.2.3.20).
+        traffic_load_reduction_indication:
+          type: integer
+          minimum: 1
+          maximum: 99
+          description: >-
+            Traffic Load Reduction Indication from the same OVERLOAD START: the percentage of the traffic to reject
+            (TS 36.413 clause 9.2.3.36). Absent when the MME did not include it.
+
+    GUMMEI:
+      type: object
+      required: [plmn, mme_group_id, mme_code]
+      properties:
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        mme_group_id:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        mme_code:
+          type: integer
+          minimum: 0
+          maximum: 255
 
     ServedGUMMEIs:
       type: object
@@ -1584,6 +1663,12 @@ components:
             $ref: "#/components/schemas/Error"
     Conflict:
       description: Conflicts with other settings
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServiceUnavailable:
+      description: The request was cancelled while waiting to check the password.
       content:
         application/json:
           schema:

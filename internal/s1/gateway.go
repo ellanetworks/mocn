@@ -48,12 +48,13 @@ type Config struct {
 }
 
 type Gateway struct {
-	cfg     Config
-	log     *slog.Logger
-	setups  *prometheus.CounterVec
-	relay   *relay
-	runCtx  context.Context
-	clients sync.WaitGroup
+	cfg       Config
+	log       *slog.Logger
+	setups    *prometheus.CounterVec
+	overloads *prometheus.CounterVec
+	relay     *relay
+	runCtx    context.Context
+	clients   sync.WaitGroup
 
 	reconcileMu sync.Mutex
 
@@ -94,13 +95,14 @@ func New(cfg Config) *Gateway {
 	}
 
 	g := &Gateway{
-		cfg:      cfg,
-		log:      cfg.Logger,
-		mmes:     map[string]*mmeClient{},
-		stopping: map[*mmeClient]struct{}{},
-		ranNodes: map[*sctp.SCTPConn]*RANAssociation{},
-		changed:  make(chan struct{}),
-		setups:   newSetupCounter(),
+		cfg:       cfg,
+		log:       cfg.Logger,
+		mmes:      map[string]*mmeClient{},
+		stopping:  map[*mmeClient]struct{}{},
+		ranNodes:  map[*sctp.SCTPConn]*RANAssociation{},
+		changed:   make(chan struct{}),
+		setups:    newSetupCounter(),
+		overloads: newOverloadCounter(),
 	}
 
 	g.relay = newRelay(g, cfg.IntN)

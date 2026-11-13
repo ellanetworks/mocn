@@ -1,5 +1,7 @@
 package s1
 
+import "github.com/prometheus/client_golang/prometheus"
+
 func (g *Gateway) HoldMMEAssociation(addrs ...string) (release func()) {
 	c := &mmeClient{addrs: addrs, done: make(chan struct{})}
 
@@ -19,4 +21,10 @@ func (g *Gateway) FailMMESends(err error) {
 	g.relay.mu.Lock()
 	g.relay.sendMME = func(*MMEAssociation, []byte, uint16) error { return err }
 	g.relay.mu.Unlock()
+}
+
+var MMEGUMMEIs = mmeGUMMEIs
+
+func (g *Gateway) OverloadCounter() *prometheus.CounterVec {
+	return g.overloads
 }

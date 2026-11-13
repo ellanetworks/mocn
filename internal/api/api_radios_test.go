@@ -47,12 +47,16 @@ func newS1TestAPI(t *testing.T, view api.S1View) *testAPI {
 
 func TestOperatorMMEStatus(t *testing.T) {
 	since := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
-	capacity := uint8(10)
+	capacity, reduction := uint8(10), uint8(40)
 	a := newS1TestAPI(t, fakeS1{mmes: map[string]s1.MMEStatus{
 		"10.0.0.1,10.0.0.2": {
 			State: s1.MMEUp, Since: since, PrimaryTNLAddress: "10.0.0.2", MMEName: "mme1",
 			ServedGUMMEIs:       []s1.ServedGUMMEIs{{PLMNs: []db.PLMN{{MCC: "001", MNC: "01"}}, GroupIDs: []uint16{0x8001}, MMECodes: []uint8{1}}},
 			RelativeMMECapacity: &capacity,
+			Overload: []s1.Overload{{
+				GUMMEI: s1.GUMMEI{PLMN: db.PLMN{MCC: "001", MNC: "01"}, MMEGroupID: 0x8001, MMECode: 1},
+				Action: s1.OverloadRejectRRCCRSignalling, TrafficLoadReductionIndication: &reduction,
+			}},
 		},
 		"10.0.0.3": {State: s1.MMESetupFailed, Since: since},
 	}, ues: []s1.UE{
@@ -71,6 +75,10 @@ func TestOperatorMMEStatus(t *testing.T) {
 			State: s1.MMEUp, Since: since, PrimaryTNLAddress: "10.0.0.2", MMEName: "mme1",
 			ServedGUMMEIs:       []api.ServedGUMMEIs{{ServedPLMNs: []api.PLMN{{MCC: "001", MNC: "01"}}, ServedGroupIDs: []uint16{0x8001}, ServedMMECs: []int{1}}},
 			RelativeMMECapacity: &capacity, UEConnections: 2,
+			Overload: []api.Overload{{
+				GUMMEI:         api.GUMMEI{PLMN: api.PLMN{MCC: "001", MNC: "01"}, MMEGroupID: 0x8001, MMECode: 1},
+				OverloadAction: s1.OverloadRejectRRCCRSignalling, TrafficLoadReductionIndication: &reduction,
+			}},
 		}},
 		{TNLAddresses: []string{"10.0.0.3"}, Status: &api.MMEStatus{
 			State: s1.MMESetupFailed, Since: since,
@@ -85,6 +93,11 @@ func TestOperatorMMEStatus(t *testing.T) {
 
 	if !strings.Contains(string(result), `"state":"setup_failed","since":"2026-11-12T10:00:00Z","ue_connections":0`) {
 		t.Fatalf("GET = %s, want ue_connections 0 on the MME without UE connections", result)
+	}
+
+	if !strings.Contains(string(result), `"overload":[{"gummei":{"plmn":{"mcc":"001","mnc":"01"},"mme_group_id":32769,"mme_code":1},`+
+		`"overload_action":"reject_rrc_cr_signalling","traffic_load_reduction_indication":40}]`) {
+		t.Fatalf("GET = %s, want the overload state", result)
 	}
 
 	if !strings.Contains(string(result), `"served_mmecs":[1]`) {

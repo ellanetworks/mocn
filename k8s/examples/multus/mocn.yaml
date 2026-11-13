@@ -1,0 +1,10 @@
+logging:
+  level: info
+db:
+  path: /data/mocn.db
+api:
+  address: 0.0.0.0
+  port: 5030
+s1:
+  address: 192.168.252.7
+  port: 36412

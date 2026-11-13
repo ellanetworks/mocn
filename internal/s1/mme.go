@@ -87,6 +87,7 @@ func (c *mmeClient) kick() {
 func (c *mmeClient) snapshotLocked() MMEStatus {
 	s := c.status
 	s.ServedGUMMEIs = slices.Clone(s.ServedGUMMEIs)
+	s.Overload = slices.Clone(s.Overload)
 
 	if c.assoc != nil {
 		if addr, err := c.assoc.conn.PrimaryPeerAddr(); err == nil {
@@ -151,6 +152,8 @@ func (c *mmeClient) run(ctx context.Context) {
 		c.g.mu.Lock()
 
 		wasUp := c.status.State == MMEUp
+		cleared := c.status.Overload
+		radios := c.g.operatorRadiosLocked(c.operatorID)
 		c.assoc = nil
 		c.status = MMEStatus{State: MMEDisconnected, Since: c.g.cfg.Now()}
 
@@ -160,6 +163,7 @@ func (c *mmeClient) run(ctx context.Context) {
 
 		c.g.mu.Unlock()
 
+		c.g.overloadCleared(context.WithoutCancel(ctx), radios, log, cleared)
 		c.g.cfg.Relay.MMELost(assoc)
 
 		if ctx.Err() != nil {

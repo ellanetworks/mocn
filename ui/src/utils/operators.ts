@@ -5,6 +5,8 @@ import type {
   GlobalENBID,
   GlobalGNBID,
   Operator,
+  Overload,
+  OverloadAction,
   PLMN,
   ServedGUMMEI,
 } from "@/queries/operators";
@@ -94,6 +96,37 @@ export const formatGUMMEI = ({
     `MME groups ${served_group_ids.join(", ")}`,
     `MME codes ${served_mmecs.join(", ")}`,
   ].join(" · ");
+
+export const OVERLOAD_ACTION_LABELS: Record<OverloadAction, string> = {
+  reject_non_emergency_mo_dt: "Reject non-emergency MO data",
+  reject_rrc_cr_signalling: "Reject signalling",
+  permit_emergency_sessions_and_mobile_terminated_services_only:
+    "Emergency and MT only",
+  permit_high_priority_sessions_and_mobile_terminated_services_only:
+    "High priority and MT only",
+  reject_delay_tolerant_access: "Reject delay tolerant",
+  permit_high_priority_sessions_and_exception_reporting_and_mobile_terminated_services_only:
+    "High priority, exception reporting and MT only",
+  not_accept_mo_data_or_delay_tolerant_access_from_cp_ciot:
+    "Reject CP CIoT MO data",
+};
+
+const formatOverloadAction = (o: Overload) =>
+  (OVERLOAD_ACTION_LABELS[o.overload_action] ?? o.overload_action) +
+  (o.traffic_load_reduction_indication === undefined
+    ? ""
+    : ` (${o.traffic_load_reduction_indication}%)`);
+
+export const formatOverload = (overload: Overload[]) =>
+  [...new Set(overload.map(formatOverloadAction))].join("; ");
+
+export const formatOverloadDetail = (overload: Overload[]) =>
+  overload
+    .map(
+      (o) =>
+        `GUMMEI ${formatPLMN(o.gummei.plmn)} · MME group ${o.gummei.mme_group_id} · MME code ${o.gummei.mme_code}: ${formatOverloadAction(o)}`,
+    )
+    .join("; ");
 
 export const formatGlobalGNBID = ({
   plmn,

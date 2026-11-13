@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -28,6 +29,7 @@ const (
 
 type Config struct {
 	Listener   net.Listener
+	TLS        *tls.Config
 	S1Listener *sctp.Listener
 	DBPath     string
 	Frontend   fs.FS
@@ -76,24 +78,31 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	srv := &http.Server{
 		Handler: api.NewHandler(api.Config{
-			Frontend:   cfg.Frontend,
-			Ready:      readiness(database),
-			Metrics:    newRegistry(database, requests, gateway),
-			Requests:   requests,
-			Auth:       database,
-			Operators:  reconciling{DB: database, gateway: gateway, logger: cfg.Logger},
-			S1:         gateway,
-			JWTSecret:  func() []byte { return secret },
-			BcryptCost: cfg.BcryptCost,
-			Now:        time.Now,
-			Logger:     cfg.Logger,
+			Frontend:     cfg.Frontend,
+			Ready:        readiness(database),
+			Metrics:      newRegistry(database, requests, gateway),
+			Requests:     requests,
+			Auth:         database,
+			Operators:    reconciling{DB: database, gateway: gateway, logger: cfg.Logger},
+			S1:           gateway,
+			SecureCookie: cfg.TLS != nil,
+			JWTSecret:    func() []byte { return secret },
+			BcryptCost:   cfg.BcryptCost,
+			Now:          time.Now,
+			Logger:       cfg.Logger,
 		}),
 		ReadHeaderTimeout: readHeaderTimeout,
+		TLSConfig:         cfg.TLS,
 	}
 
 	served := make(chan error, 1)
 
 	go func() {
+		if cfg.TLS != nil {
+			served <- srv.ServeTLS(cfg.Listener, "", "")
+			return
+		}
+
 		served <- srv.Serve(cfg.Listener)
 	}()
 
@@ -105,7 +114,7 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	}
 
 	cfg.Logger.InfoContext(ctx, "mocn started", "version", v.Version, "revision", v.Revision,
-		"api", cfg.Listener.Addr().String(), "s1", s1Address, "db", cfg.DBPath)
+		"api", cfg.Listener.Addr().String(), "tls", cfg.TLS != nil, "s1", s1Address, "db", cfg.DBPath)
 
 	var failed error
 

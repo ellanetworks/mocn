@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ella
+resources:
+  - base
+  - mocn-s1-service.yaml
+configMapGenerator:
+  - name: mocn-config
+    files:
+      - mocn.yaml
+    options:
+      labels:
+        app.kubernetes.io/name: ella-mocn
+        app.kubernetes.io/instance: ella-mocn
+        app.kubernetes.io/part-of: ella

@@ -65,6 +65,26 @@ const operatorWithStatus = (): Operator => ({
           },
         ],
         relative_mme_capacity: 255,
+        overload: [
+          {
+            gummei: {
+              plmn: { mcc: "001", mnc: "01" },
+              mme_group_id: 2,
+              mme_code: 1,
+            },
+            overload_action: "reject_rrc_cr_signalling",
+            traffic_load_reduction_indication: 50,
+          },
+          {
+            gummei: {
+              plmn: { mcc: "001", mnc: "01" },
+              mme_group_id: 2,
+              mme_code: 3,
+            },
+            overload_action: "reject_rrc_cr_signalling",
+            traffic_load_reduction_indication: 50,
+          },
+        ],
         ue_connections: 2,
       },
     },
@@ -212,11 +232,11 @@ const nodeRow = async (kind: string, address: string) => {
   return within(grid)
     .getAllByRole("row")
     .find((row) => {
-      const [type, addresses] = Array.from(
+      const [addresses, type] = Array.from(
         row.querySelectorAll('[role="gridcell"]'),
         cellText,
       );
-      return type === kind && addresses === address;
+      return addresses === address && type?.startsWith(`${kind} (`);
     })!;
 };
 
@@ -294,15 +314,16 @@ const coreNodes = () =>
     .map((row) =>
       Array.from(row.querySelectorAll('[role="gridcell"]'), cellText)
         .slice(0, 2)
-        .join(" "),
+        .join(" | "),
     );
 
 const NODE_COLUMNS = [
-  "Type",
   "Addresses",
+  "Type",
   "Name",
   "Served IDs",
   "UE connections",
+  "Overload",
   "Status",
 ];
 
@@ -525,9 +546,9 @@ describe("OperatorDetail", () => {
     expect(identityOf("4G")).toBe("001/01 · Macro (20 bits) · 703710");
     expect(identityOf("5G")).toBe("001/02 · 74565 (22 bits)");
     expect(coreNodes()).toEqual([
-      "MME 10.0.0.1, 10.0.0.2",
-      "MME 10.0.0.3",
-      "AMF 10.0.1.1",
+      "10.0.0.1, 10.0.0.2 | MME (4G)",
+      "10.0.0.3 | MME (4G)",
+      "10.0.1.1 | AMF (5G)",
     ]);
     expect(
       screen.queryByText(
@@ -628,9 +649,9 @@ describe("OperatorDetail", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(valueOf("Overview", "PWS operator")).toBe("Yes");
     expect(coreNodes()).toEqual([
-      "MME 10.0.0.1, 10.0.0.2",
-      "MME 10.0.0.3",
-      "AMF 10.0.1.1",
+      "10.0.0.1, 10.0.0.2 | MME (4G)",
+      "10.0.0.3 | MME (4G)",
+      "10.0.1.1 | AMF (5G)",
     ]);
     expect(
       within(screen.getByRole("grid", { name: NODES }))
@@ -1198,40 +1219,45 @@ describe("OperatorDetail", () => {
       NODE_COLUMNS,
     );
     expect(cells(await mmeRow("10.0.0.1, 10.0.0.2"))).toEqual([
-      "MME",
       "10.0.0.1, 10.0.0.2",
+      "MME (4G)",
       "mme0",
       "PLMNs 001/01, 001/02 · MME groups 2 · MME codes 1, 3",
       "2",
+      "Reject signalling (50%)",
       "Up",
     ]);
     expect(cells(await mmeRow("10.0.0.3"))).toEqual([
-      "MME",
       "10.0.0.3",
+      "MME (4G)",
       "—",
       "—",
       "0",
+      "None",
       "Setup failed",
     ]);
     expect(cells(await mmeRow("10.0.0.4"))).toEqual([
-      "MME",
       "10.0.0.4",
+      "MME (4G)",
       "—",
       "—",
       "0",
+      "None",
       "Disconnected",
     ]);
     expect(cells(await mmeRow("10.0.0.5"))).toEqual([
-      "MME",
       "10.0.0.5",
+      "MME (4G)",
+      "—",
       "—",
       "—",
       "—",
       "—",
     ]);
     expect(cells(await nodeRow("AMF", "10.0.1.1"))).toEqual([
-      "AMF",
       "10.0.1.1",
+      "AMF (5G)",
+      "—",
       "—",
       "—",
       "—",
@@ -1257,6 +1283,16 @@ describe("OperatorDetail", () => {
         name: /^Disconnected: no SCTP association to the MME\./,
       }),
     ).toBeInTheDocument();
+    fireEvent.mouseOver(grid.getByText("Overload"));
+    expect(
+      await screen.findByRole("tooltip", {
+        name: /^The overload action the MME requested in OVERLOAD START/,
+      }),
+    ).toBeInTheDocument();
+    expect(grid.getByText("Reject signalling (50%)")).toHaveAttribute(
+      "title",
+      "GUMMEI 001/01 · MME group 2 · MME code 1: Reject signalling (50%); GUMMEI 001/01 · MME group 2 · MME code 3: Reject signalling (50%)",
+    );
     expect(grid.getByText("Up").closest(".MuiChip-root")).toHaveAttribute(
       "title",
       expect.stringMatching(/^Since Nov 12, \d\d:\d\d:00$/),
@@ -1270,7 +1306,7 @@ describe("OperatorDetail", () => {
       serve({ operators: [operator] });
 
       renderAt("/operators/Operator%20A", readOnlyAuth);
-      expect(cells(await mmeRow("10.0.0.4"))[5]).toBe("Disconnected");
+      expect(cells(await mmeRow("10.0.0.4"))[6]).toBe("Disconnected");
 
       operator.mmes![2].status = {
         state: "connected",
@@ -1283,6 +1319,7 @@ describe("OperatorDetail", () => {
       await waitFor(async () =>
         expect(cells(await mmeRow("10.0.0.4")).slice(4)).toEqual([
           "1",
+          "None",
           "Connected",
         ]),
       );

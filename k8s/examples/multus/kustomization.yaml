@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ella
+resources:
+  - ../../base
+  - mocn-s1-nad.yaml
+configMapGenerator:
+  - name: mocn-config
+    files:
+      - mocn.yaml
+    options:
+      labels:
+        app.kubernetes.io/name: ella-mocn
+        app.kubernetes.io/instance: ella-mocn
+        app.kubernetes.io/part-of: ella
+patches:
+  - patch: |
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: ella-mocn
+      spec:
+        template:
+          metadata:
+            annotations:
+              k8s.v1.cni.cncf.io/networks: |
+                [
+                  {"name": "mocn-s1", "interface": "s1"}
+                ]
