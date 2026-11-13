@@ -12,14 +12,16 @@ finish() {
 	if [ "$rc" -ne 0 ]; then
 		mkdir -p "$artifacts"
 		docker compose ps -a || true
-		for svc in mocn open5gs open5gs-b srsenb srsue srsenb-b srsue-b; do
+		for svc in mocn open5gs open5gs-b open5gs-5g open5gs-5g-b srsenb srsue srsenb-b srsue-b srsgnb srsue-5g srsgnb-b srsue-5g-b ueransim; do
 			docker compose logs --no-color "$svc" >"$artifacts/$svc.log" 2>&1 || true
 		done
 		docker compose cp open5gs:/var/log/open5gs "$artifacts/open5gs" >/dev/null 2>&1 || true
 		docker compose cp open5gs-b:/var/log/open5gs "$artifacts/open5gs-b" >/dev/null 2>&1 || true
+		docker compose cp open5gs-5g:/var/log/open5gs "$artifacts/open5gs-5g" >/dev/null 2>&1 || true
+		docker compose cp open5gs-5g-b:/var/log/open5gs "$artifacts/open5gs-5g-b" >/dev/null 2>&1 || true
 		docker compose exec -T mocn pkill -INT tcpdump >/dev/null 2>&1 || true
 		sleep 1
-		docker compose cp mocn:/data/s1.pcap "$artifacts/s1.pcap" >/dev/null 2>&1 || true
+		docker compose cp mocn:/data/sctp.pcap "$artifacts/sctp.pcap" >/dev/null 2>&1 || true
 		echo "--- mocn"
 		tail -n 200 "$artifacts/mocn.log" || true
 		echo "--- open5gs mme"
@@ -28,7 +30,11 @@ finish() {
 		tail -n 100 "$artifacts/open5gs-b/mme.log" || true
 		echo "--- srsenb"
 		tail -n 100 "$artifacts/srsenb.log" || true
-		echo "logs and S1 pcap in $artifacts"
+		echo "--- open5gs-5g amf"
+		tail -n 100 "$artifacts/open5gs-5g/amf.log" || true
+		echo "--- srsgnb"
+		tail -n 100 "$artifacts/srsgnb.log" || true
+		echo "logs and S1/NG pcap in $artifacts"
 	fi
 	if [ -z "${E2E_KEEP:-}" ]; then
 		docker compose down -v --remove-orphans >/dev/null 2>&1 || true
@@ -38,8 +44,8 @@ finish() {
 trap finish EXIT
 
 docker compose build mocn
-docker compose up -d --wait mocn open5gs open5gs-b
-docker compose exec -d mocn tcpdump -i any -U -w /data/s1.pcap sctp
+docker compose up -d --wait mocn open5gs open5gs-b open5gs-5g open5gs-5g-b
+docker compose exec -d mocn tcpdump -i any -U -w /data/sctp.pcap sctp
 docker compose up -d srsenb srsue srsenb-b srsue-b
 
-go test -tags e2e -count=1 -v -timeout 10m . "$@"
+go test -tags e2e -count=1 -v -timeout 20m . "$@"

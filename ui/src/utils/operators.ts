@@ -1,14 +1,18 @@
 import type {
+  AMFOverload,
   AnyENBIDType,
   CoreNode,
   ENBIDType,
   GlobalENBID,
   GlobalGNBID,
+  GUAMI,
   Operator,
   Overload,
   OverloadAction,
   PLMN,
+  PLMNSupport,
   ServedGUMMEI,
+  SNSSAI,
 } from "@/queries/operators";
 
 export const MAX_NAME_LENGTH = 64;
@@ -127,6 +131,68 @@ export const formatOverloadDetail = (overload: Overload[]) =>
         `GUMMEI ${formatPLMN(o.gummei.plmn)} · MME group ${o.gummei.mme_group_id} · MME code ${o.gummei.mme_code}: ${formatOverloadAction(o)}`,
     )
     .join("; ");
+
+export const formatGUAMI = ({
+  plmn,
+  amf_region_id,
+  amf_set_id,
+  amf_pointer,
+}: GUAMI) =>
+  `${formatPLMN(plmn)} · AMF region ${amf_region_id} · AMF set ${amf_set_id} · AMF pointer ${amf_pointer}`;
+
+const sameGUAMI = (a: GUAMI, b: GUAMI) => formatGUAMI(a) === formatGUAMI(b);
+
+export const formatServedGUAMIs = (
+  served: GUAMI[],
+  unavailable: GUAMI[] = [],
+) =>
+  served
+    .map(
+      (g) =>
+        formatGUAMI(g) +
+        (unavailable.some((u) => sameGUAMI(u, g)) ? " (unavailable)" : ""),
+    )
+    .join("; ");
+
+export const formatSNSSAI = ({ sst, sd }: SNSSAI) =>
+  sd === undefined ? `SST ${sst}` : `SST ${sst} SD ${sd}`;
+
+export const formatPLMNSupport = (support: PLMNSupport[]) =>
+  support
+    .map(
+      ({ plmn, snssais }) =>
+        `${formatPLMN(plmn)}: ${snssais.map(formatSNSSAI).join(", ")}`,
+    )
+    .join("; ");
+
+const formatActionAndReduction = (
+  action?: OverloadAction,
+  reduction?: number,
+) => {
+  const label =
+    action === undefined
+      ? undefined
+      : (OVERLOAD_ACTION_LABELS[action] ?? action);
+  if (label === undefined) {
+    return reduction === undefined ? "" : `${reduction}%`;
+  }
+  return reduction === undefined ? label : `${label} (${reduction}%)`;
+};
+
+export const formatAMFOverload = (o: AMFOverload) =>
+  formatActionAndReduction(
+    o.overload_action,
+    o.traffic_load_reduction_indication,
+  ) || "Slices";
+
+export const formatAMFOverloadDetail = (o: AMFOverload) =>
+  [
+    `AMF: ${formatActionAndReduction(o.overload_action, o.traffic_load_reduction_indication) || "no action"}`,
+    ...(o.slices ?? []).map(
+      (s) =>
+        `${s.snssais.map(formatSNSSAI).join(", ")}: ${formatActionAndReduction(s.overload_action, s.traffic_load_reduction_indication) || "no action"}`,
+    ),
+  ].join("; ");
 
 export const formatGlobalGNBID = ({
   plmn,

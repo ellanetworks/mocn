@@ -350,7 +350,7 @@ export default function Dashboard() {
         <Grid size={THIRD}>
           <KpiCard
             title="Radios"
-            hint="Radios that completed S1 Setup with Ella MOCN."
+            hint="Radios that completed S1 Setup or NG Setup with Ella MOCN."
             to="/radios"
             {...metricCard}
             value={count(radios)}
@@ -359,7 +359,7 @@ export default function Dashboard() {
         <Grid size={THIRD}>
           <KpiCard
             title="UE connections"
-            hint="UE-associated logical S1-connections that Ella MOCN relays, across every operator: one per connected UE."
+            hint="UE-associated logical S1-connections and NG-connections that Ella MOCN relays, across every operator: one per connected UE."
             {...metricCard}
             value={count(ueConnections)}
           />

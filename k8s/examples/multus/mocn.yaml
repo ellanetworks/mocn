@@ -8,3 +8,6 @@ api:
 s1:
   address: 192.168.252.7
   port: 36412
+ng:
+  address: 192.168.252.7
+  port: 38412

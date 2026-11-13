@@ -8,13 +8,17 @@ import (
 	"time"
 
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/metrics"
+	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/ellanetworks/mocn/internal/s1"
 )
 
 type UEConnectionRadio struct {
-	Ref         string `json:"ref"`
-	ENBUES1APID uint32 `json:"enb_ue_s1ap_id"`
-	MMEUES1APID uint32 `json:"mme_ue_s1ap_id"`
+	Ref         string  `json:"ref"`
+	ENBUES1APID *uint32 `json:"enb_ue_s1ap_id,omitempty"`
+	MMEUES1APID *uint32 `json:"mme_ue_s1ap_id,omitempty"`
+	RANUENGAPID *uint32 `json:"ran_ue_ngap_id,omitempty"`
+	AMFUENGAPID *uint64 `json:"amf_ue_ngap_id,omitempty"`
 }
 
 type UEConnectionMME struct {
@@ -23,9 +27,15 @@ type UEConnectionMME struct {
 	MMEUES1APID  *uint32  `json:"mme_ue_s1ap_id"`
 }
 
+type UEConnectionAMF struct {
+	TNLAddresses []string `json:"tnl_addresses"`
+	RANUENGAPID  uint32   `json:"ran_ue_ngap_id"`
+	AMFUENGAPID  *uint64  `json:"amf_ue_ngap_id"`
+}
+
 type TAI struct {
 	PLMN PLMN   `json:"plmn"`
-	TAC  uint16 `json:"tac"`
+	TAC  uint32 `json:"tac"`
 }
 
 type ECGI struct {
@@ -33,18 +43,31 @@ type ECGI struct {
 	CellID uint32 `json:"cell_id"`
 }
 
+type NRCGI struct {
+	PLMN   PLMN   `json:"plmn"`
+	CellID uint64 `json:"cell_id"`
+}
+
 type UEConnection struct {
-	Radio    UEConnectionRadio `json:"radio"`
-	MME      UEConnectionMME   `json:"mme"`
-	Operator string            `json:"operator"`
-	PLMN     PLMN              `json:"plmn"`
-	Since    time.Time         `json:"since"`
-	TAI      *TAI              `json:"tai"`
-	ECGI     *ECGI             `json:"ecgi"`
+	Interface string            `json:"interface"`
+	Radio     UEConnectionRadio `json:"radio"`
+	MME       *UEConnectionMME  `json:"mme,omitempty"`
+	AMF       *UEConnectionAMF  `json:"amf,omitempty"`
+	Operator  string            `json:"operator"`
+	PLMN      PLMN              `json:"plmn"`
+	Since     time.Time         `json:"since"`
+	TAI       *TAI              `json:"tai"`
+	ECGI      *ECGI             `json:"ecgi,omitempty"`
+	NRCGI     *NRCGI            `json:"nr_cgi,omitempty"`
 }
 
 type ListUEConnectionsResponse struct {
 	Items []UEConnection `json:"items"`
+}
+
+type ueRecord struct {
+	conn       UEConnection
+	operatorID int64
 }
 
 func ListUEConnections(cfg Config) http.Handler {
@@ -54,7 +77,7 @@ func ListUEConnections(cfg Config) http.Handler {
 		resp := ListUEConnectionsResponse{Items: []UEConnection{}}
 
 		for _, u := range ueConnections(cfg) {
-			c := ueConnectionResponse(u)
+			c := u.conn
 			if (radioSet && c.Radio.Ref != radio) || (operatorSet && c.Operator != operator) {
 				continue
 			}
@@ -71,15 +94,27 @@ func queryValue(r *http.Request, key string) (string, bool) {
 	return q.Get(key), q.Has(key)
 }
 
-func ueConnections(cfg Config) []s1.UE {
-	if cfg.S1 == nil {
-		return nil
+func ueConnections(cfg Config) []ueRecord {
+	var out []ueRecord
+
+	if cfg.S1 != nil {
+		for _, u := range cfg.S1.UEs() {
+			out = append(out, ueRecord{conn: s1UEConnection(u), operatorID: u.OperatorID})
+		}
 	}
 
-	return cfg.S1.UEs()
+	if cfg.NG != nil {
+		for _, u := range cfg.NG.UEs() {
+			out = append(out, ueRecord{conn: ngUEConnection(u), operatorID: u.OperatorID})
+		}
+	}
+
+	slices.SortStableFunc(out, func(a, b ueRecord) int { return a.conn.Since.Compare(b.conn.Since) })
+
+	return out
 }
 
-func countUEConnections(ues []s1.UE, keep func(s1.UE) bool) int {
+func countUEConnections(ues []ueRecord, keep func(ueRecord) bool) int {
 	n := 0
 
 	for _, u := range ues {
@@ -91,20 +126,55 @@ func countUEConnections(ues []s1.UE, keep func(s1.UE) bool) int {
 	return n
 }
 
-func onMME(operatorID int64, tnlAddresses []string) func(s1.UE) bool {
-	return func(u s1.UE) bool {
-		return u.OperatorID == operatorID && slices.Equal(u.MMETNLAddresses, tnlAddresses)
+func onCoreNode(iface string, operatorID int64, tnlAddresses []string) func(ueRecord) bool {
+	return func(u ueRecord) bool {
+		if u.conn.Interface != iface || u.operatorID != operatorID {
+			return false
+		}
+
+		if u.conn.MME != nil {
+			return slices.Equal(u.conn.MME.TNLAddresses, tnlAddresses)
+		}
+
+		return u.conn.AMF != nil && slices.Equal(u.conn.AMF.TNLAddresses, tnlAddresses)
 	}
 }
 
-func ueConnectionResponse(u s1.UE) UEConnection {
+func s1UEConnection(u s1.UE) UEConnection {
 	resp := UEConnection{
+		Interface: metrics.InterfaceS1,
 		Radio: UEConnectionRadio{
-			Ref: radioRef(u.RadioGlobalENBID), ENBUES1APID: u.RadioENBUES1APID, MMEUES1APID: u.RadioMMEUES1APID,
+			Ref: radioRef(u.RadioGlobalENBID), ENBUES1APID: new(u.RadioENBUES1APID), MMEUES1APID: new(u.RadioMMEUES1APID),
 		},
-		MME: UEConnectionMME{
+		MME: &UEConnectionMME{
 			TNLAddresses: append([]string{}, u.MMETNLAddresses...), ENBUES1APID: u.MMEENBUES1APID,
 			MMEUES1APID: u.MMEUES1APID,
+		},
+		Operator: u.OperatorName,
+		PLMN:     PLMN(u.PLMN),
+		Since:    u.Since.UTC(),
+	}
+
+	if t := u.TAI; t != nil {
+		resp.TAI = &TAI{PLMN: PLMN(t.PLMN), TAC: uint32(t.TAC)}
+	}
+
+	if e := u.ECGI; e != nil {
+		resp.ECGI = &ECGI{PLMN: PLMN(e.PLMN), CellID: e.CellID}
+	}
+
+	return resp
+}
+
+func ngUEConnection(u ng.UE) UEConnection {
+	resp := UEConnection{
+		Interface: metrics.InterfaceNG,
+		Radio: UEConnectionRadio{
+			Ref: gnbRef(u.RadioGlobalGNBID), RANUENGAPID: new(u.RadioRANUENGAPID), AMFUENGAPID: new(u.RadioAMFUENGAPID),
+		},
+		AMF: &UEConnectionAMF{
+			TNLAddresses: append([]string{}, u.AMFTNLAddresses...), RANUENGAPID: u.AMFRANUENGAPID,
+			AMFUENGAPID: u.AMFUENGAPID,
 		},
 		Operator: u.OperatorName,
 		PLMN:     PLMN(u.PLMN),
@@ -115,8 +185,8 @@ func ueConnectionResponse(u s1.UE) UEConnection {
 		resp.TAI = &TAI{PLMN: PLMN(t.PLMN), TAC: t.TAC}
 	}
 
-	if e := u.ECGI; e != nil {
-		resp.ECGI = &ECGI{PLMN: PLMN(e.PLMN), CellID: e.CellID}
+	if c := u.NRCGI; c != nil {
+		resp.NRCGI = &NRCGI{PLMN: PLMN(c.PLMN), CellID: c.CellID}
 	}
 
 	return resp
@@ -133,14 +203,14 @@ type RadioUEConnections struct {
 	UEConnections int    `json:"ue_connections"`
 }
 
-func ueConnectionsByOperator(n s1.RANNode, ues []s1.UE, ops []db.Operator) []OperatorUEConnections {
+func ueConnectionsByOperator(n Radio, ues []ueRecord, ops []db.Operator) []OperatorUEConnections {
 	names := make(map[int64]string, len(ops))
-	owners := map[db.PLMN]string{}
+	owners := map[PLMN]string{}
 
 	for _, o := range ops {
 		names[o.ID] = o.Name
 		for _, p := range o.PLMNs {
-			owners[p] = o.Name
+			owners[PLMN(p)] = o.Name
 		}
 	}
 
@@ -155,13 +225,13 @@ func ueConnectionsByOperator(n s1.RANNode, ues []s1.UE, ops []db.Operator) []Ope
 	}
 
 	for _, u := range ues {
-		if n.GlobalENBID == nil || u.RadioGlobalENBID != *n.GlobalENBID {
+		if n.Ref == "" || u.conn.Radio.Ref != n.Ref {
 			continue
 		}
 
-		name, ok := names[u.OperatorID]
+		name, ok := names[u.operatorID]
 		if !ok {
-			name = u.OperatorName
+			name = u.conn.Operator
 		}
 
 		if name != "" {
@@ -179,33 +249,35 @@ func ueConnectionsByOperator(n s1.RANNode, ues []s1.UE, ops []db.Operator) []Ope
 	return out
 }
 
-func ueConnectionsByRadio(o db.Operator, nodes []s1.RANNode, ues []s1.UE) []RadioUEConnections {
-	plmns := map[db.PLMN]bool{}
+func ueConnectionsByRadio(o db.Operator, nodes []Radio, ues []ueRecord) []RadioUEConnections {
+	plmns := map[PLMN]bool{}
 	for _, p := range o.PLMNs {
-		plmns[p] = true
+		plmns[PLMN(p)] = true
 	}
 
+	names := map[string]string{}
 	byRef := map[string]*RadioUEConnections{}
 
 	for _, n := range nodes {
-		if n.GlobalENBID == nil {
+		if n.Ref == "" {
 			continue
 		}
 
-		ref := radioRef(*n.GlobalENBID)
+		names[n.Ref] = n.name()
+
 		if broadcastsAny(n, plmns) {
-			byRef[ref] = &RadioUEConnections{Radio: ref, Name: n.Name}
+			byRef[n.Ref] = &RadioUEConnections{Radio: n.Ref, Name: n.name()}
 		}
 	}
 
 	for _, u := range ues {
-		if u.OperatorID != o.ID {
+		if u.operatorID != o.ID {
 			continue
 		}
 
-		ref := radioRef(u.RadioGlobalENBID)
+		ref := u.conn.Radio.Ref
 		if byRef[ref] == nil {
-			byRef[ref] = &RadioUEConnections{Radio: ref, Name: radioName(nodes, u.RadioGlobalENBID)}
+			byRef[ref] = &RadioUEConnections{Radio: ref, Name: names[ref]}
 		}
 
 		byRef[ref].UEConnections++
@@ -223,7 +295,7 @@ func ueConnectionsByRadio(o db.Operator, nodes []s1.RANNode, ues []s1.UE) []Radi
 	return out
 }
 
-func broadcastsAny(n s1.RANNode, plmns map[db.PLMN]bool) bool {
+func broadcastsAny(n Radio, plmns map[PLMN]bool) bool {
 	for _, ta := range n.SupportedTAs {
 		for _, p := range ta.BroadcastPLMNs {
 			if plmns[p] {
@@ -233,16 +305,6 @@ func broadcastsAny(n s1.RANNode, plmns map[db.PLMN]bool) bool {
 	}
 
 	return false
-}
-
-func radioName(nodes []s1.RANNode, id db.GlobalENBID) string {
-	for _, n := range nodes {
-		if n.GlobalENBID != nil && *n.GlobalENBID == id {
-			return n.Name
-		}
-	}
-
-	return ""
 }
 
 func hasKey(m map[string]int, k string) bool {

@@ -354,7 +354,7 @@ paths:
       tags: [Radios]
       operationId: listRadios
       summary: List radios
-      description: Lists the radios with an S1 association, oldest association first.
+      description: Lists the radios with an S1 or NG association, oldest association first.
       responses:
         "200":
           description: OK
@@ -376,7 +376,7 @@ paths:
       tags: [Radios]
       operationId: getRadio
       summary: Get a radio
-      description: Gets a radio by its ref, which it has once its S1 Setup succeeds.
+      description: Gets a radio by its ref, which it has once its S1 Setup or NG Setup succeeds.
       parameters:
         - $ref: "#/components/parameters/RadioRef"
       responses:
@@ -404,7 +404,7 @@ paths:
       tags: [UE connections]
       operationId: listUEConnections
       summary: List UE connections
-      description: Lists the UE-associated logical S1-connections that Ella MOCN relays, oldest first.
+      description: Lists the UE-associated logical S1-connections and NG-connections that Ella MOCN relays, oldest first.
       parameters:
         - name: radio
           in: query
@@ -1040,7 +1040,9 @@ components:
       name: ref
       in: path
       required: true
-      description: "<mcc>-<mnc>:<enb_id_type>:<enb_id>, for example 001-01:macro:411."
+      description: >-
+        <mcc>-<mnc>:<enb_id_type>:<enb_id> for an eNB, for example 001-01:macro:411.
+        <mcc>-<mnc>:gnb<gnb_id_length>:<gnb_id> for a gNB, for example 001-01:gnb24:412.
       schema:
         type: string
     APITokenID:
@@ -1425,40 +1427,23 @@ components:
           description: >-
             Needs a global_gnb_id. An address appears at most once across the operator's AMFs.
           items:
-            $ref: "#/components/schemas/CoreNode"
+            $ref: "#/components/schemas/AMF"
         ue_connections:
           type: integer
           minimum: 0
           readOnly: true
           description: >-
-            The number of UE-associated logical S1-connections across the operator's MMEs. Present in GET responses.
-            Ignored in requests.
+            The number of UE-associated logical S1-connections and NG-connections across the operator's MMEs and AMFs.
+            Present in GET responses. Ignored in requests.
         ue_connections_by_radio:
           type: array
           readOnly: true
           description: >-
-            The number of UE-associated logical S1-connections of the operator on each radio. Lists every radio that
+            The number of UE-associated logical S1-connections and NG-connections of the operator on each radio. Lists every radio that
             broadcasts one of the operator's PLMNs, and every other radio with UE connections of the operator, sorted
             by name, or by ref for a radio without a name. Present in GET /api/v1/operators/{name} responses. Ignored in requests.
           items:
             $ref: "#/components/schemas/RadioUEConnections"
-
-    CoreNode:
-      type: object
-      required: [tnl_addresses]
-      additionalProperties: false
-      description: An MME or AMF, reached over one SCTP association.
-      properties:
-        tnl_addresses:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          description: IPv4 or IPv6 addresses, returned in canonical form.
-          items:
-            type: string
-            anyOf:
-              - format: ipv4
-              - format: ipv6
 
     MME:
       type: object
@@ -1523,6 +1508,160 @@ components:
           type: integer
           minimum: 0
           description: The number of UE-associated logical S1-connections relayed to the MME.
+
+    AMF:
+      type: object
+      required: [tnl_addresses]
+      additionalProperties: false
+      description: An AMF, reached over one SCTP association to port 38412.
+      properties:
+        tnl_addresses:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          description: IPv4 or IPv6 addresses, returned in canonical form.
+          items:
+            type: string
+            anyOf:
+              - format: ipv4
+              - format: ipv6
+        status:
+          $ref: "#/components/schemas/AMFStatus"
+
+    AMFStatus:
+      type: object
+      readOnly: true
+      required: [state, since, ue_connections]
+      description: >-
+        Runtime state of the AMF, learned from the NG association and not stored. Present in GET responses for the AMFs
+        of an operator with a global_gnb_id. Ignored in requests.
+      properties:
+        state:
+          type: string
+          enum: [disconnected, connected, up, setup_failed]
+          description: >-
+            disconnected: no SCTP association. connected: SCTP association up, NG Setup not completed. up: NG Setup
+            succeeded. setup_failed: the AMF answered NG SETUP FAILURE.
+        since:
+          type: string
+          format: date-time
+          description: When the AMF entered its current state.
+        primary_tnl_address:
+          type: string
+          description: The AMF address the SCTP association currently sends to.
+        amf_name:
+          type: string
+          description: AMF Name from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE.
+        served_guamis:
+          type: array
+          description: Served GUAMI List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE.
+          items:
+            $ref: "#/components/schemas/GUAMI"
+        plmn_support:
+          type: array
+          description: PLMN Support List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE.
+          items:
+            $ref: "#/components/schemas/PLMNSupport"
+        relative_amf_capacity:
+          type: integer
+          minimum: 0
+          maximum: 255
+        unavailable_guamis:
+          type: array
+          description: >-
+            The GUAMIs that the AMF STATUS INDICATION marked unavailable. Not selected for UEs. Cleared by NG Setup and
+            by an AMF CONFIGURATION UPDATE with a Served GUAMI List.
+          items:
+            $ref: "#/components/schemas/GUAMI"
+        overload:
+          $ref: "#/components/schemas/AMFOverload"
+        ue_connections:
+          type: integer
+          minimum: 0
+          description: The number of UE-associated logical NG-connections relayed to the AMF.
+
+    GUAMI:
+      type: object
+      required: [plmn, amf_region_id, amf_set_id, amf_pointer]
+      properties:
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        amf_region_id:
+          type: integer
+          minimum: 0
+          maximum: 255
+        amf_set_id:
+          type: integer
+          minimum: 0
+          maximum: 1023
+        amf_pointer:
+          type: integer
+          minimum: 0
+          maximum: 63
+
+    SNSSAI:
+      type: object
+      required: [sst]
+      properties:
+        sst:
+          type: integer
+          minimum: 0
+          maximum: 255
+        sd:
+          type: string
+          pattern: "^[0-9a-f]{6}$"
+          description: Absent when the S-NSSAI has no SD.
+
+    PLMNSupport:
+      type: object
+      required: [plmn, snssais]
+      properties:
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        snssais:
+          type: array
+          items:
+            $ref: "#/components/schemas/SNSSAI"
+
+    AMFOverload:
+      type: object
+      description: >-
+        The ongoing overload action of the AMF, from the last OVERLOAD START (TS 38.413 clause 9.2.6.14). Absent when
+        none. Cleared by OVERLOAD STOP, NG Setup and the loss of the NG association.
+      properties:
+        overload_action:
+          $ref: "#/components/schemas/AMFOverloadAction"
+        traffic_load_reduction_indication:
+          type: integer
+          minimum: 1
+          maximum: 99
+          description: The percentage of the traffic to reject.
+        slices:
+          type: array
+          description: Overload Start NSSAI List.
+          items:
+            type: object
+            required: [snssais]
+            properties:
+              snssais:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SNSSAI"
+              overload_action:
+                $ref: "#/components/schemas/AMFOverloadAction"
+              traffic_load_reduction_indication:
+                type: integer
+                minimum: 1
+                maximum: 99
+
+    AMFOverloadAction:
+      type: string
+      enum:
+        - reject_non_emergency_mo_dt
+        - reject_rrc_cr_signalling
+        - permit_emergency_sessions_and_mobile_terminated_services_only
+        - permit_high_priority_sessions_and_mobile_terminated_services_only
+      description: Overload Action (TS 38.413 clause 9.3.1.105).
 
     Overload:
       type: object
@@ -1592,7 +1731,8 @@ components:
         tac:
           type: integer
           minimum: 0
-          maximum: 65535
+          maximum: 16777215
+          description: 16 bits on S1, 24 bits on NG.
         broadcast_plmns:
           type: array
           items:
@@ -1600,29 +1740,39 @@ components:
 
     Radio:
       type: object
-      required: [global_enb_id, supported_tas, state, connected_since, tnl_addresses, ue_connections]
-      description: A radio with an S1 association to Ella MOCN. Learned at runtime, not stored.
+      required: [interface, supported_tas, state, connected_since, tnl_addresses, ue_connections]
+      description: A radio with an S1 or NG association to Ella MOCN. Learned at runtime, not stored.
       properties:
         ref:
           type: string
-          description: Identifies the radio in /api/v1/radios/{ref}. Set once the radio has a Global eNB ID.
+          description: >-
+            Identifies the radio in /api/v1/radios/{ref}. Set once the radio has a Global eNB ID or a Global gNB ID.
+        interface:
+          type: string
+          enum: [s1, ng]
+          description: "s1: an eNB. ng: a gNB."
         global_enb_id:
-          description: From the S1 SETUP REQUEST. Null before the radio sends one, or after it is rejected.
-          oneOf:
-            - type: object
-              required: [plmn, enb_id_type, enb_id]
-              properties:
-                plmn:
-                  $ref: "#/components/schemas/PLMN"
-                enb_id_type:
-                  type: string
-                  enum: [macro, home, short_macro, long_macro]
-                enb_id:
-                  type: integer
-                  minimum: 0
-            - type: "null"
+          description: From the S1 SETUP REQUEST. Absent for a gNB, before the radio sends one, or after it is rejected.
+          type: object
+          required: [plmn, enb_id_type, enb_id]
+          properties:
+            plmn:
+              $ref: "#/components/schemas/PLMN"
+            enb_id_type:
+              type: string
+              enum: [macro, home, short_macro, long_macro]
+            enb_id:
+              type: integer
+              minimum: 0
+        global_gnb_id:
+          description: From the NG SETUP REQUEST. Absent for an eNB, before the radio sends one, or after it is rejected.
+          $ref: "#/components/schemas/GlobalGNBID"
         enb_name:
           type: string
+          description: eNB Name from the S1 SETUP REQUEST.
+        ran_node_name:
+          type: string
+          description: RAN Node Name from the NG SETUP REQUEST.
         supported_tas:
           type: array
           items:
@@ -1634,7 +1784,7 @@ components:
         state:
           type: string
           enum: [connected, up]
-          description: "connected: SCTP association up, no successful S1 Setup. up: S1 Setup succeeded."
+          description: "connected: SCTP association up, no successful S1 or NG Setup. up: S1 or NG Setup succeeded."
         connected_since:
           type: string
           format: date-time
@@ -1646,11 +1796,11 @@ components:
         ue_connections:
           type: integer
           minimum: 0
-          description: The number of UE-associated logical S1-connections from the radio.
+          description: The number of UE-associated logical S1-connections or NG-connections from the radio.
         ue_connections_by_operator:
           type: array
           description: >-
-            The number of UE-associated logical S1-connections from the radio for each operator. Lists every operator
+            The number of UE-associated logical S1-connections or NG-connections from the radio for each operator. Lists every operator
             that owns one of the PLMNs the radio broadcasts, and every other operator with UE connections from the
             radio, sorted by operator name. Present in GET /api/v1/radios/{ref} responses.
           items:
@@ -1676,7 +1826,7 @@ components:
           description: The radio ref.
         name:
           type: string
-          description: The eNB name of the radio, if it sent one.
+          description: The eNB name or RAN node name of the radio, if it sent one.
         ue_connections:
           type: integer
           minimum: 0
@@ -1699,7 +1849,7 @@ components:
         tac:
           type: integer
           minimum: 0
-          maximum: 65535
+          maximum: 16777215
 
     ECGI:
       type: object
@@ -1713,15 +1863,32 @@ components:
           maximum: 268435455
           description: 28-bit E-UTRAN Cell Identity.
 
+    NRCGI:
+      type: object
+      required: [plmn, cell_id]
+      properties:
+        plmn:
+          $ref: "#/components/schemas/PLMN"
+        cell_id:
+          type: integer
+          minimum: 0
+          maximum: 68719476735
+          description: 36-bit NR Cell Identity.
+
     UEConnection:
       type: object
-      required: [radio, mme, operator, plmn, since, tai, ecgi]
-      description: A UE-associated logical S1-connection relayed by Ella MOCN. Learned at runtime, not stored.
+      required: [interface, radio, operator, plmn, since, tai]
+      description: >-
+        A UE-associated logical S1-connection or NG-connection relayed by Ella MOCN. Learned at runtime, not stored.
       properties:
+        interface:
+          type: string
+          enum: [s1, ng]
         radio:
           type: object
-          required: [ref, enb_ue_s1ap_id, mme_ue_s1ap_id]
-          description: The S1 connection between the radio and Ella MOCN.
+          required: [ref]
+          description: >-
+            The connection between the radio and Ella MOCN: the S1AP IDs over S1, the NGAP IDs over NG.
           properties:
             ref:
               type: string
@@ -1730,16 +1897,26 @@ components:
               type: integer
               minimum: 0
               maximum: 16777215
-              description: Allocated by the radio.
+              description: Allocated by the radio. S1 only.
             mme_ue_s1ap_id:
               type: integer
               minimum: 0
               maximum: 4294967295
-              description: Allocated by Ella MOCN.
+              description: Allocated by Ella MOCN. S1 only.
+            ran_ue_ngap_id:
+              type: integer
+              minimum: 0
+              maximum: 4294967295
+              description: Allocated by the radio. NG only.
+            amf_ue_ngap_id:
+              type: integer
+              minimum: 0
+              maximum: 1099511627775
+              description: Allocated by Ella MOCN. NG only.
         mme:
           type: object
           required: [tnl_addresses, enb_ue_s1ap_id, mme_ue_s1ap_id]
-          description: The S1 connection between Ella MOCN and the operator's MME.
+          description: The S1 connection between Ella MOCN and the operator's MME. S1 only.
           properties:
             tnl_addresses:
               type: array
@@ -1758,6 +1935,28 @@ components:
                   minimum: 0
                   maximum: 4294967295
                 - type: "null"
+        amf:
+          type: object
+          required: [tnl_addresses, ran_ue_ngap_id, amf_ue_ngap_id]
+          description: The NG connection between Ella MOCN and the operator's AMF. NG only.
+          properties:
+            tnl_addresses:
+              type: array
+              items:
+                type: string
+              description: The AMF's TNL addresses, as configured on the operator.
+            ran_ue_ngap_id:
+              type: integer
+              minimum: 0
+              maximum: 4294967295
+              description: Allocated by Ella MOCN.
+            amf_ue_ngap_id:
+              description: Allocated by the AMF. Null until the AMF's first message for the UE.
+              oneOf:
+                - type: integer
+                  minimum: 0
+                  maximum: 1099511627775
+                - type: "null"
         operator:
           type: string
           description: The operator that serves the selected PLMN.
@@ -1773,10 +1972,11 @@ components:
             - $ref: "#/components/schemas/TAI"
             - type: "null"
         ecgi:
-          description: The last E-UTRAN CGI the radio reported for the UE.
-          oneOf:
-            - $ref: "#/components/schemas/ECGI"
-            - type: "null"
+          description: The last E-UTRAN CGI the radio reported for the UE. S1 only, absent when unknown.
+          $ref: "#/components/schemas/ECGI"
+        nr_cgi:
+          description: The last NR CGI the radio reported for the UE. NG only, absent when unknown.
+          $ref: "#/components/schemas/NRCGI"
 
     ListUEConnectionsResponse:
       type: object

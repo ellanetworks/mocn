@@ -81,6 +81,62 @@ services:
       ran:
         ipv4_address: 10.90.1.11
 
+  open5gs-5g:
+    image: gradiant/open5gs:2.7.6
+    user: root
+    privileged: true
+    depends_on:
+      provision:
+        condition: service_completed_successfully
+    entrypoint: ["/start.sh"]
+    environment:
+      DB_URI: mongodb://10.90.0.20/open5gs
+      NGAP_ADDR: 10.90.0.12
+      GTPU_ADDR: 10.90.1.12
+      MCC: "001"
+      MNC: "01"
+      AMF_REGION: "2"
+      AMF_SET: "1"
+      TAC: "1"
+      AMF_NAME: open5gs-amf-a
+      UE_NET: "10.47"
+    volumes:
+      - ./open5gs/start-5gc.sh:/start.sh:ro
+      - ./open5gs/config/5gc:/config:ro
+    networks:
+      core:
+        ipv4_address: 10.90.0.12
+      ran:
+        ipv4_address: 10.90.1.12
+
+  open5gs-5g-b:
+    image: gradiant/open5gs:2.7.6
+    user: root
+    privileged: true
+    depends_on:
+      provision:
+        condition: service_completed_successfully
+    entrypoint: ["/start.sh"]
+    environment:
+      DB_URI: mongodb://10.90.0.20/open5gs_b
+      NGAP_ADDR: 10.90.0.13
+      GTPU_ADDR: 10.90.1.13
+      MCC: "001"
+      MNC: "02"
+      AMF_REGION: "3"
+      AMF_SET: "2"
+      TAC: "1"
+      AMF_NAME: open5gs-amf-b
+      UE_NET: "10.48"
+    volumes:
+      - ./open5gs/start-5gc.sh:/start.sh:ro
+      - ./open5gs/config/5gc:/config:ro
+    networks:
+      core:
+        ipv4_address: 10.90.0.13
+      ran:
+        ipv4_address: 10.90.1.13
+
   mocn:
     image: ella-mocn-e2e/mocn
     build:
@@ -191,6 +247,94 @@ services:
     networks:
       radio:
         ipv4_address: 10.90.2.5
+
+  srsgnb:
+    image: gradiant/srsran-5g:24_10_1
+    privileged: true
+    restart: unless-stopped
+    depends_on: [mocn]
+    entrypoint: ["sh", "-c", "envsubst < /gnb.tmpl > /tmp/gnb.yml && exec /opt/srsRAN_Project/target/bin/gnb -c /tmp/gnb.yml"]
+    environment:
+      GNB_ID: "1"
+      GNB_NAME: srsgnb-a
+      PLMN: "00101"
+      AMF_ADDR: 10.90.1.30
+      GNB_ADDR: 10.90.1.23
+      ZMQ_ADDR: 10.90.2.6
+      UE_ADDR: 10.90.2.7
+    volumes:
+      - ./srsran/gnb.yml:/gnb.tmpl:ro
+    networks:
+      ran:
+        ipv4_address: 10.90.1.23
+      radio:
+        ipv4_address: 10.90.2.6
+
+  srsue-5g:
+    image: gradiant/srsran-4g:23_11
+    privileged: true
+    restart: on-failure
+    depends_on: [srsgnb]
+    entrypoint: ["sh", "-c", "envsubst < /ue.tmpl > /tmp/ue.conf && exec srsue /tmp/ue.conf"]
+    environment:
+      IMSI: "001010000000011"
+      ZMQ_ADDR: 10.90.2.7
+      GNB_ADDR: 10.90.2.6
+    volumes:
+      - ./srsran/ue.conf:/ue.tmpl:ro
+    networks:
+      radio:
+        ipv4_address: 10.90.2.7
+
+  srsgnb-b:
+    image: gradiant/srsran-5g:24_10_1
+    privileged: true
+    restart: unless-stopped
+    depends_on: [mocn]
+    entrypoint: ["sh", "-c", "envsubst < /gnb.tmpl > /tmp/gnb.yml && exec /opt/srsRAN_Project/target/bin/gnb -c /tmp/gnb.yml"]
+    environment:
+      GNB_ID: "2"
+      GNB_NAME: srsgnb-b
+      PLMN: "00102"
+      AMF_ADDR: 10.90.1.30
+      GNB_ADDR: 10.90.1.24
+      ZMQ_ADDR: 10.90.2.8
+      UE_ADDR: 10.90.2.9
+    volumes:
+      - ./srsran/gnb.yml:/gnb.tmpl:ro
+    networks:
+      ran:
+        ipv4_address: 10.90.1.24
+      radio:
+        ipv4_address: 10.90.2.8
+
+  srsue-5g-b:
+    image: gradiant/srsran-4g:23_11
+    privileged: true
+    restart: on-failure
+    depends_on: [srsgnb-b]
+    entrypoint: ["sh", "-c", "envsubst < /ue.tmpl > /tmp/ue.conf && exec srsue /tmp/ue.conf"]
+    environment:
+      IMSI: "001020000000012"
+      ZMQ_ADDR: 10.90.2.9
+      GNB_ADDR: 10.90.2.8
+    volumes:
+      - ./srsran/ue.conf:/ue.tmpl:ro
+    networks:
+      radio:
+        ipv4_address: 10.90.2.9
+
+  ueransim:
+    image: ghcr.io/ellanetworks/ueransim:3.2.7
+    privileged: true
+    depends_on: [mocn]
+    entrypoint: ["sh", "-c", "nr-gnb --config /gnb.yaml >/tmp/gnb.log 2>&1 & sleep 3; exec nr-ue --config /ue.yaml"]
+    volumes:
+      - ./ueransim/gnb.yaml:/gnb.yaml:ro
+      - ./ueransim/ue.yaml:/ue.yaml:ro
+    networks:
+      ran:
+        ipv4_address: 10.90.1.25
 
 networks:
   core:

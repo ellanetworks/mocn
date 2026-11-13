@@ -52,16 +52,24 @@ func start(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("listen api: %w", err)
 	}
 
-	var s1lc sctp.ListenConfig
+	var sctplc sctp.ListenConfig
 
-	s1ln, err := s1lc.Listen(ctx, &sctp.SCTPAddr{IPAddrs: []net.IPAddr{{IP: cfg.S1.Address.AsSlice()}}, Port: cfg.S1.Port})
+	s1ln, err := sctplc.Listen(ctx, &sctp.SCTPAddr{IPAddrs: []net.IPAddr{{IP: cfg.S1.Address.AsSlice()}}, Port: cfg.S1.Port})
 	if err != nil {
 		_ = ln.Close()
 		return fmt.Errorf("listen s1: %w", err)
 	}
 
+	ngln, err := sctplc.Listen(ctx, &sctp.SCTPAddr{IPAddrs: []net.IPAddr{{IP: cfg.NG.Address.AsSlice()}}, Port: cfg.NG.Port})
+	if err != nil {
+		_ = ln.Close()
+		_ = s1ln.Close()
+
+		return fmt.Errorf("listen ng: %w", err)
+	}
+
 	return server.Run(ctx, server.Config{
-		Listener: ln, TLS: tlsConfig, S1Listener: s1ln, DBPath: cfg.DB.Path, Frontend: ui.FS(), Telemetry: cfg.Telemetry,
-		Logger: logger,
+		Listener: ln, TLS: tlsConfig, S1Listener: s1ln, NGListener: ngln, DBPath: cfg.DB.Path, Frontend: ui.FS(),
+		Telemetry: cfg.Telemetry, Logger: logger,
 	})
 }

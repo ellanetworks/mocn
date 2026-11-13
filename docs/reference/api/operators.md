@@ -33,8 +33,9 @@ This path returns the operators, sorted by name, with the state of their MMEs.
 | `mmes[].tnl_addresses`      | array   | Addresses of the MME, reached over one SCTP association to port 36412. |
 | `mmes[].status`             | object  | State of the MME. See [MME Status](#mme-status). |
 | `amfs`                      | array   | AMFs. Empty when none. |
-| `amfs[].tnl_addresses`      | array   | Addresses of the AMF. |
-| `ue_connections`            | int     | UE-associated logical S1-connections across the operator's MMEs. |
+| `amfs[].tnl_addresses`      | array   | Addresses of the AMF, reached over one SCTP association to port 38412. |
+| `amfs[].status`             | object  | State of the AMF. See [AMF Status](#amf-status). |
+| `ue_connections`            | int     | UE-associated logical S1-connections and NG-connections across the operator's MMEs and AMFs. |
 
 ### Sample Response
 
@@ -149,9 +150,31 @@ The state of an MME, learned from its S1 association and not stored.
 | `overload[].traffic_load_reduction_indication` | int | Traffic Load Reduction Indication from the same OVERLOAD START: the percentage of the traffic to reject, `1` to `99`. Absent when the MME did not include it. |
 | `ue_connections`        | int    | UE-associated logical S1-connections relayed to the MME. |
 
+### AMF Status
+
+The state of an AMF, learned from its NG association and not stored.
+
+| Field                   | Type   | Description |
+| ----------------------- | ------ | ----------- |
+| `state`                 | string | `disconnected`: no SCTP association. `connected`: SCTP association up, NG Setup not completed. `up`: NG Setup succeeded. `setup_failed`: the AMF answered NG SETUP FAILURE. |
+| `since`                 | string | When the AMF entered its current state. |
+| `primary_tnl_address`   | string | The AMF address the SCTP association sends to. Absent without an association. |
+| `amf_name`              | string | AMF Name from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE. Absent before the NG Setup. |
+| `served_guamis`         | array  | Served GUAMI List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE, each with `plmn`, `amf_region_id` (`0` to `255`), `amf_set_id` (`0` to `1023`) and `amf_pointer` (`0` to `63`). Absent before the NG Setup. |
+| `plmn_support`          | array  | PLMN Support List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE. Absent before the NG Setup. |
+| `plmn_support[].plmn`   | object | PLMN, with `mcc` and `mnc`. |
+| `plmn_support[].snssais` | array | S-NSSAIs, each with `sst` (`0` to `255`) and `sd` (6 hex digits, absent when none). |
+| `relative_amf_capacity` | int    | Relative AMF Capacity, `0` to `255`. Absent before the NG Setup. |
+| `unavailable_guamis`    | array  | GUAMIs that an AMF STATUS INDICATION marked unavailable, in the format of `served_guamis`. Absent when none. Cleared by NG Setup and by an AMF CONFIGURATION UPDATE with a Served GUAMI List. |
+| `overload`              | object | The ongoing overload action, from the last OVERLOAD START. Absent when none. Cleared by OVERLOAD STOP, NG Setup and the loss of the NG association. |
+| `overload.overload_action` | string | AMF Overload Action: `reject_non_emergency_mo_dt`, `reject_rrc_cr_signalling`, `permit_emergency_sessions_and_mobile_terminated_services_only` or `permit_high_priority_sessions_and_mobile_terminated_services_only`. Absent when the AMF did not include it. |
+| `overload.traffic_load_reduction_indication` | int | AMF Traffic Load Reduction Indication, `1` to `99`. Absent when the AMF did not include it. |
+| `overload.slices`       | array  | Overload Start NSSAI List: each with `snssais`, and `overload_action` and `traffic_load_reduction_indication` when the AMF included them. Absent when none. |
+| `ue_connections`        | int    | UE-associated logical NG-connections relayed to the AMF. |
+
 ## Get an Operator
 
-This path returns an operator, with the state of its MMEs and its UE connections by radio.
+This path returns an operator, with the state of its MMEs and AMFs and its UE connections by radio.
 
 | Method | Path                       |
 | ------ | -------------------------- |
@@ -169,10 +192,10 @@ The fields of [List Operators](#list-operators), plus:
 
 | Field                                      | Type   | Description |
 | ------------------------------------------ | ------ | ----------- |
-| `ue_connections_by_radio`                  | array  | UE-associated logical S1-connections of the operator, by radio. Lists every radio that broadcasts one of the operator's PLMNs, and every other radio with UE connections of the operator, sorted by name, or by `ref` for a radio without a name. |
+| `ue_connections_by_radio`                  | array  | UE-associated logical S1-connections and NG-connections of the operator, by radio. Lists every radio that broadcasts one of the operator's PLMNs, and every other radio with UE connections of the operator, sorted by name, or by `ref` for a radio without a name. |
 | `ue_connections_by_radio[].radio`          | string | The radio's [`ref`](radios.md#list-radios). |
-| `ue_connections_by_radio[].name`           | string | The radio's eNB Name. Absent when the radio sent none. |
-| `ue_connections_by_radio[].ue_connections` | int    | UE-associated logical S1-connections. |
+| `ue_connections_by_radio[].name`           | string | The radio's eNB Name or RAN Node Name. Absent when the radio sent none. |
+| `ue_connections_by_radio[].ue_connections` | int    | UE-associated logical S1-connections or NG-connections. |
 
 ### Response Codes
 
@@ -226,7 +249,7 @@ The fields of [List Operators](#list-operators), plus:
 
 ## Create an Operator
 
-This path returns the operator, without `mmes[].status`, `ue_connections` and `ue_connections_by_radio`.
+This path returns the operator, without `mmes[].status`, `amfs[].status`, `ue_connections` and `ue_connections_by_radio`.
 
 | Method | Path                |
 | ------ | ------------------- |
@@ -254,7 +277,7 @@ This path returns the operator, without `mmes[].status`, `ue_connections` and `u
 | `amfs`                        | array   | No       | AMFs. |
 | `amfs[].tnl_addresses`        | array   | Yes      | At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's AMFs. Returned in canonical form. |
 
-The read-only fields of the responses, `mmes[].status`, `ue_connections` and `ue_connections_by_radio`, are ignored. Other unknown fields get `400`.
+The read-only fields of the responses, `mmes[].status`, `amfs[].status`, `ue_connections` and `ue_connections_by_radio`, are ignored. Other unknown fields get `400`.
 
 ### Response Codes
 

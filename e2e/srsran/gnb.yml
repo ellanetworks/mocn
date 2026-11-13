@@ -1,0 +1,51 @@
+gnb_id: ${GNB_ID}
+gnb_id_bit_length: 22
+ran_node_name: ${GNB_NAME}
+
+cu_cp:
+  amf:
+    addr: ${AMF_ADDR}
+    port: 38412
+    bind_addr: ${GNB_ADDR}
+    supported_tracking_areas:
+      - tac: 1
+        plmn_list:
+          - plmn: "${PLMN}"
+            tai_slice_support_list:
+              - sst: 1
+  inactivity_timer: 30
+
+ru_sdr:
+  device_driver: zmq
+  device_args: tx_port=tcp://${ZMQ_ADDR}:2000,rx_port=tcp://${UE_ADDR}:2001,base_srate=23.04e6
+  srate: 23.04
+  tx_gain: 75
+  rx_gain: 75
+
+cell_cfg:
+  dl_arfcn: 368500
+  band: 3
+  channel_bandwidth_MHz: 20
+  common_scs: 15
+  plmn: "${PLMN}"
+  tac: 1
+  pci: 1
+  pdcch:
+    common:
+      ss0_index: 0
+      coreset0_index: 12
+    dedicated:
+      ss2_type: common
+      dci_format_0_1_and_1_1: false
+  prach:
+    prach_config_index: 1
+
+log:
+  filename: stdout
+  all_level: warning
+  ngap_level: info
+  rrc_level: info
+
+pcap:
+  mac_enable: false
+  ngap_enable: false

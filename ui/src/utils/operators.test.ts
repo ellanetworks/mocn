@@ -6,10 +6,14 @@ import {
   addressErrors,
   addressRow,
   enbIdError,
+  formatAMFOverload,
+  formatAMFOverloadDetail,
   formatGlobalENBID,
   formatGlobalGNBID,
   formatGUMMEI,
   formatPLMN,
+  formatPLMNSupport,
+  formatServedGUAMIs,
   formatTNLAddresses,
   gnbIdError,
   gnbIdLengthError,
@@ -225,6 +229,53 @@ describe("operatorBody", () => {
     expect(operatorBody(operator, { mmes: withStatus.mmes }).mmes).toEqual([
       { tnl_addresses: ["10.0.0.1"] },
     ]);
+  });
+});
+
+describe("AMF status formatting", () => {
+  const guami = (pointer: number) => ({
+    plmn: { mcc: "001", mnc: "01" },
+    amf_region_id: 1,
+    amf_set_id: 2,
+    amf_pointer: pointer,
+  });
+
+  it("marks the unavailable GUAMIs", () => {
+    expect(formatServedGUAMIs([guami(0), guami(1)], [guami(1)])).toBe(
+      "001/01 · AMF region 1 · AMF set 2 · AMF pointer 0; 001/01 · AMF region 1 · AMF set 2 · AMF pointer 1 (unavailable)",
+    );
+  });
+
+  it("lists the S-NSSAIs of each PLMN", () => {
+    expect(
+      formatPLMNSupport([
+        {
+          plmn: { mcc: "001", mnc: "01" },
+          snssais: [{ sst: 1 }, { sst: 1, sd: "00000a" }],
+        },
+      ]),
+    ).toBe("001/01: SST 1, SST 1 SD 00000a");
+  });
+
+  it("summarises an AMF overload", () => {
+    expect(
+      formatAMFOverload({
+        overload_action: "reject_non_emergency_mo_dt",
+        traffic_load_reduction_indication: 20,
+      }),
+    ).toBe("Reject non-emergency MO data (20%)");
+    const slicesOnly = {
+      slices: [
+        {
+          snssais: [{ sst: 3 }],
+          overload_action: "reject_rrc_cr_signalling" as const,
+        },
+      ],
+    };
+    expect(formatAMFOverload(slicesOnly)).toBe("Slices");
+    expect(formatAMFOverloadDetail(slicesOnly)).toBe(
+      "AMF: no action; SST 3: Reject signalling",
+    );
   });
 });
 

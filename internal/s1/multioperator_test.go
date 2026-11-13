@@ -196,7 +196,7 @@ func TestPagingFanOut(t *testing.T) {
 	registry.MustRegister(x.h.gw.Collectors()...)
 
 	const metrics = `
-# HELP ellamocn_paging_messages_total PAGING messages received from MMEs, by interface (s1) and result (relayed: sent to the radios that serve a TAI of the List of TAIs in one of the operator's PLMNs; no_radio: no radio that is up serves such a TAI; invalid: undecodable).
+# HELP ellamocn_paging_messages_total PAGING messages received from MMEs and AMFs, by interface (s1, ng) and result (relayed: sent to the radios that serve a TAI of the list in one of the operator's PLMNs; no_radio: no radio that is up serves such a TAI; invalid: undecodable).
 # TYPE ellamocn_paging_messages_total counter
 ellamocn_paging_messages_total{interface="s1",result="invalid"} 0
 ellamocn_paging_messages_total{interface="s1",result="no_radio"} 1
@@ -368,7 +368,7 @@ func TestOverloadRelayedToTheOperatorsRadios(t *testing.T) {
 	registry.MustRegister(x.h.gw.Collectors()...)
 
 	const metrics = `
-# HELP ellamocn_core_overloaded Core (MME) associations of the configured MMEs with an ongoing overload action (TS 36.413 clause 8.7.6), by interface (s1) and operator.
+# HELP ellamocn_core_overloaded Core (MME, AMF) associations of the configured MMEs and AMFs with an ongoing overload action (TS 36.413 clause 8.7.6, TS 38.413 clause 8.7.7), by interface (s1, ng) and operator.
 # TYPE ellamocn_core_overloaded gauge
 ellamocn_core_overloaded{interface="s1",operator="A"} 1
 ellamocn_core_overloaded{interface="s1",operator="B"} 0

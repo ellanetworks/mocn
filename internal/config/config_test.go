@@ -21,7 +21,7 @@ func writeConfig(t *testing.T, content string) string {
 }
 
 func TestLoad(t *testing.T) {
-	cfg, err := Load(writeConfig(t, "logging:\n  level: debug\ndb:\n  path: /var/lib/mocn/mocn.db\napi:\n  address: 127.0.0.1\n  port: 8080\ns1:\n  address: 10.0.0.1\n  port: 36413\n"))
+	cfg, err := Load(writeConfig(t, "logging:\n  level: debug\ndb:\n  path: /var/lib/mocn/mocn.db\napi:\n  address: 127.0.0.1\n  port: 8080\ns1:\n  address: 10.0.0.1\n  port: 36413\nng:\n  address: 10.0.0.2\n  port: 38413\n"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -42,8 +42,12 @@ func TestLoad(t *testing.T) {
 		t.Errorf("API.ListenAddress() = %q, want 127.0.0.1:8080", got)
 	}
 
-	if want := (S1{Address: netip.MustParseAddr("10.0.0.1"), Port: 36413}); cfg.S1 != want {
+	if want := (Endpoint{Address: netip.MustParseAddr("10.0.0.1"), Port: 36413}); cfg.S1 != want {
 		t.Errorf("S1 = %+v, want %+v", cfg.S1, want)
+	}
+
+	if want := (Endpoint{Address: netip.MustParseAddr("10.0.0.2"), Port: 38413}); cfg.NG != want {
+		t.Errorf("NG = %+v, want %+v", cfg.NG, want)
 	}
 }
 
@@ -65,8 +69,12 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("API.TLS = %+v, want nil", cfg.API.TLS)
 	}
 
-	if want := (S1{Address: netip.IPv4Unspecified(), Port: 36412}); cfg.S1 != want {
+	if want := (Endpoint{Address: netip.IPv4Unspecified(), Port: 36412}); cfg.S1 != want {
 		t.Errorf("S1 = %+v, want %+v", cfg.S1, want)
+	}
+
+	if want := (Endpoint{Address: netip.IPv4Unspecified(), Port: 38412}); cfg.NG != want {
+		t.Errorf("NG = %+v, want %+v", cfg.NG, want)
 	}
 }
 
@@ -85,6 +93,8 @@ func TestLoadErrors(t *testing.T) {
 		"s1 port":         {content: "db:\n  path: mocn.db\ns1:\n  port: 65536\n", want: "s1.port"},
 		"s1 address":      {content: "db:\n  path: mocn.db\ns1:\n  address: 36412\n", want: "parse config"},
 		"s1 zone":         {content: "db:\n  path: mocn.db\ns1:\n  address: fe80::1%eth0\n", want: "s1.address"},
+		"ng port":         {content: "db:\n  path: mocn.db\nng:\n  port: 65536\n", want: "ng.port"},
+		"ng zone":         {content: "db:\n  path: mocn.db\nng:\n  address: fe80::1%eth0\n", want: "ng.address"},
 	}
 
 	for name, tc := range tests {

@@ -35,10 +35,10 @@ import { errorMessage, useSnackbar } from "@/contexts/SnackbarContext";
 import {
   deleteOperator,
   getOperator,
-  type CoreNode,
+  type AMF,
   type CoreNodeKind,
   type MME,
-  type MMEStatus,
+  type MMEState,
   type Operator,
   type RadioUEConnections,
 } from "@/queries/operators";
@@ -46,12 +46,16 @@ import { radioPath } from "@/queries/radios";
 import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
 import {
+  formatAMFOverload,
+  formatAMFOverloadDetail,
   formatGlobalENBID,
   formatGlobalGNBID,
   formatGUMMEI,
   formatOverload,
   formatOverloadDetail,
   formatPLMN,
+  formatPLMNSupport,
+  formatServedGUAMIs,
   formatTNLAddresses,
   GATEWAY_IDENTITY_HELP,
   operatorPath,
@@ -80,13 +84,64 @@ type Editing =
   | { type: "edit"; kind: CoreNodeKind; index: number }
   | { type: "delete"; kind: CoreNodeKind; index: number };
 
+interface NodeStatus {
+  state: MMEState;
+  since: string;
+  name?: string;
+  servedIDs?: string;
+  capacity?: number;
+  ueConnections: number;
+  overload?: { text: string; detail: string };
+}
+
 interface NodeRow {
   id: string;
   kind: CoreNodeKind;
   index: number;
   addresses: string[];
-  status?: MMEStatus;
+  status?: NodeStatus;
 }
+
+const mmeStatus = ({ status }: MME): NodeStatus | undefined =>
+  status && {
+    state: status.state,
+    since: status.since,
+    name: status.mme_name,
+    servedIDs: status.served_gummeis?.length
+      ? status.served_gummeis.map(formatGUMMEI).join("; ")
+      : undefined,
+    capacity: status.relative_mme_capacity,
+    ueConnections: status.ue_connections,
+    overload: status.overload?.length
+      ? {
+          text: formatOverload(status.overload),
+          detail: formatOverloadDetail(status.overload),
+        }
+      : undefined,
+  };
+
+const amfStatus = ({ status }: AMF): NodeStatus | undefined =>
+  status && {
+    state: status.state,
+    since: status.since,
+    name: status.amf_name,
+    servedIDs: status.served_guamis?.length
+      ? [
+          `GUAMIs ${formatServedGUAMIs(status.served_guamis, status.unavailable_guamis)}`,
+          ...(status.plmn_support?.length
+            ? [`PLMN support ${formatPLMNSupport(status.plmn_support)}`]
+            : []),
+        ].join(" · ")
+      : undefined,
+    capacity: status.relative_amf_capacity,
+    ueConnections: status.ue_connections,
+    overload: status.overload
+      ? {
+          text: formatAMFOverload(status.overload),
+          detail: formatAMFOverloadDetail(status.overload),
+        }
+      : undefined,
+  };
 
 const NONE = "—";
 
@@ -112,52 +167,56 @@ const NODE_COLUMNS: GridColDef<NodeRow>[] = [
   {
     field: "mme_name",
     headerName: "Name",
-    description: "The name the MME sent in its S1 Setup Response.",
+    description:
+      "The name the MME sent in its S1 Setup Response, or the AMF in its NG Setup Response.",
     flex: 0.6,
     minWidth: 120,
-    valueGetter: (_value, row) => row.status?.mme_name ?? NONE,
+    valueGetter: (_value, row) => row.status?.name ?? NONE,
   },
   {
     field: "served_ids",
     headerName: "Served IDs",
     description:
-      "The GUMMEIs the MME serves, from its S1 Setup Response: PLMNs, MME group IDs and MME codes.",
+      "MME: the GUMMEIs it serves (PLMNs, MME group IDs and MME codes), from its S1 Setup Response. AMF: the GUAMIs it serves, from its NG Setup Response, marked unavailable after an AMF Status Indication, and the S-NSSAIs it supports for each PLMN.",
     flex: 1,
     minWidth: 200,
     renderCell: ({ row }) =>
-      row.status?.served_gummeis?.length ? (
-        <OneLine
-          title={row.status.served_gummeis.map(formatGUMMEI).join("; ")}
-        />
-      ) : (
-        NONE
-      ),
+      row.status?.servedIDs ? <OneLine title={row.status.servedIDs} /> : NONE,
+  },
+  {
+    field: "capacity",
+    headerName: "Capacity",
+    description:
+      "The relative capacity the node sent in its S1 or NG Setup Response. Ella MOCN selects among the operator's nodes in proportion to it, and never selects a node with 0 for a new UE.",
+    flex: 0.3,
+    minWidth: 110,
+    valueGetter: (_value, row) =>
+      row.status?.capacity === undefined ? NONE : String(row.status.capacity),
   },
   {
     field: "ue_connections",
     headerName: "UE connections",
     description:
-      "The UE-associated logical S1-connections Ella MOCN relays to the MME, one per UE in ECM-CONNECTED.",
+      "The UE-associated logical S1-connections (MME) or NG-connections (AMF) Ella MOCN relays to the node, one per connected UE.",
     flex: 0.4,
     minWidth: 140,
     valueGetter: (_value, row) =>
-      row.status ? String(row.status.ue_connections) : NONE,
+      row.status ? String(row.status.ueConnections) : NONE,
   },
   {
     field: "overload",
     headerName: "Overload",
     description:
-      "The overload action the MME requested in OVERLOAD START, which Ella MOCN relays to the radios that broadcast one of the operator's PLMNs, with the GUMMEIs it applies to. None: no ongoing overload action.",
+      "The overload action the node requested in OVERLOAD START. For an MME, Ella MOCN relays it to the radios that broadcast one of the operator's PLMNs, with the GUMMEIs it applies to. For an AMF, it shows the action for the AMF and for each overloaded slice. None: no ongoing overload action.",
     flex: 0.6,
     minWidth: 140,
     renderCell: ({ row }) => {
       if (!row.status) {
         return NONE;
       }
-      const overload = row.status.overload ?? [];
-      return overload.length ? (
-        <OneLine title={formatOverloadDetail(overload)}>
-          {formatOverload(overload)}
+      return row.status.overload ? (
+        <OneLine title={row.status.overload.detail}>
+          {row.status.overload.text}
         </OneLine>
       ) : (
         "None"
@@ -168,7 +227,7 @@ const NODE_COLUMNS: GridColDef<NodeRow>[] = [
     field: "state",
     headerName: "Status",
     description:
-      "Disconnected: no SCTP association to the MME. Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded. Setup failed: the MME rejected the S1 Setup.",
+      "Disconnected: no SCTP association to the node. Connected: SCTP association up, S1 or NG Setup not done yet. Up: S1 or NG Setup succeeded. Setup failed: the node rejected the S1 or NG Setup.",
     flex: 0.4,
     minWidth: 150,
     renderCell: ({ row }) =>
@@ -206,7 +265,7 @@ const RADIO_COLUMNS: GridColDef<RadioUEConnections>[] = [
     field: "ue_connections",
     headerName: "UE connections",
     description:
-      "The UE-associated logical S1-connections Ella MOCN relays from the radio to the operator, one per UE in ECM-CONNECTED.",
+      "The UE-associated logical S1-connections or NG-connections Ella MOCN relays from the radio to the operator, one per connected UE.",
     flex: 0.5,
     minWidth: 140,
   },
@@ -222,7 +281,7 @@ function CoreNodes({
   onDelete,
 }: {
   mmes: MME[];
-  amfs: CoreNode[];
+  amfs: AMF[];
   identity: Record<CoreNodeKind, boolean>;
   editable: boolean;
   onAdd: () => void;
@@ -235,13 +294,14 @@ function CoreNodes({
       kind: "MME" as const,
       index,
       addresses: node.tnl_addresses,
-      status: node.status,
+      status: mmeStatus(node),
     })),
     ...amfs.map((node, index) => ({
       id: `AMF ${node.tnl_addresses.join(",")}`,
       kind: "AMF" as const,
       index,
       addresses: node.tnl_addresses,
+      status: amfStatus(node),
     })),
   ];
   const columns: GridColDef<NodeRow>[] = [...NODE_COLUMNS];

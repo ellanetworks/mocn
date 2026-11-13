@@ -1,12 +1,14 @@
 package s1
 
-import "github.com/prometheus/client_golang/prometheus"
-
-const interfaceS1 = "s1"
+import (
+	"github.com/ellanetworks/mocn/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 const (
-	sideRadio = "radio"
-	sideCore  = "core"
+	interfaceS1 = metrics.InterfaceS1
+	sideRadio   = metrics.SideRadio
+	sideCore    = metrics.SideCore
 )
 
 const (
@@ -25,127 +27,88 @@ var setupResults = map[string][]string{
 	sideCore:  {setupSuccess, setupFailure, setupTimeout, setupError},
 }
 
-var (
-	radioAssociationsDesc = prometheus.NewDesc("ellamocn_radio_associations",
-		"Radio (eNodeB) associations, by interface (s1) and state "+
-			"(connected: SCTP association up, no successful S1 Setup; up: S1 Setup succeeded).",
-		[]string{"interface", "state"}, nil)
-	coreAssociationsDesc = prometheus.NewDesc("ellamocn_core_associations",
-		"Core (MME) associations of the configured MMEs, by interface (s1), operator and state "+
-			"(disconnected: no SCTP association; connected: SCTP association up, S1 Setup not done; "+
-			"up: S1 Setup succeeded; setup_failed: the MME rejected S1 Setup).",
-		[]string{"interface", "operator", "state"}, nil)
-	coreOverloadedDesc = prometheus.NewDesc("ellamocn_core_overloaded",
-		"Core (MME) associations of the configured MMEs with an ongoing overload action (TS 36.413 clause 8.7.6), "+
-			"by interface (s1) and operator.",
-		[]string{"interface", "operator"}, nil)
-	ueConnectionsDesc = prometheus.NewDesc("ellamocn_ue_connections",
-		"UE-associated logical S1-connections (TS 36.413 clause 3.1) relayed, by interface (s1) and operator.",
-		[]string{"interface", "operator"}, nil)
-)
-
-func newSetupCounter() *prometheus.CounterVec {
-	c := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ellamocn_setup_attempts_total",
-		Help: "Setup procedures (S1 Setup), by interface (s1), side and result. " +
-			"side=radio: received from radios; result success, invalid (undecodable or invalid request), " +
-			"unknown_plmn (no operator serves a broadcast PLMN), no_mme (no MME of the serving operators is up), " +
-			"mme_failure (the serving operators' MMEs rejected S1 Setup), " +
-			"error (the response could not be built or sent, or the radio left before the answer). " +
-			"side=core: sent to MMEs; result success, failure (the MME rejected the request or answered with an invalid response), " +
-			"timeout (no answer from the MME), " +
-			"error (the request could not be built or sent, or the association dropped before the answer).",
-	}, []string{"interface", "side", "result"})
-
+func initMetrics(m *metrics.Metrics) {
 	for side, results := range setupResults {
 		for _, r := range results {
-			c.WithLabelValues(interfaceS1, side, r)
+			m.Setups.WithLabelValues(interfaceS1, side, r)
 		}
 	}
 
-	return c
+	for _, r := range initialUEResults {
+		m.InitialUE.WithLabelValues(interfaceS1, r)
+	}
+
+	for _, r := range pagingResults {
+		m.Paging.WithLabelValues(interfaceS1, r)
+	}
+
+	for proc, results := range overloadResults {
+		for _, r := range results {
+			m.Overload.WithLabelValues(interfaceS1, proc, r)
+		}
+	}
 }
 
 func (g *Gateway) countSetup(side, result string) {
-	g.setups.WithLabelValues(interfaceS1, side, result).Inc()
-}
-
-type stateCollector struct {
-	g *Gateway
+	g.cfg.Metrics.Setups.WithLabelValues(interfaceS1, side, result).Inc()
 }
 
 func (g *Gateway) Collectors() []prometheus.Collector {
-	return []prometheus.Collector{g.setups, g.overloads, g.relay.initialUE, g.relay.paged, stateCollector{g: g}}
+	return g.cfg.Metrics.Collectors(g)
 }
 
-func (c stateCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- radioAssociationsDesc
+func (g *Gateway) MetricsState() metrics.State {
+	ues := g.relay.countByOperator()
+	s := metrics.State{
+		Interface:     interfaceS1,
+		Radios:        map[string]int{},
+		Core:          map[string]map[string]int{},
+		Overloaded:    map[string]int{},
+		UEConnections: map[string]int{},
+	}
 
-	ch <- coreAssociationsDesc
+	for _, st := range RANNodeStates {
+		s.RadioStates = append(s.RadioStates, string(st))
+	}
 
-	ch <- coreOverloadedDesc
+	for _, st := range MMEStates {
+		s.CoreStates = append(s.CoreStates, string(st))
+	}
 
-	ch <- ueConnectionsDesc
-}
-
-func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
-	ues := c.g.relay.countByOperator()
-	radios := map[RANNodeState]int{}
 	names := map[int64]string{}
-	ueConns := map[string]int{}
-	core := map[string]map[MMEState]int{}
-	overloaded := map[string]int{}
 
-	c.g.mu.Lock()
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	for _, n := range c.g.ranNodes {
+	for _, n := range g.ranNodes {
 		if n.up {
-			radios[RANNodeUp]++
+			s.Radios[string(RANNodeUp)]++
 		} else {
-			radios[RANNodeConnected]++
+			s.Radios[string(RANNodeConnected)]++
 		}
 	}
 
-	for _, o := range c.g.operators {
+	for _, o := range g.operators {
 		names[o.id] = o.name
-		ueConns[o.name] += ues[o.id]
+		s.UEConnections[o.name] += ues[o.id]
 	}
 
-	for _, m := range c.g.mmes {
+	for _, m := range g.mmes {
 		name, ok := names[m.operatorID]
 		if !ok {
 			continue
 		}
 
-		if core[name] == nil {
-			core[name] = map[MMEState]int{}
+		if s.Core[name] == nil {
+			s.Core[name] = map[string]int{}
 		}
 
-		core[name][m.status.State]++
+		s.Core[name][string(m.status.State)]++
 
 		if len(m.status.Overload) > 0 {
-			overloaded[name]++
+			s.Overloaded[name]++
 		}
 	}
 
-	c.g.mu.Unlock()
-
-	for _, s := range RANNodeStates {
-		ch <- prometheus.MustNewConstMetric(radioAssociationsDesc, prometheus.GaugeValue, float64(radios[s]),
-			interfaceS1, string(s))
-	}
-
-	for name, states := range core {
-		for _, s := range MMEStates {
-			ch <- prometheus.MustNewConstMetric(coreAssociationsDesc, prometheus.GaugeValue, float64(states[s]),
-				interfaceS1, name, string(s))
-		}
-
-		ch <- prometheus.MustNewConstMetric(coreOverloadedDesc, prometheus.GaugeValue, float64(overloaded[name]),
-			interfaceS1, name)
-	}
-
-	for name, n := range ueConns {
-		ch <- prometheus.MustNewConstMetric(ueConnectionsDesc, prometheus.GaugeValue, float64(n), interfaceS1, name)
-	}
+	return s
 }

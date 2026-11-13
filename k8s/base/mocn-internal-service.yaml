@@ -17,3 +17,7 @@ spec:
     protocol: SCTP
     port: 36412
     targetPort: s1
+  - name: ng
+    protocol: SCTP
+    port: 38412
+    targetPort: ng

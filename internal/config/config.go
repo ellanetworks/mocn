@@ -15,13 +15,15 @@ import (
 const (
 	defaultAPIPort = 5030
 	defaultS1Port  = 36412
+	defaultNGPort  = 38412
 )
 
 type Config struct {
 	Logging   Logging   `yaml:"logging"`
 	DB        DB        `yaml:"db"`
 	API       API       `yaml:"api"`
-	S1        S1        `yaml:"s1"`
+	S1        Endpoint  `yaml:"s1"`
+	NG        Endpoint  `yaml:"ng"`
 	Telemetry Telemetry `yaml:"telemetry"`
 }
 
@@ -84,7 +86,7 @@ func (a API) ListenAddress() string {
 	return netip.AddrPortFrom(a.Address, uint16(a.Port)).String()
 }
 
-type S1 struct {
+type Endpoint struct {
 	Address netip.Addr `yaml:"address"`
 	Port    int        `yaml:"port"`
 }
@@ -119,6 +121,14 @@ func Load(path string) (Config, error) {
 		cfg.S1.Port = defaultS1Port
 	}
 
+	if !cfg.NG.Address.IsValid() {
+		cfg.NG.Address = netip.IPv4Unspecified()
+	}
+
+	if cfg.NG.Port == 0 {
+		cfg.NG.Port = defaultNGPort
+	}
+
 	if err := cfg.validate(); err != nil {
 		return Config{}, err
 	}
@@ -136,6 +146,10 @@ func (c Config) validate() error {
 		return errors.New("s1.port must be between 1 and 65535")
 	case c.S1.Address.Zone() != "":
 		return errors.New("s1.address must not have a zone")
+	case c.NG.Port < 1 || c.NG.Port > 65535:
+		return errors.New("ng.port must be between 1 and 65535")
+	case c.NG.Address.Zone() != "":
+		return errors.New("ng.address must not have a zone")
 	case c.Telemetry.Enabled && c.Telemetry.OTLPEndpoint == "":
 		return errors.New("telemetry.otlp_endpoint is required when telemetry.enabled is true")
 	}

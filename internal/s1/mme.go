@@ -14,6 +14,8 @@ import (
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gw"
+	"github.com/ellanetworks/mocn/internal/tracing"
 )
 
 const dialTimeout = 10 * time.Second
@@ -140,7 +142,7 @@ func (c *mmeClient) run(ctx context.Context) {
 
 			log.WarnContext(ctx, "MME association failed", slog.Any("error", err))
 
-			if !sleep(ctx, backoff) {
+			if !gw.Sleep(ctx, backoff) {
 				return
 			}
 
@@ -195,23 +197,11 @@ func (c *mmeClient) run(ctx context.Context) {
 			backoff = c.g.cfg.ReconnectMin
 		}
 
-		if !sleep(ctx, backoff) {
+		if !gw.Sleep(ctx, backoff) {
 			return
 		}
 
 		backoff = min(2*backoff, c.g.cfg.ReconnectMax)
-	}
-}
-
-func sleep(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
-	defer t.Stop()
-
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-		return true
 	}
 }
 
@@ -366,6 +356,7 @@ func (c *mmeClient) sendS1Setup(ctx context.Context, s *mmeSession, want enbConf
 	return nil
 }
 
+// TS 36.413 clause 9.1.8.4
 func s1SetupRequest(enbID db.GlobalENBID, want enbConfig) ([]byte, error) {
 	id, err := globalENBIDTo(enbID)
 	if err != nil {
@@ -377,7 +368,9 @@ func s1SetupRequest(enbID db.GlobalENBID, want enbConfig) ([]byte, error) {
 		return nil, err
 	}
 
-	out, err := (&s1ap.S1SetupRequest{GlobalENBID: id, SupportedTAs: tas, DefaultPagingDRX: s1ap.Ptr(want.drx)}).Marshal()
+	out, err := (&s1ap.S1SetupRequest{
+		GlobalENBID: id, ENBName: s1ap.Ptr(gw.NodeName), SupportedTAs: tas, DefaultPagingDRX: s1ap.Ptr(want.drx),
+	}).Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("marshal S1 Setup Request: %w", err)
 	}
@@ -392,8 +385,9 @@ func (c *mmeClient) endSetup(s *mmeSession, result string) {
 }
 
 // TS 36.413 clause 8.7.4
+// TS 36.413 clause 9.1.8.7
 func (c *mmeClient) sendENBConfigurationUpdate(ctx context.Context, s *mmeSession, want enbConfig) error {
-	upd := &s1ap.ENBConfigurationUpdate{}
+	upd := &s1ap.ENBConfigurationUpdate{ENBName: s1ap.Ptr(gw.NodeName)}
 
 	if !tasEqual(want.tas, s.acked.tas) {
 		tas, err := tasTo(want.tas)
@@ -445,7 +439,7 @@ func (c *mmeClient) handle(ctx context.Context, s *mmeSession, msg []byte) error
 	defer span.End()
 
 	if err != nil {
-		spanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, errTypeInvalid)
 		c.logger().WarnContext(ctx, "undecodable S1AP message from MME", slog.Any("error", err))
 
 		return nil
@@ -479,7 +473,7 @@ func (c *mmeClient) handle(ctx context.Context, s *mmeSession, msg []byte) error
 	}
 
 	if !s.setupDone {
-		spanFailed(ctx, errTypeNoSetup)
+		tracing.SpanFailed(ctx, errTypeNoSetup)
 		c.logger().DebugContext(ctx, "dropped S1AP message before S1 Setup",
 			slog.String("procedure", procedureOf(pdu).String()))
 
@@ -498,7 +492,7 @@ func (c *mmeClient) handleS1SetupResponse(ctx context.Context, s *mmeSession, va
 
 	resp, err := s1ap.ParseS1SetupResponse(value)
 	if err != nil {
-		spanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, errTypeInvalid)
 		c.endSetup(s, setupFailure)
 
 		return fmt.Errorf("S1 Setup Response: %w", err)
@@ -506,7 +500,7 @@ func (c *mmeClient) handleS1SetupResponse(ctx context.Context, s *mmeSession, va
 
 	served, err := gummeisFrom(resp.ServedGUMMEIs)
 	if err != nil {
-		spanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, errTypeInvalid)
 		c.endSetup(s, setupFailure)
 
 		return fmt.Errorf("S1 Setup Response: %w", err)
@@ -543,7 +537,7 @@ func (c *mmeClient) handleS1SetupFailure(ctx context.Context, s *mmeSession, val
 
 	fail, err := s1ap.ParseS1SetupFailure(value)
 	if err != nil {
-		spanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, errTypeInvalid)
 		return fmt.Errorf("S1 Setup Failure: %w", err)
 	}
 
@@ -583,7 +577,7 @@ func (c *mmeClient) handleENBConfigurationUpdateFailure(ctx context.Context, s *
 			retry = timeToWait[*fail.TimeToWait]
 		}
 	} else {
-		spanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, errTypeInvalid)
 	}
 
 	s.retryAt = c.g.cfg.Now().Add(retry)
@@ -612,7 +606,7 @@ func (c *mmeClient) handleMMEConfigurationUpdate(ctx context.Context, s *mmeSess
 			diag = s1ap.Ptr(ase.OutcomeDiagnostics())
 		}
 
-		spanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, errTypeInvalid)
 		c.logger().WarnContext(ctx, "rejected MME Configuration Update", slog.Any("error", err))
 
 		if out, err := (&s1ap.MMEConfigurationUpdateFailure{Cause: &cause, CriticalityDiagnostics: diag}).Marshal(); err == nil {

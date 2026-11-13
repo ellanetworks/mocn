@@ -11,13 +11,15 @@ import StateChip from "@/components/StateChip";
 import {
   getRadio,
   radioLabel,
+  radioName,
   type OperatorUEConnections,
   type Radio,
   type SupportedTA,
 } from "@/queries/radios";
 import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
-import { formatGlobalENBID, formatPLMN, operatorPath } from "@/utils/operators";
+import { formatPLMN, operatorPath } from "@/utils/operators";
+import { formatRadioID, RADIO_TYPES } from "@/utils/radios";
 
 export const RADIO_REFRESH_MS = 5000;
 
@@ -63,19 +65,27 @@ const OPERATOR_COLUMNS: GridColDef<OperatorUEConnections>[] = [
     field: "ue_connections",
     headerName: "UE connections",
     description:
-      "The UE-associated logical S1-connections Ella MOCN relays from the radio to the operator, one per UE in ECM-CONNECTED.",
+      "The UE-associated logical S1-connections or NG-connections Ella MOCN relays from the radio to the operator, one per connected UE.",
     flex: 0.5,
     minWidth: 140,
   },
 ];
 
+const SETUP: Record<Radio["interface"], string> = {
+  s1: "S1 Setup Request",
+  ng: "NG Setup Request",
+};
+
 function RadioSections({ radio }: { radio: Radio }) {
+  const setup = SETUP[radio.interface];
+  const ng = radio.interface === "ng";
+
   return (
     <>
       <SectionHeader
         id="overview-title"
         title="Overview"
-        description="What the radio sent in its S1 Setup Request."
+        description={`What the radio sent in its ${setup}.`}
         first
       />
       <SettingsTable
@@ -83,19 +93,26 @@ function RadioSections({ radio }: { radio: Radio }) {
         rows={[
           {
             label: "Name",
-            help: "The name the radio sent in its S1 Setup Request.",
-            value: radio.enb_name ?? NONE,
+            help: `The ${ng ? "RAN node name" : "eNB name"} the radio sent in its ${setup}.`,
+            value: radioName(radio) ?? NONE,
           },
           {
-            label: "Global eNB ID",
-            help: "The identity the radio sent in its S1 Setup Request: PLMN, eNB ID type and eNB ID.",
-            value: radio.global_enb_id
-              ? formatGlobalENBID(radio.global_enb_id)
-              : NONE,
+            label: "Type",
+            help: "eNB: a 4G radio, over S1. gNB: a 5G radio, over NG.",
+            value: RADIO_TYPES[radio.interface],
+          },
+          {
+            label: ng ? "Global gNB ID" : "Global eNB ID",
+            help: ng
+              ? `The identity the radio sent in its ${setup}: PLMN, gNB ID and its length.`
+              : `The identity the radio sent in its ${setup}: PLMN, eNB ID type and eNB ID.`,
+            value: formatRadioID(radio) ?? NONE,
           },
           {
             label: "Status",
-            help: "Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded.",
+            help: ng
+              ? "Connected: SCTP association up, NG Setup not done yet. Up: NG Setup succeeded."
+              : "Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded.",
             value: <StateChip state={radio.state} />,
           },
           {

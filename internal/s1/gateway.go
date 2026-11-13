@@ -2,9 +2,9 @@ package s1
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -13,7 +13,8 @@ import (
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/db"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/ellanetworks/mocn/internal/gw"
+	"github.com/ellanetworks/mocn/internal/metrics"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -37,6 +38,7 @@ type Config struct {
 	Listener        *sctp.Listener
 	Operators       func(ctx context.Context) ([]db.Operator, error)
 	Relay           Relay
+	Metrics         *metrics.Metrics
 	TracerProvider  trace.TracerProvider
 	Logger          *slog.Logger
 	MMEPort         int
@@ -50,14 +52,12 @@ type Config struct {
 }
 
 type Gateway struct {
-	cfg       Config
-	log       *slog.Logger
-	tracer    trace.Tracer
-	setups    *prometheus.CounterVec
-	overloads *prometheus.CounterVec
-	relay     *relay
-	runCtx    context.Context
-	clients   sync.WaitGroup
+	cfg     Config
+	log     *slog.Logger
+	tracer  trace.Tracer
+	relay   *relay
+	runCtx  context.Context
+	clients sync.WaitGroup
 
 	reconcileMu sync.Mutex
 
@@ -93,19 +93,23 @@ func New(cfg Config) *Gateway {
 		}
 	}
 
+	if cfg.Metrics == nil {
+		cfg.Metrics = metrics.New()
+	}
+
+	initMetrics(cfg.Metrics)
+
 	if cfg.MMEPort == 0 {
 		cfg.MMEPort = Port
 	}
 
 	g := &Gateway{
-		cfg:       cfg,
-		log:       cfg.Logger,
-		mmes:      map[string]*mmeClient{},
-		stopping:  map[*mmeClient]struct{}{},
-		ranNodes:  map[*sctp.SCTPConn]*RANAssociation{},
-		changed:   make(chan struct{}),
-		setups:    newSetupCounter(),
-		overloads: newOverloadCounter(),
+		cfg:      cfg,
+		log:      cfg.Logger,
+		mmes:     map[string]*mmeClient{},
+		stopping: map[*mmeClient]struct{}{},
+		ranNodes: map[*sctp.SCTPConn]*RANAssociation{},
+		changed:  make(chan struct{}),
 	}
 
 	if cfg.TracerProvider != nil {
@@ -183,7 +187,7 @@ func (g *Gateway) loadOperators(ctx context.Context) {
 
 		g.log.ErrorContext(ctx, "failed to load operators", slog.Any("error", err), slog.Duration("retry_in", backoff))
 
-		if !sleep(ctx, backoff) {
+		if !gw.Sleep(ctx, backoff) {
 			return
 		}
 
@@ -336,7 +340,7 @@ func (g *Gateway) enbConfigLocked(operatorID int64) (enbConfig, bool) {
 func (g *Gateway) servedGUMMEIsLocked() []ServedGUMMEIs {
 	pools := make([]mmePool, 0, len(g.mmes))
 
-	for _, key := range sortedKeys(g.mmes) {
+	for _, key := range slices.Sorted(maps.Keys(g.mmes)) {
 		c := g.mmes[key]
 		if c.status.State != MMEUp {
 			continue
@@ -348,17 +352,6 @@ func (g *Gateway) servedGUMMEIsLocked() []ServedGUMMEIs {
 	}
 
 	return mergeServedGUMMEIs(pools)
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-
-	slices.Sort(keys)
-
-	return keys
 }
 
 func (g *Gateway) kickMMEsLocked() {
@@ -424,18 +417,6 @@ func (g *Gateway) RANNodes() []RANNode {
 	})
 
 	return out
-}
-
-var errClosed = errors.New("association closed")
-
-func send(conn *sctp.SCTPConn, msg []byte, stream uint16) error {
-	if conn == nil {
-		return errClosed
-	}
-
-	_, err := conn.WriteMsg(msg, &sctp.SndRcvInfo{Stream: stream, PPID: sctp.PPIDWireOrder(PPID)})
-
-	return err
 }
 
 func responseDiagnostics(proc s1ap.ProcedureCode, d s1ap.Diagnostics) *s1ap.CriticalityDiagnostics {

@@ -1,10 +1,12 @@
 package s1
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gw"
 )
 
 const (
@@ -43,7 +45,7 @@ func (g *Gateway) selectionLocked(plmn db.PLMN) (operatorView, []mmeCandidate, b
 
 	var cands []mmeCandidate
 
-	for _, key := range sortedKeys(g.mmes) {
+	for _, key := range slices.Sorted(maps.Keys(g.mmes)) {
 		c := g.mmes[key]
 		if c.operatorID != op.id || c.status.State != MMEUp || c.assoc == nil {
 			continue
@@ -71,7 +73,7 @@ func selectMME(cands []mmeCandidate, id ueIdentity, intN func(int) int) (*MMEAss
 	}
 
 	if g := id.gummei; g != nil {
-		if plmn, err := decodePLMN(g.PLMNIdentity); err == nil {
+		if plmn, err := gw.DecodePLMN(g.PLMNIdentity); err == nil {
 			group := uint16(g.MMEGroupID[0])<<8 | uint16(g.MMEGroupID[1])
 			if c := findServing(cands, plmn, &group, uint8(g.MMECode)); c != nil {
 				return c, selectedByGUMMEI

@@ -9,6 +9,7 @@ import { json, readOnlyAuth, renderWithClient, stubApi } from "@/test/render";
 const NODES: Radio[] = [
   {
     ref: "001-01:macro:1",
+    interface: "s1",
     global_enb_id: {
       plmn: { mcc: "001", mnc: "01" },
       enb_id_type: "macro",
@@ -37,6 +38,7 @@ const NODES: Radio[] = [
   },
   {
     ref: "315-010:home:4660",
+    interface: "s1",
     global_enb_id: {
       plmn: { mcc: "315", mnc: "010" },
       enb_id_type: "home",
@@ -50,12 +52,31 @@ const NODES: Radio[] = [
     ue_connections: 0,
   },
   {
-    global_enb_id: null,
+    interface: "s1",
     supported_tas: [],
     state: "connected",
     connected_since: "2026-11-12T10:00:09Z",
     tnl_addresses: ["10.0.0.8"],
     ue_connections: 0,
+  },
+  {
+    ref: "001-01:gnb24:412",
+    interface: "ng",
+    global_gnb_id: {
+      plmn: { mcc: "001", mnc: "01" },
+      gnb_id: 412,
+      gnb_id_length: 24,
+    },
+    ran_node_name: "srsgnb01",
+    supported_tas: [
+      { tac: 66051, broadcast_plmns: [{ mcc: "001", mnc: "01" }] },
+    ],
+    default_paging_drx: 128,
+    state: "up",
+    connected_since: "2026-11-12T10:00:10Z",
+    tnl_addresses: ["10.0.0.9"],
+    ue_connections: 1,
+    ue_connections_by_operator: [{ operator: "Operator A", ue_connections: 1 }],
   },
 ];
 
@@ -117,14 +138,15 @@ describe("Radios", () => {
     renderPage();
 
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Radios (3)" }),
+      await screen.findByRole("heading", { level: 1, name: "Radios (4)" }),
     ).toBeInTheDocument();
     expect(document.title).toBe("Radios · Ella MOCN");
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
     ).toEqual([
       "Name",
-      "Global eNB ID",
+      "Type",
+      "Global ID",
       "Addresses",
       "UE connections",
       "Status",
@@ -132,6 +154,7 @@ describe("Radios", () => {
     expect(rows()).toEqual([
       [
         "srsenb01",
+        "eNB (4G)",
         "001/01 · Macro (20 bits) · 1",
         "10.0.0.5, 10.0.0.6",
         "2",
@@ -139,13 +162,19 @@ describe("Radios", () => {
       ],
       [
         "315-010:home:4660",
+        "eNB (4G)",
         "315/010 · Home (28 bits) · 4660",
         "10.0.0.7",
         "0",
         "Connected",
       ],
-      ["10.0.0.8", "—", "10.0.0.8", "0", "Connected"],
+      ["10.0.0.8", "eNB (4G)", "—", "10.0.0.8", "0", "Connected"],
+      ["srsgnb01", "gNB (5G)", "001/01 · 412 (24 bits)", "10.0.0.9", "1", "Up"],
     ]);
+    expect(screen.getByRole("link", { name: "srsgnb01" })).toHaveAttribute(
+      "href",
+      "/radios/001-01%3Agnb24%3A412",
+    );
     expect(screen.getByRole("link", { name: "srsenb01" })).toHaveAttribute(
       "href",
       "/radios/001-01%3Amacro%3A1",
@@ -155,7 +184,7 @@ describe("Radios", () => {
     ).not.toBeInTheDocument();
     expect(
       within(screen.getByRole("grid", { name: "Radios" }))
-        .getByText("Up")
+        .getAllByText("Up")[0]
         .closest(".MuiChip-root"),
     ).toHaveAttribute(
       "title",
@@ -193,6 +222,7 @@ describe("Radios", () => {
       overview.getByText(label).closest("tr")!.querySelectorAll("td")[1]
         .textContent;
     expect(valueOf("Name")).toBe("srsenb01");
+    expect(valueOf("Type")).toBe("eNB (4G)");
     expect(valueOf("Global eNB ID")).toBe("001/01 · Macro (20 bits) · 1");
     expect(valueOf("Status")).toBe("Up");
     expect(valueOf("Connected since")).toMatch(/^Nov 12, \d\d:\d\d:00$/);
@@ -292,6 +322,32 @@ describe("Radios", () => {
     );
   });
 
+  it("shows a gNB's details", async () => {
+    serve(() => NODES);
+
+    renderAt("/radios/001-01%3Agnb24%3A412");
+
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Overview" }),
+    ).toBeInTheDocument();
+    const overview = within(screen.getByRole("table", { name: "Overview" }));
+    const valueOf = (label: string) =>
+      overview.getByText(label).closest("tr")!.querySelectorAll("td")[1]
+        .textContent;
+    expect(valueOf("Name")).toBe("srsgnb01");
+    expect(valueOf("Type")).toBe("gNB (5G)");
+    expect(valueOf("Global gNB ID")).toBe("001/01 · 412 (24 bits)");
+    expect(valueOf("Supported TAs")).toBe("TAC 66051: 001/01");
+    expect(
+      screen.getByText("What the radio sent in its NG Setup Request."),
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("grid", { name: "UE connections by operator" }),
+      ).getByRole("link", { name: "Operator A" }),
+    ).toBeInTheDocument();
+  });
+
   it("says when a radio is gone", async () => {
     serve(() => NODES);
 
@@ -306,12 +362,12 @@ describe("Radios", () => {
     serve(() => NODES);
 
     renderPage();
-    await screen.findByRole("heading", { level: 1, name: "Radios (3)" });
+    await screen.findByRole("heading", { level: 1, name: "Radios (4)" });
 
-    fireEvent.mouseOver(screen.getByText("Global eNB ID"));
+    fireEvent.mouseOver(screen.getByText("Global ID"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "The identity the radio sent in its S1 Setup Request: PLMN, eNB ID type and eNB ID.",
+        name: "The identity the radio sent in its S1 or NG Setup Request: the Global eNB ID (PLMN, eNB ID type and eNB ID) or the Global gNB ID (PLMN, gNB ID and its length).",
       }),
     ).toBeInTheDocument();
   });

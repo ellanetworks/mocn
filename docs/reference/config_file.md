@@ -18,6 +18,9 @@ api:
 s1:
   address: 0.0.0.0
   port: 36412
+ng:
+  address: 0.0.0.0
+  port: 38412
 telemetry:
   enabled: true
   otlp_endpoint: localhost:4317
@@ -33,7 +36,9 @@ telemetry:
 | `api.tls.key` | | Path of the PEM private key. Required with `api.tls.cert`. |
 | `s1.address` | `0.0.0.0` | Address of the S1 SCTP listener that radios connect to. |
 | `s1.port` | `36412` | Port of the S1 SCTP listener. |
+| `ng.address` | `0.0.0.0` | Address of the NG SCTP listener that radios connect to. |
+| `ng.port` | `38412` | Port of the NG SCTP listener. |
 | `telemetry.enabled` | `false` | Export [traces](observability.md#traces). |
 | `telemetry.otlp_endpoint` | | The `host:port` of an OTLP/gRPC collector, over plain gRPC. Required when `telemetry.enabled` is `true`. |
 
-MMEs are reached on port 36412. SCTP PPID is 18.
+MMEs are reached on port 36412, with SCTP PPID 18. AMFs are reached on port 38412, with SCTP PPID 60.

@@ -7,7 +7,8 @@ import (
 	"slices"
 
 	"github.com/ellanetworks/core/s1ap"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/ellanetworks/mocn/internal/gw"
+	"github.com/ellanetworks/mocn/internal/tracing"
 )
 
 const (
@@ -17,21 +18,6 @@ const (
 )
 
 var pagingResults = []string{pagingRelayed, pagingNoRadio, pagingInvalid}
-
-func newPagingCounter() *prometheus.CounterVec {
-	c := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ellamocn_paging_messages_total",
-		Help: "PAGING messages received from MMEs, by interface (s1) and result " +
-			"(relayed: sent to the radios that serve a TAI of the List of TAIs in one of the operator's PLMNs; " +
-			"no_radio: no radio that is up serves such a TAI; invalid: undecodable).",
-	}, []string{"interface", "result"})
-
-	for _, res := range pagingResults {
-		c.WithLabelValues(interfaceS1, res)
-	}
-
-	return c
-}
 
 // TS 36.413 clause 8.5.2
 // TS 36.300 clause 4.7.4
@@ -44,7 +30,7 @@ func (g *Gateway) pagingTargetsLocked(operatorID int64, list []s1ap.TAI) []*RANA
 	var tais []TAI
 
 	for _, t := range list {
-		if p, err := decodePLMN(t.PLMNIdentity); err == nil && slices.Contains(o.plmns, p) {
+		if p, err := gw.DecodePLMN(t.PLMNIdentity); err == nil && slices.Contains(o.plmns, p) {
 			tais = append(tais, TAI{PLMN: p, TAC: uint16(t.TAC)})
 		}
 	}
@@ -77,8 +63,8 @@ func servesAnyTAI(tas []TA, tais []TAI) bool {
 func (r *relay) paging(ctx context.Context, a *MMEAssociation, log *slog.Logger, value, msg []byte) {
 	p, err := s1ap.ParsePaging(value)
 	if err != nil {
-		r.paged.WithLabelValues(interfaceS1, pagingInvalid).Inc()
-		spanFailed(ctx, pagingInvalid)
+		r.metrics.Paging.WithLabelValues(interfaceS1, pagingInvalid).Inc()
+		tracing.SpanFailed(ctx, pagingInvalid)
 		log.WarnContext(ctx, "rejected Paging from MME", slog.Any("error", err))
 
 		if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
@@ -93,14 +79,14 @@ func (r *relay) paging(ctx context.Context, a *MMEAssociation, log *slog.Logger,
 	r.g.mu.Unlock()
 
 	if len(radios) == 0 {
-		r.paged.WithLabelValues(interfaceS1, pagingNoRadio).Inc()
-		spanFailed(ctx, pagingNoRadio)
+		r.metrics.Paging.WithLabelValues(interfaceS1, pagingNoRadio).Inc()
+		tracing.SpanFailed(ctx, pagingNoRadio)
 		log.DebugContext(ctx, "Paging from MME not relayed: no radio serves a TAI of the list", slog.Int("tais", len(p.TAIList)))
 
 		return
 	}
 
-	r.paged.WithLabelValues(interfaceS1, pagingRelayed).Inc()
+	r.metrics.Paging.WithLabelValues(interfaceS1, pagingRelayed).Inc()
 	log.DebugContext(ctx, "Paging from MME relayed to radios", slog.Int("radios", len(radios)))
 	sendRadios(ctx, radios, a.client.operator(), log, "Paging", msg)
 }

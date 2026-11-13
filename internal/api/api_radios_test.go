@@ -150,12 +150,12 @@ func TestListRadios(t *testing.T) {
 		{
 			Ref:         "001-01:home:180150001",
 			GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: "home", ID: 0xabcdef1},
-			ENBName:     "enb1", DefaultPagingDRX: 128, State: s1.RANNodeUp, ConnectedSince: since.UTC(),
+			Interface:   "s1", ENBName: "enb1", DefaultPagingDRX: 128, State: "up", ConnectedSince: since.UTC(),
 			SupportedTAs: []api.TA{{TAC: 1, BroadcastPLMNs: []api.PLMN{{MCC: "001", MNC: "01"}, {MCC: "002", MNC: "002"}}}},
 			TNLAddresses: []string{"10.0.0.5", "10.0.1.5"}, UEConnections: 2,
 		},
 		{
-			State: s1.RANNodeConnected, ConnectedSince: since.UTC(), SupportedTAs: []api.TA{},
+			Interface: "s1", State: "connected", ConnectedSince: since.UTC(), SupportedTAs: []api.TA{},
 			TNLAddresses: []string{"10.0.0.6"},
 		},
 	}}
@@ -164,7 +164,7 @@ func TestListRadios(t *testing.T) {
 		t.Fatalf("GET = %+v, want %+v", got, want)
 	}
 
-	for _, field := range []string{`"global_enb_id":null`, `"supported_tas":[]`, `"ue_connections":0`} {
+	for _, field := range []string{`"interface":"s1"`, `"supported_tas":[]`, `"ue_connections":0`} {
 		if !strings.Contains(string(result), field) {
 			t.Errorf("%s missing from %s", field, result)
 		}

@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/metrics"
+	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/ellanetworks/mocn/internal/s1"
 )
 
@@ -53,7 +55,7 @@ type Operator struct {
 	GlobalENBID          *GlobalENBID         `json:"global_enb_id"`
 	GlobalGNBID          *GlobalGNBID         `json:"global_gnb_id"`
 	MMEs                 []MME                `json:"mmes"`
-	AMFs                 []CoreNode           `json:"amfs"`
+	AMFs                 []AMF                `json:"amfs"`
 	UEConnections        *int                 `json:"ue_connections,omitempty"`
 	UEConnectionsByRadio []RadioUEConnections `json:"ue_connections_by_radio,omitzero"`
 }
@@ -65,6 +67,53 @@ type CoreNode struct {
 type MME struct {
 	TNLAddresses []string   `json:"tnl_addresses"`
 	Status       *MMEStatus `json:"status,omitempty"`
+}
+
+type AMF struct {
+	TNLAddresses []string   `json:"tnl_addresses"`
+	Status       *AMFStatus `json:"status,omitempty"`
+}
+
+type GUAMI struct {
+	PLMN        PLMN   `json:"plmn"`
+	AMFRegionID uint8  `json:"amf_region_id"`
+	AMFSetID    uint16 `json:"amf_set_id"`
+	AMFPointer  uint8  `json:"amf_pointer"`
+}
+
+type SNSSAI struct {
+	SST uint8  `json:"sst"`
+	SD  string `json:"sd,omitempty"`
+}
+
+type PLMNSupport struct {
+	PLMN    PLMN     `json:"plmn"`
+	SNSSAIs []SNSSAI `json:"snssais"`
+}
+
+type SliceOverload struct {
+	SNSSAIs                        []SNSSAI           `json:"snssais"`
+	OverloadAction                 *ng.OverloadAction `json:"overload_action,omitempty"`
+	TrafficLoadReductionIndication *uint8             `json:"traffic_load_reduction_indication,omitempty"`
+}
+
+type AMFOverload struct {
+	OverloadAction                 *ng.OverloadAction `json:"overload_action,omitempty"`
+	TrafficLoadReductionIndication *uint8             `json:"traffic_load_reduction_indication,omitempty"`
+	Slices                         []SliceOverload    `json:"slices,omitempty"`
+}
+
+type AMFStatus struct {
+	State               ng.AMFState   `json:"state"`
+	Since               time.Time     `json:"since"`
+	PrimaryTNLAddress   string        `json:"primary_tnl_address,omitempty"`
+	AMFName             string        `json:"amf_name,omitempty"`
+	ServedGUAMIs        []GUAMI       `json:"served_guamis,omitempty"`
+	PLMNSupport         []PLMNSupport `json:"plmn_support,omitempty"`
+	RelativeAMFCapacity *uint8        `json:"relative_amf_capacity,omitempty"`
+	UnavailableGUAMIs   []GUAMI       `json:"unavailable_guamis,omitempty"`
+	Overload            *AMFOverload  `json:"overload,omitempty"`
+	UEConnections       int           `json:"ue_connections"`
 }
 
 type ServedGUMMEIs struct {
@@ -100,6 +149,12 @@ type S1View interface {
 	MMEStatus(operatorID int64, tnlAddresses []string) (s1.MMEStatus, bool)
 	RANNodes() []s1.RANNode
 	UEs() []s1.UE
+}
+
+type NGView interface {
+	AMFStatus(operatorID int64, tnlAddresses []string) (ng.AMFStatus, bool)
+	RANNodes() []ng.RANNode
+	UEs() []ng.UE
 }
 
 type ListOperatorsResponse struct {
@@ -141,8 +196,8 @@ func GetOperator(cfg Config) http.Handler {
 		ues := ueConnections(cfg)
 		resp := withStatus(cfg, o, operatorResponse(o), ues)
 
-		if cfg.S1 != nil {
-			resp.UEConnectionsByRadio = ueConnectionsByRadio(o, cfg.S1.RANNodes(), ues)
+		if cfg.S1 != nil || cfg.NG != nil {
+			resp.UEConnectionsByRadio = ueConnectionsByRadio(o, radios(cfg, ues), ues)
 		}
 
 		writeResponse(r.Context(), w, resp, http.StatusOK, cfg.Logger)
@@ -351,7 +406,12 @@ func operatorOf(params Operator) (db.Operator, error) {
 		return db.Operator{}, err
 	}
 
-	if o.AMFs, err = coreNodesOf(params.AMFs, "amfs", "AMF"); err != nil {
+	amfs := make([]CoreNode, 0, len(params.AMFs))
+	for _, m := range params.AMFs {
+		amfs = append(amfs, CoreNode{TNLAddresses: m.TNLAddresses})
+	}
+
+	if o.AMFs, err = coreNodesOf(amfs, "amfs", "AMF"); err != nil {
 		return db.Operator{}, err
 	}
 
@@ -458,23 +518,18 @@ func coreNodesOf(in []CoreNode, field, what string) ([]db.CoreNode, error) {
 	return out, nil
 }
 
-func coreNodesResponse(in []db.CoreNode) []CoreNode {
-	out := make([]CoreNode, 0, len(in))
-	for _, n := range in {
-		out = append(out, CoreNode{TNLAddresses: append([]string{}, n.TNLAddresses...)})
-	}
-
-	return out
-}
-
 func operatorResponse(o db.Operator) Operator {
 	resp := Operator{
 		Name: o.Name, PWSOperator: o.PWSOperator, PLMNs: make([]PLMN, 0, len(o.PLMNs)),
-		MMEs: make([]MME, 0, len(o.MMEs)), AMFs: coreNodesResponse(o.AMFs),
+		MMEs: make([]MME, 0, len(o.MMEs)), AMFs: make([]AMF, 0, len(o.AMFs)),
 	}
 
 	for _, m := range o.MMEs {
 		resp.MMEs = append(resp.MMEs, MME{TNLAddresses: append([]string{}, m.TNLAddresses...)})
+	}
+
+	for _, m := range o.AMFs {
+		resp.AMFs = append(resp.AMFs, AMF{TNLAddresses: append([]string{}, m.TNLAddresses...)})
 	}
 
 	for _, p := range o.PLMNs {
@@ -492,20 +547,34 @@ func operatorResponse(o db.Operator) Operator {
 	return resp
 }
 
-func withStatus(cfg Config, o db.Operator, resp Operator, ues []s1.UE) Operator {
-	if cfg.S1 == nil {
+func withStatus(cfg Config, o db.Operator, resp Operator, ues []ueRecord) Operator {
+	if cfg.S1 == nil && cfg.NG == nil {
 		return resp
 	}
 
 	total := 0
 
-	for i, m := range o.MMEs {
-		n := countUEConnections(ues, onMME(o.ID, m.TNLAddresses))
-		total += n
+	if cfg.S1 != nil {
+		for i, m := range o.MMEs {
+			n := countUEConnections(ues, onCoreNode(metrics.InterfaceS1, o.ID, m.TNLAddresses))
+			total += n
 
-		if st, ok := cfg.S1.MMEStatus(o.ID, m.TNLAddresses); ok {
-			resp.MMEs[i].Status = mmeStatusResponse(st)
-			resp.MMEs[i].Status.UEConnections = n
+			if st, ok := cfg.S1.MMEStatus(o.ID, m.TNLAddresses); ok {
+				resp.MMEs[i].Status = mmeStatusResponse(st)
+				resp.MMEs[i].Status.UEConnections = n
+			}
+		}
+	}
+
+	if cfg.NG != nil {
+		for i, m := range o.AMFs {
+			n := countUEConnections(ues, onCoreNode(metrics.InterfaceNG, o.ID, m.TNLAddresses))
+			total += n
+
+			if st, ok := cfg.NG.AMFStatus(o.ID, m.TNLAddresses); ok {
+				resp.AMFs[i].Status = amfStatusResponse(st)
+				resp.AMFs[i].Status.UEConnections = n
+			}
 		}
 	}
 
@@ -557,4 +626,54 @@ func mmecs(codes []uint8) []int {
 	}
 
 	return out
+}
+
+func guamisResponse(in []ng.GUAMI) []GUAMI {
+	out := make([]GUAMI, 0, len(in))
+	for _, g := range in {
+		out = append(out, GUAMI{PLMN: PLMN(g.PLMN), AMFRegionID: g.AMFRegionID, AMFSetID: g.AMFSetID, AMFPointer: g.AMFPointer})
+	}
+
+	return out
+}
+
+func snssaisResponse(in []ng.SNSSAI) []SNSSAI {
+	out := make([]SNSSAI, 0, len(in))
+	for _, s := range in {
+		out = append(out, SNSSAI(s))
+	}
+
+	return out
+}
+
+func amfStatusResponse(st ng.AMFStatus) *AMFStatus {
+	resp := &AMFStatus{
+		State: st.State, Since: st.Since.UTC(), PrimaryTNLAddress: st.PrimaryTNLAddress, AMFName: st.AMFName,
+		RelativeAMFCapacity: st.RelativeAMFCapacity,
+	}
+
+	if len(st.ServedGUAMIs) > 0 {
+		resp.ServedGUAMIs = guamisResponse(st.ServedGUAMIs)
+	}
+
+	if len(st.UnavailableGUAMIs) > 0 {
+		resp.UnavailableGUAMIs = guamisResponse(st.UnavailableGUAMIs)
+	}
+
+	for _, p := range st.PLMNSupport {
+		resp.PLMNSupport = append(resp.PLMNSupport, PLMNSupport{PLMN: PLMN(p.PLMN), SNSSAIs: snssaisResponse(p.Slices)})
+	}
+
+	if o := st.Overload; o != nil {
+		resp.Overload = &AMFOverload{OverloadAction: o.Action, TrafficLoadReductionIndication: o.TrafficLoadReductionIndication}
+
+		for _, s := range o.Slices {
+			resp.Overload.Slices = append(resp.Overload.Slices, SliceOverload{
+				SNSSAIs: snssaisResponse(s.SNSSAIs), OverloadAction: s.Action,
+				TrafficLoadReductionIndication: s.TrafficLoadReductionIndication,
+			})
+		}
+	}
+
+	return resp
 }

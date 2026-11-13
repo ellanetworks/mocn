@@ -1,14 +1,15 @@
-package s1
+package gw
 
 import (
 	"fmt"
 
-	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/db"
 )
 
-func encodePLMN(p db.PLMN) (s1ap.PLMNIdentity, error) {
-	var out s1ap.PLMNIdentity
+// TS 36.413 clause 9.2.3.8
+// TS 38.413 clause 9.3.3.5
+func EncodePLMN[T ~[3]byte](p db.PLMN) (T, error) {
+	var out T
 
 	if len(p.MCC) != 3 || (len(p.MNC) != 2 && len(p.MNC) != 3) || !isDigits(p.MCC+p.MNC) {
 		return out, fmt.Errorf("invalid PLMN %q", p.String())
@@ -32,7 +33,9 @@ func encodePLMN(p db.PLMN) (s1ap.PLMNIdentity, error) {
 	return out, nil
 }
 
-func decodePLMN(id s1ap.PLMNIdentity) (db.PLMN, error) {
+// TS 36.413 clause 9.2.3.8
+// TS 38.413 clause 9.3.3.5
+func DecodePLMN[T ~[3]byte](id T) (db.PLMN, error) {
 	digit := func(v byte) (byte, error) {
 		if v > 9 {
 			return 0, fmt.Errorf("invalid PLMN identity %x", id[:])

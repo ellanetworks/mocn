@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"slices"
 
 	"github.com/ellanetworks/core/s1ap"
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/ellanetworks/mocn/internal/gw"
+	"github.com/ellanetworks/mocn/internal/tracing"
 )
 
 const (
@@ -36,27 +38,9 @@ var overloadActions = map[s1ap.OverloadAction]OverloadAction{
 	s1ap.OverloadActionNotAcceptMODataOrDelayTolerantAccessFromCPCIoT:                                 OverloadNotAcceptMODataOrDelayTolerantFromCPCIoT,
 }
 
-func newOverloadCounter() *prometheus.CounterVec {
-	c := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ellamocn_overload_messages_total",
-		Help: "OVERLOAD START and OVERLOAD STOP messages received from MMEs, by interface (s1), procedure " +
-			"(overload_start, overload_stop) and result (relayed: sent to the radios that broadcast one of the operator's PLMNs, including the replay of an ongoing OVERLOAD START to a radio after its S1 Setup; " +
-			"no_radio: no such radio is up; ignored: OVERLOAD STOP for GUMMEIs with no ongoing overload action; " +
-			"invalid: undecodable or with an invalid GUMMEI).",
-	}, []string{"interface", "procedure", "result"})
-
-	for proc, results := range overloadResults {
-		for _, r := range results {
-			c.WithLabelValues(interfaceS1, proc, r)
-		}
-	}
-
-	return c
-}
-
 // TS 36.413 clause 9.2.3.9
 func gummeiFrom(g s1ap.GUMMEI) (GUMMEI, error) {
-	plmn, err := decodePLMN(g.PLMNIdentity)
+	plmn, err := gw.DecodePLMN(g.PLMNIdentity)
 	if err != nil {
 		return GUMMEI{}, err
 	}
@@ -66,7 +50,7 @@ func gummeiFrom(g s1ap.GUMMEI) (GUMMEI, error) {
 
 // TS 36.413 clause 9.2.3.9
 func gummeiTo(g GUMMEI) (s1ap.GUMMEI, error) {
-	plmn, err := encodePLMN(g.PLMN)
+	plmn, err := gw.EncodePLMN[s1ap.PLMNIdentity](g.PLMN)
 	if err != nil {
 		return s1ap.GUMMEI{}, err
 	}
@@ -153,12 +137,12 @@ func (g *Gateway) operatorRadiosLocked(operatorID int64) []*RANAssociation {
 }
 
 func (g *Gateway) countOverload(proc, result string) {
-	g.overloads.WithLabelValues(interfaceS1, proc, result).Inc()
+	g.cfg.Metrics.Overload.WithLabelValues(interfaceS1, proc, result).Inc()
 }
 
 func (g *Gateway) rejectOverload(ctx context.Context, a *MMEAssociation, log *slog.Logger, proc string, err error) {
 	g.countOverload(proc, overloadInvalid)
-	spanFailed(ctx, overloadInvalid)
+	tracing.SpanFailed(ctx, overloadInvalid)
 	log.WarnContext(ctx, "rejected "+proc+" from MME", slog.Any("error", err))
 
 	if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
@@ -221,7 +205,7 @@ func (g *Gateway) overloadStart(ctx context.Context, a *MMEAssociation, log *slo
 	}).Marshal()
 	if err != nil {
 		g.countOverload(procOverloadStart, overloadInvalid)
-		spanFailed(ctx, overloadInvalid)
+		tracing.SpanFailed(ctx, overloadInvalid)
 		log.ErrorContext(ctx, "failed to marshal Overload Start", slog.Any("error", err))
 
 		return
@@ -231,7 +215,7 @@ func (g *Gateway) overloadStart(ctx context.Context, a *MMEAssociation, log *slo
 
 	if len(radios) == 0 {
 		g.countOverload(procOverloadStart, overloadNoRadio)
-		spanFailed(ctx, overloadNoRadio)
+		tracing.SpanFailed(ctx, overloadNoRadio)
 		log.InfoContext(ctx, "Overload Start from MME, no radio of the operator is up")
 
 		return
@@ -300,7 +284,7 @@ func overloadStarts(entries []Overload) ([]*s1ap.OverloadStart, error) {
 // TS 36.413 clause 8.7.3.1
 // TS 36.413 clause 8.7.6
 func (g *Gateway) replayOverloadLocked(ctx context.Context, n *RANAssociation) {
-	for _, key := range sortedKeys(g.mmes) {
+	for _, key := range slices.Sorted(maps.Keys(g.mmes)) {
 		c := g.mmes[key]
 		if len(c.status.Overload) == 0 {
 			continue
@@ -385,7 +369,7 @@ func (g *Gateway) overloadStop(ctx context.Context, a *MMEAssociation, log *slog
 
 	if len(radios) == 0 {
 		g.countOverload(procOverloadStop, overloadNoRadio)
-		spanFailed(ctx, overloadNoRadio)
+		tracing.SpanFailed(ctx, overloadNoRadio)
 		log.InfoContext(ctx, "Overload Stop from MME, no radio of the operator is up", slog.Int("gummeis", len(ended)))
 
 		return

@@ -107,7 +107,58 @@ const operatorWithStatus = (): Operator => ({
     },
     { tnl_addresses: ["10.0.0.5"] },
   ],
-  ue_connections: 2,
+  amfs: [
+    {
+      tnl_addresses: ["10.0.1.1"],
+      status: {
+        state: "up",
+        since: "2026-11-12T10:00:00Z",
+        primary_tnl_address: "10.0.1.1",
+        amf_name: "amf0",
+        served_guamis: [
+          {
+            plmn: { mcc: "001", mnc: "02" },
+            amf_region_id: 2,
+            amf_set_id: 1,
+            amf_pointer: 0,
+          },
+          {
+            plmn: { mcc: "001", mnc: "02" },
+            amf_region_id: 2,
+            amf_set_id: 1,
+            amf_pointer: 1,
+          },
+        ],
+        unavailable_guamis: [
+          {
+            plmn: { mcc: "001", mnc: "02" },
+            amf_region_id: 2,
+            amf_set_id: 1,
+            amf_pointer: 1,
+          },
+        ],
+        plmn_support: [
+          {
+            plmn: { mcc: "001", mnc: "02" },
+            snssais: [{ sst: 1 }, { sst: 2, sd: "010203" }],
+          },
+        ],
+        relative_amf_capacity: 10,
+        overload: {
+          overload_action:
+            "permit_emergency_sessions_and_mobile_terminated_services_only",
+          slices: [
+            {
+              snssais: [{ sst: 2, sd: "010203" }],
+              traffic_load_reduction_indication: 30,
+            },
+          ],
+        },
+        ue_connections: 1,
+      },
+    },
+  ],
+  ue_connections: 3,
   ue_connections_by_radio: [
     { radio: "001-01:macro:412", ue_connections: 0 },
     { radio: "001-01:macro:411", name: "enb411", ue_connections: 2 },
@@ -322,6 +373,7 @@ const NODE_COLUMNS = [
   "Type",
   "Name",
   "Served IDs",
+  "Capacity",
   "UE connections",
   "Overload",
   "Status",
@@ -1209,7 +1261,7 @@ describe("OperatorDetail", () => {
     ]);
   });
 
-  it("shows the S1 status of each MME", async () => {
+  it("shows the status of each MME and AMF", async () => {
     serve({ operators: [operatorWithStatus()] });
 
     renderAt("/operators/Operator%20A", readOnlyAuth);
@@ -1223,6 +1275,7 @@ describe("OperatorDetail", () => {
       "MME (4G)",
       "mme0",
       "PLMNs 001/01, 001/02 · MME groups 2 · MME codes 1, 3",
+      "255",
       "2",
       "Reject signalling (50%)",
       "Up",
@@ -1232,6 +1285,7 @@ describe("OperatorDetail", () => {
       "MME (4G)",
       "—",
       "—",
+      "—",
       "0",
       "None",
       "Setup failed",
@@ -1239,6 +1293,7 @@ describe("OperatorDetail", () => {
     expect(cells(await mmeRow("10.0.0.4"))).toEqual([
       "10.0.0.4",
       "MME (4G)",
+      "—",
       "—",
       "—",
       "0",
@@ -1253,16 +1308,22 @@ describe("OperatorDetail", () => {
       "—",
       "—",
       "—",
+      "—",
     ]);
     expect(cells(await nodeRow("AMF", "10.0.1.1"))).toEqual([
       "10.0.1.1",
       "AMF (5G)",
-      "—",
-      "—",
-      "—",
-      "—",
-      "—",
+      "amf0",
+      "GUAMIs 001/02 · AMF region 2 · AMF set 1 · AMF pointer 0; 001/02 · AMF region 2 · AMF set 1 · AMF pointer 1 (unavailable) · PLMN support 001/02: SST 1, SST 2 SD 010203",
+      "10",
+      "1",
+      "Emergency and MT only",
+      "Up",
     ]);
+    expect(grid.getByText("Emergency and MT only")).toHaveAttribute(
+      "title",
+      "AMF: Emergency and MT only; SST 2 SD 010203: 30%",
+    );
   });
 
   it("explains the MME status on hover", async () => {
@@ -1280,20 +1341,20 @@ describe("OperatorDetail", () => {
     fireEvent.mouseOver(grid.getByText("Status"));
     expect(
       await screen.findByRole("tooltip", {
-        name: /^Disconnected: no SCTP association to the MME\./,
+        name: /^Disconnected: no SCTP association to the node\./,
       }),
     ).toBeInTheDocument();
     fireEvent.mouseOver(grid.getByText("Overload"));
     expect(
       await screen.findByRole("tooltip", {
-        name: /^The overload action the MME requested in OVERLOAD START/,
+        name: /^The overload action the node requested in OVERLOAD START/,
       }),
     ).toBeInTheDocument();
     expect(grid.getByText("Reject signalling (50%)")).toHaveAttribute(
       "title",
       "GUMMEI 001/01 · MME group 2 · MME code 1: Reject signalling (50%); GUMMEI 001/01 · MME group 2 · MME code 3: Reject signalling (50%)",
     );
-    expect(grid.getByText("Up").closest(".MuiChip-root")).toHaveAttribute(
+    expect(grid.getAllByText("Up")[0].closest(".MuiChip-root")).toHaveAttribute(
       "title",
       expect.stringMatching(/^Since Nov 12, \d\d:\d\d:00$/),
     );
@@ -1306,7 +1367,7 @@ describe("OperatorDetail", () => {
       serve({ operators: [operator] });
 
       renderAt("/operators/Operator%20A", readOnlyAuth);
-      expect(cells(await mmeRow("10.0.0.4"))[6]).toBe("Disconnected");
+      expect(cells(await mmeRow("10.0.0.4"))[7]).toBe("Disconnected");
 
       operator.mmes![2].status = {
         state: "connected",
@@ -1317,7 +1378,7 @@ describe("OperatorDetail", () => {
       await vi.advanceTimersByTimeAsync(5000);
 
       await waitFor(async () =>
-        expect(cells(await mmeRow("10.0.0.4")).slice(4)).toEqual([
+        expect(cells(await mmeRow("10.0.0.4")).slice(5)).toEqual([
           "1",
           "None",
           "Connected",
