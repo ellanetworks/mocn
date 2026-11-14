@@ -55,3 +55,4 @@ const provision = (name, imsi, msisdn) =>
 
 provision("open5gs_b", "001020000000002", "0000000002");
 provision("open5gs_b", "001020000000012", "0000000012");
+provision("open5gs_b", "001020000000022", "0000000022");

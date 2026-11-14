@@ -299,7 +299,7 @@ func metric(text, name string, labels map[string]string) (float64, bool) {
 	return 0, false
 }
 
-var ellaCoreSubscribers = []string{"001010000000001", "001010000000011", "001010000000021"}
+var ellaCoreSubscribers = []string{"001010000000001", "001010000000011"}
 
 func setUpEllaCore(ctx context.Context, t *testing.T) *client {
 	t.Helper()
@@ -341,6 +341,11 @@ func setUpEllaCore(ctx context.Context, t *testing.T) *client {
 
 	if _, err := c.do(ctx, http.MethodPut, "/api/v1/slices/default/data-networks/internet", map[string]bool{"nat": false}, nil); err != nil {
 		t.Fatalf("disable NAT on Ella Core: %v", err)
+	}
+
+	nasSecurity := map[string][]string{"ciphering": {"NULL", "AES", "SNOW3G"}, "integrity": {"AES", "SNOW3G"}}
+	if _, err := c.do(ctx, http.MethodPut, "/api/v1/operator/nas-security", nasSecurity, nil); err != nil {
+		t.Fatalf("set the Ella Core NAS security algorithms: %v", err)
 	}
 
 	for _, imsi := range ellaCoreSubscribers {

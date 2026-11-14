@@ -328,7 +328,7 @@ services:
     environment:
       GNB_ID: "3"
       GNB_NAME: gnb-c
-      PLMN: "00101"
+      PLMN: "00102"
       AMF_ADDR: 10.90.1.30
       GNB_ADDR: 10.90.1.25
       ZMQ_ADDR: 10.90.2.10
@@ -350,7 +350,7 @@ services:
     depends_on: [gnb-c]
     entrypoint: ["sh", "-c", "envsubst < /ue.tmpl > /tmp/ue.conf && exec srsue /tmp/ue.conf"]
     environment:
-      IMSI: "001010000000021"
+      IMSI: "001020000000022"
       ZMQ_ADDR: 10.90.2.11
       GNB_ADDR: 10.90.2.10
     volumes:

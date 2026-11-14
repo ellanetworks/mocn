@@ -213,11 +213,10 @@ func ngLifecycle(ctx context.Context, t *testing.T, c *client, l lab5G) {
 func TestNGDeregistration(t *testing.T) {
 	ctx := t.Context()
 	c := setUp(ctx, t)
-	core := setUpEllaCore(ctx, t)
 
 	l := lab5G{
-		operator: "ella-core", plmn: plmn{MCC: "001", MNC: "01"}, amf: "10.90.0.14", core: "ella-core", coreLog: ellaCoreAMFLog,
-		gnb: "gnb-c", ue: "srsue-5g-c", radio: "gNB:001-01:000003@22", imsi: "001010000000021", ueNet: "10.45.",
+		operator: "open5gs-b", plmn: plmn{MCC: "001", MNC: "02"}, amf: "10.90.0.13", core: "open5gs-5g-b", coreLog: open5gsAMFLog,
+		gnb: "gnb-c", ue: "srsue-5g-c", radio: "gNB:001-02:000003@22", imsi: "001020000000022", ueNet: "10.48.",
 	}
 
 	startServices(ctx, t, l.gnb)
@@ -245,20 +244,22 @@ func TestNGDeregistration(t *testing.T) {
 	registered := l.coreLog.mark(ctx, t)
 	connected := logMark(ctx, t, "logs", "--no-color", l.gnb)
 
-	if _, err := core.do(ctx, http.MethodDelete, "/api/v1/subscribers/"+l.imsi, nil, nil); err != nil {
+	if _, err := compose(ctx, "exec", "-T", l.core, "curl", "-sS", "-f", "--http2-prior-knowledge", "-X", "POST",
+		"-H", "Content-Type: application/json", "-d", `{"deregReason":"SUBSCRIPTION_WITHDRAWN","accessType":"3GPP_ACCESS"}`,
+		"http://127.0.0.5:7777/namf-callback/v1/imsi-"+l.imsi+"/dereg-notify"); err != nil {
 		t.Fatal(err)
 	}
 
 	eventually(ctx, t, l.core+" network-initiated deregistration", 30*time.Second, func() error {
-		if err := l.coreLog.logged(ctx, registered, []string{`"msg":"sent network-initiated Deregistration Request"`, ellaSUPI}, l.imsi)(); err != nil {
+		if err := l.coreLog.logged(ctx, registered, []string{"Deregistration notify reason: imsi-{imsi}:SUBSCRIPTION_WITHDRAWN"}, l.imsi)(); err != nil {
 			return err
 		}
 
-		return l.coreLog.logged(ctx, registered, []string{`"msg":"UE deregistered"`, ellaSUPI, `"rat":"5g"`}, l.imsi)()
+		return l.coreLog.logged(ctx, registered, []string{"[imsi-{imsi}] Explicit De-registered"}, l.imsi)()
 	})
 
 	eventually(ctx, t, l.gnb+" UE context released after deregistration", 60*time.Second,
-		logContainsAfter(ctx, `"UE Context Release Procedure" with cause=nas-deregister`, connected, "logs", "--no-color", l.gnb))
+		logContainsAfter(ctx, `"UE Context Release Procedure" with cause=nas-normal_release`, connected, "logs", "--no-color", l.gnb))
 
 	eventually(ctx, t, "UE connection released after deregistration", 30*time.Second, func() error {
 		items, err := radioUEs(ctx, c, l.radio)
