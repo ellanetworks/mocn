@@ -16,13 +16,14 @@ type PLMN struct {
 }
 
 func (p PLMN) String() string {
-	return p.MCC + p.MNC
+	return p.MCC + "-" + p.MNC
 }
 
 type ENBIDType string
 
 const (
 	ENBIDMacro      ENBIDType = "macro"
+	ENBIDHome       ENBIDType = "home"
 	ENBIDShortMacro ENBIDType = "short_macro"
 	ENBIDLongMacro  ENBIDType = "long_macro"
 )
@@ -34,11 +35,40 @@ type GlobalENBID struct {
 	ID   uint32
 }
 
+// TS 36.413 clause 9.2.1.37
+var ENBIDBits = map[ENBIDType]int{
+	ENBIDMacro:      20,
+	ENBIDHome:       28,
+	ENBIDShortMacro: 18,
+	ENBIDLongMacro:  21,
+}
+
+var enbIDPrefixes = map[ENBIDType]string{
+	ENBIDMacro:      "MacroeNB-",
+	ENBIDHome:       "HomeeNB-",
+	ENBIDShortMacro: "SMacroeNB-",
+	ENBIDLongMacro:  "LMacroeNB-",
+}
+
+// TS 29.571 clause 5.4.2
+func (e GlobalENBID) Ref() string {
+	return fmt.Sprintf("eNB:%s:%s%0*x", e.PLMN, enbIDPrefixes[e.Type], hexDigits(ENBIDBits[e.Type]), e.ID)
+}
+
 // TS 38.413 clause 9.3.1.6
 type GlobalGNBID struct {
 	PLMN   PLMN
 	ID     uint32
 	Length int
+}
+
+// TS 29.571 clause 5.4.4.29
+func (g GlobalGNBID) Ref() string {
+	return fmt.Sprintf("gNB:%s:%0*x@%d", g.PLMN, hexDigits(g.Length), g.ID, g.Length)
+}
+
+func hexDigits(bits int) int {
+	return (bits + 3) / 4
 }
 
 // TS 36.412 clause 7
@@ -108,8 +138,6 @@ func updateOperator(ctx context.Context, tx querier, o Operator) error {
 	}
 
 	for _, q := range []string{
-		`DELETE FROM global_enb_ids WHERE operator_id = ?`,
-		`DELETE FROM global_gnb_ids WHERE operator_id = ?`,
 		`DELETE FROM mmes WHERE operator_id = ?`,
 		`DELETE FROM amfs WHERE operator_id = ?`,
 		`DELETE FROM operator_plmns WHERE operator_id = ?`,
@@ -155,7 +183,7 @@ func insertOperatorParts(ctx context.Context, tx querier, id int64, o Operator) 
 			return fmt.Errorf("%w: global gNB ID PLMN %s", ErrForeignPLMN, g.PLMN)
 		}
 
-		if _, err := tx.ExecContext(ctx, `INSERT INTO global_gnb_ids (operator_id, operator_plmn_id, gnb_id, gnb_id_length) VALUES (?, ?, ?, ?)`,
+		if _, err := tx.ExecContext(ctx, `INSERT INTO global_gnb_ids (operator_id, operator_plmn_id, gnb_id, bit_length) VALUES (?, ?, ?, ?)`,
 			id, plmnID, g.ID, g.Length); err != nil {
 			return err
 		}
@@ -267,15 +295,6 @@ func (d *DB) DeleteOperator(ctx context.Context, id int64) (err error) {
 }
 
 func deleteOperator(ctx context.Context, tx querier, id int64) error {
-	for _, q := range []string{
-		`DELETE FROM global_enb_ids WHERE operator_id = ?`,
-		`DELETE FROM global_gnb_ids WHERE operator_id = ?`,
-	} {
-		if _, err := tx.ExecContext(ctx, q, id); err != nil {
-			return err
-		}
-	}
-
 	res, err := tx.ExecContext(ctx, `DELETE FROM operators WHERE id = ?`, id)
 	if err != nil {
 		return err
@@ -389,7 +408,7 @@ func loadOperatorParts(ctx context.Context, q querier, ops []Operator) error {
 		return err
 	}
 
-	if err := each(ctx, q, `SELECT g.operator_id, p.mcc, p.mnc, g.gnb_id, g.gnb_id_length FROM global_gnb_ids g
+	if err := each(ctx, q, `SELECT g.operator_id, p.mcc, p.mnc, g.gnb_id, g.bit_length FROM global_gnb_ids g
 		JOIN operator_plmns p ON p.id = g.operator_plmn_id`, func(s scanner) error {
 		var (
 			id int64

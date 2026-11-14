@@ -2,31 +2,21 @@ package s1
 
 import (
 	"context"
-	"errors"
 
 	"github.com/ellanetworks/core/s1ap"
-	"github.com/ellanetworks/core/sctp"
-	"github.com/ellanetworks/mocn/internal/gw"
+	"github.com/ellanetworks/mocn/internal/assoc"
+	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
 const (
-	tracerName      = "github.com/ellanetworks/mocn/internal/s1"
-	spanReceive     = "s1ap/receive"
-	spanSend        = "s1ap/send"
-	attrSide        = "ellamocn.side"
-	attrOperator    = "ellamocn.operator"
-	attrENBUEID     = "s1ap.enb_ue_s1ap_id"
-	attrMMEUEID     = "s1ap.mme_ue_s1ap_id"
-	unknownMessage  = "UnknownMessage"
-	errTypeInvalid  = "invalid"
-	errTypeNoSetup  = "no_setup"
-	errTypeUnknown  = "unknown_ue"
-	errTypeError    = "error"
-	errTypeClosed   = "association_closed"
-	errTypeSendFail = "_OTHER"
+	tracerName     = "github.com/ellanetworks/mocn/internal/s1"
+	protocolName   = "s1ap"
+	attrENBUEID    = "s1ap.enb_ue_s1ap_id"
+	attrMMEUEID    = "s1ap.mme_ue_s1ap_id"
+	unknownMessage = "UnknownMessage"
 )
 
 type procedureMessages struct {
@@ -156,17 +146,26 @@ func (m msgInfo) messageType() string {
 }
 
 // TS 36.413 clause 8.1
-func (m msgInfo) spanKind(receive bool) trace.SpanKind {
-	switch {
-	case m.known && procedures[m.proc].class == 1 && receive:
-		return trace.SpanKindServer
-	case m.known && procedures[m.proc].class == 1:
-		return trace.SpanKindClient
-	case receive:
-		return trace.SpanKindConsumer
-	default:
-		return trace.SpanKindProducer
+func (m msgInfo) span() assoc.SpanInfo {
+	info := assoc.SpanInfo{Known: m.known, Class1: m.known && procedures[m.proc].class == 1}
+
+	if m.known {
+		info.Type = m.messageType()
 	}
+
+	if m.ids.enb != nil {
+		info.UE = append(info.UE, attribute.Int64(attrENBUEID, int64(*m.ids.enb)))
+	}
+
+	if m.ids.mme != nil {
+		info.UE = append(info.UE, attribute.Int64(attrMMEUEID, int64(*m.ids.mme)))
+	}
+
+	return info
+}
+
+func spanInfo(msg []byte) assoc.SpanInfo {
+	return inspect(nil, msg).span()
 }
 
 // TS 36.413 clause 9.2.1.4
@@ -184,11 +183,16 @@ func traceActivationOf(p *s1ap.RawPDU) (tracing.RANTraceID, bool) {
 	return tracing.RANTraceID(act.EUTRANTraceID), true
 }
 
+func tracesUE(p *s1ap.RawPDU) bool {
+	return p.Trigger() == s1ap.TriggeringInitiatingMessage &&
+		(p.Index(s1ap.IDTraceActivation) >= 0 || p.ProcedureCode() == s1ap.ProcDeactivateTrace)
+}
+
 // TS 36.413 clause 8.10.1
 // TS 36.413 clause 8.10.3
-func (u *ueContext) trace(p *s1ap.RawPDU) {
+func traceUE(u *ueContext, p *s1ap.RawPDU) {
 	if id, ok := traceActivationOf(p); ok {
-		u.traceID = id
+		u.TraceID = id
 		return
 	}
 
@@ -198,54 +202,14 @@ func (u *ueContext) trace(p *s1ap.RawPDU) {
 
 	var id s1ap.EUTRANTraceID
 
-	if ok, err := p.Get(s1ap.IDEUTRANTraceID, &id); err == nil && ok && [6]byte(id[:6]) == [6]byte(u.traceID[:6]) {
-		u.traceID = tracing.RANTraceID{}
+	if ok, err := p.Get(s1ap.IDEUTRANTraceID, &id); err == nil && ok && [6]byte(id[:6]) == [6]byte(u.TraceID[:6]) {
+		u.TraceID = tracing.RANTraceID{}
 	}
 }
 
-func (g *Gateway) startSpan(ctx context.Context, name, side string, conn *sctp.SCTPConn, info msgInfo, size int,
-	operator string,
-) (context.Context, trace.Span) {
-	receive := name == spanReceive
-
-	attrs := []attribute.KeyValue{
-		attribute.String("network.protocol.name", "s1ap"),
-		attribute.String("network.transport", "sctp"),
-		attribute.Int("s1ap.message_size", size),
-		attribute.String(attrSide, side),
-	}
-
-	if conn != nil {
-		if a := conn.RemoteAddr(); a != nil {
-			attrs = append(attrs, attribute.String("network.peer.address", a.String()))
-		}
-
-		if a := conn.LocalAddr(); a != nil {
-			attrs = append(attrs, attribute.String("network.local.address", a.String()))
-		}
-	}
-
-	if info.known {
-		attrs = append(attrs, attribute.String("s1ap.message_type", info.messageType()))
-	}
-
-	if operator != "" {
-		attrs = append(attrs, attribute.String(attrOperator, operator))
-	}
-
-	if info.ids.enb != nil {
-		attrs = append(attrs, attribute.Int64(attrENBUEID, int64(*info.ids.enb)))
-	}
-
-	if info.ids.mme != nil {
-		attrs = append(attrs, attribute.Int64(attrMMEUEID, int64(*info.ids.mme)))
-	}
-
-	return g.tracer.Start(ctx, name, trace.WithSpanKind(info.spanKind(receive)), trace.WithAttributes(attrs...))
-}
-
-func (g *Gateway) receiveFromRAN(ctx context.Context, n *RANAssociation, pdu s1ap.PDU, msg []byte) (context.Context, trace.Span) {
-	if g.tracer == nil {
+func (g *Gateway) receiveFromRAN(ctx context.Context, n *ranAssoc, pdu s1ap.PDU, msg []byte) (context.Context, trace.Span) {
+	tx := g.core.Transport()
+	if !tx.Tracing() {
 		return ctx, trace.SpanFromContext(ctx)
 	}
 
@@ -254,33 +218,25 @@ func (g *Gateway) receiveFromRAN(ctx context.Context, n *RANAssociation, pdu s1a
 
 	id, operatorID, ok := g.relay.ranUETrace(n, info.ids)
 	if ok {
-		operator = g.operatorName(operatorID)
+		operator = g.core.OperatorName(operatorID)
 	}
 
-	return g.startSpan(tracing.WithPinnedTraceID(ctx, id), spanReceive, sideRadio, n.conn, info, len(msg), operator)
+	return tx.StartReceive(tracing.WithPinnedTraceID(ctx, id), metrics.SideRadio, n.Conn(), info.span(), len(msg), operator)
 }
 
-func (g *Gateway) receiveFromMME(ctx context.Context, a *MMEAssociation, pdu s1ap.PDU, msg []byte) (context.Context, trace.Span) {
-	if g.tracer == nil {
+func (g *Gateway) receiveFromMME(ctx context.Context, a *mmeAssoc, pdu s1ap.PDU, msg []byte) (context.Context, trace.Span) {
+	tx := g.core.Transport()
+	if !tx.Tracing() {
 		return ctx, trace.SpanFromContext(ctx)
 	}
 
 	info := inspect(pdu, msg)
 	id := g.relay.mmeUETrace(a, info)
 
-	return g.startSpan(tracing.WithPinnedTraceID(ctx, id), spanReceive, sideCore, a.conn, info, len(msg), a.client.operator())
+	return tx.StartReceive(tracing.WithPinnedTraceID(ctx, id), metrics.SideCore, a.Conn(), info.span(), len(msg), a.Operator())
 }
 
-func (g *Gateway) operatorName(id int64) string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	o, _ := g.operatorLocked(id)
-
-	return o.name
-}
-
-func (r *relay) ranUETrace(n *RANAssociation, ids ueIDs) (tracing.RANTraceID, int64, bool) {
+func (r *relay) ranUETrace(n *ranAssoc, ids ueIDs) (tracing.RANTraceID, int64, bool) {
 	if ids.mme == nil {
 		return tracing.RANTraceID{}, 0, false
 	}
@@ -293,23 +249,23 @@ func (r *relay) ranUETrace(n *RANAssociation, ids ueIDs) (tracing.RANTraceID, in
 		return tracing.RANTraceID{}, 0, false
 	}
 
-	return u.traceID, u.operatorID, true
+	return u.TraceID, u.OperatorID, true
 }
 
-func (r *relay) tracedRANUELocked(n *RANAssociation, ids ueIDs) *ueContext {
+func (r *relay) tracedRANUELocked(n *ranAssoc, ids ueIDs) *ueContext {
 	if ids.mme == nil {
 		return nil
 	}
 
-	u := r.ues.byRANMMEID[*ids.mme]
-	if u == nil || u.ran != n || u.mme == nil {
+	u := r.ues.ByRANCoreID(*ids.mme)
+	if u == nil || u.RAN != n || u.Core == nil {
 		return nil
 	}
 
 	return u
 }
 
-func (r *relay) mmeUETrace(a *MMEAssociation, info msgInfo) tracing.RANTraceID {
+func (r *relay) mmeUETrace(a *mmeAssoc, info msgInfo) tracing.RANTraceID {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -317,12 +273,12 @@ func (r *relay) mmeUETrace(a *MMEAssociation, info msgInfo) tracing.RANTraceID {
 
 	switch {
 	case info.ids.enb != nil:
-		u = r.ues.byMMEENBID[*info.ids.enb]
+		u = r.ues.ByCoreRANID(*info.ids.enb)
 	case info.ids.mme != nil:
-		u = r.ues.byMMEID[mmeUEKey{a, *info.ids.mme}]
+		u = r.ues.ByCoreID(a, *info.ids.mme)
 	}
 
-	if u == nil || u.mme != a {
+	if u == nil || u.Core != a {
 		return tracing.RANTraceID{}
 	}
 
@@ -330,28 +286,5 @@ func (r *relay) mmeUETrace(a *MMEAssociation, info msgInfo) tracing.RANTraceID {
 		return id
 	}
 
-	return u.traceID
-}
-
-func (g *Gateway) send(ctx context.Context, side string, conn *sctp.SCTPConn, operator string, msg []byte,
-	stream uint16,
-) error {
-	if g == nil || g.tracer == nil {
-		return gw.Send(conn, PPID, msg, stream)
-	}
-
-	_, span := g.startSpan(ctx, spanSend, side, conn, inspect(nil, msg), len(msg), operator)
-	defer span.End()
-
-	err := gw.Send(conn, PPID, msg, stream)
-	if err != nil {
-		errType := errTypeSendFail
-		if errors.Is(err, gw.ErrClosed) {
-			errType = errTypeClosed
-		}
-
-		tracing.FailSpan(span, errType)
-	}
-
-	return err
+	return u.TraceID
 }

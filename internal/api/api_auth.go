@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -34,11 +35,11 @@ type RefreshResponse struct {
 	Token string `json:"token"`
 }
 
-type SuccessResponse struct {
+type successResponse struct {
 	Message string `json:"message"`
 }
 
-func Login(a *auth) http.Handler {
+func login(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -142,7 +143,7 @@ func (a *auth) logIn(w http.ResponseWriter, r *http.Request, u db.User) (string,
 	return token, true
 }
 
-func Refresh(a *auth) http.Handler {
+func refresh(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -170,7 +171,7 @@ func Refresh(a *auth) http.Handler {
 
 		if !cfg.Now().Before(s.ExpiresAt) {
 			if err := cfg.Auth.DeleteSessionByTokenHash(r.Context(), hash); err != nil {
-				cfg.Logger.WarnContext(r.Context(), "failed to delete an expired session", "error", err)
+				cfg.Logger.WarnContext(r.Context(), "failed to delete an expired session", slog.Any("error", err))
 			}
 
 			unauthorized("Session expired", nil)
@@ -199,7 +200,7 @@ func Refresh(a *auth) http.Handler {
 	})
 }
 
-func Logout(a *auth) http.Handler {
+func logout(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +222,7 @@ func Logout(a *auth) http.Handler {
 	})
 }
 
-func Initialize(a *auth) http.Handler {
+func initialize(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

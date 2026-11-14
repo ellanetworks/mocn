@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/mattn/go-sqlite3"
 )
 
 func operatorA() Operator {
@@ -42,6 +44,8 @@ func createTestOperator(t *testing.T, d *DB, o Operator) Operator {
 }
 
 func TestOperatorLifecycle(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -100,6 +104,8 @@ func TestOperatorLifecycle(t *testing.T) {
 }
 
 func TestOperatorNotFound(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -117,6 +123,8 @@ func TestOperatorNotFound(t *testing.T) {
 }
 
 func TestOperatorDuplicates(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -128,8 +136,8 @@ func TestOperatorDuplicates(t *testing.T) {
 	}{
 		"name":         {edit: func(o *Operator) { o.Name = "Operator A" }, want: "name Operator A"},
 		"PWS operator": {edit: func(o *Operator) { o.PWSOperator = true }, want: "PWS operator"},
-		"PLMN":         {edit: func(o *Operator) { o.PLMNs = append(o.PLMNs, PLMN{MCC: "001", MNC: "01"}) }, want: "PLMN 00101"},
-		"PLMN in list": {edit: func(o *Operator) { o.PLMNs = append(o.PLMNs, o.PLMNs[0]) }, want: "PLMN 99970"},
+		"PLMN":         {edit: func(o *Operator) { o.PLMNs = append(o.PLMNs, PLMN{MCC: "001", MNC: "01"}) }, want: "PLMN 001-01"},
+		"PLMN in list": {edit: func(o *Operator) { o.PLMNs = append(o.PLMNs, o.PLMNs[0]) }, want: "PLMN 999-70"},
 		"MME address in another MME": {edit: func(o *Operator) {
 			o.MMEs = append(o.MMEs, CoreNode{TNLAddresses: []string{"10.0.3.1", "10.0.2.1"}})
 		}, want: "MME 10.0.2.1"},
@@ -160,6 +168,8 @@ func TestOperatorDuplicates(t *testing.T) {
 }
 
 func TestOperatorInvalid(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -209,6 +219,8 @@ func TestOperatorInvalid(t *testing.T) {
 }
 
 func TestOperatorLargestIDs(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -223,6 +235,8 @@ func TestOperatorLargestIDs(t *testing.T) {
 }
 
 func TestOperatorUpdateRollsBack(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -251,6 +265,8 @@ func plmns(mcc string, n int) []PLMN {
 }
 
 func TestOperatorAddressesArePerOperator(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -278,6 +294,8 @@ func TestOperatorAddressesArePerOperator(t *testing.T) {
 }
 
 func TestOperatorPLMNLimits(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -322,5 +340,62 @@ func TestOperatorPLMNLimits(t *testing.T) {
 
 	if got, err := d.GetOperator(ctx, a.Name); err != nil || !reflect.DeepEqual(got, a) {
 		t.Fatalf("GetOperator = %+v, %v, want %+v", got, err, a)
+	}
+}
+
+func TestGlobalIDsBelongToTheOperatorsPLMNs(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	a := createTestOperator(t, d, operatorA())
+	b := createTestOperator(t, d, operatorB())
+
+	var foreignPLMN int64
+	if err := d.writer.QueryRowContext(ctx, `SELECT id FROM operator_plmns WHERE operator_id = ?`, b.ID).
+		Scan(&foreignPLMN); err != nil {
+		t.Fatalf("select PLMN: %v", err)
+	}
+
+	for _, q := range []string{
+		`UPDATE global_enb_ids SET operator_plmn_id = ? WHERE operator_id = ?`,
+		`UPDATE global_gnb_ids SET operator_plmn_id = ? WHERE operator_id = ?`,
+	} {
+		if _, err := d.writer.ExecContext(ctx, q, foreignPLMN, a.ID); !isConstraint(err, sqlite3.ErrConstraintForeignKey) {
+			t.Errorf("%s with another operator's PLMN: %v, want a foreign key error", q, err)
+		}
+	}
+
+	if _, err := d.writer.ExecContext(ctx, `DELETE FROM operator_plmns WHERE operator_id = ?`, a.ID); err != nil {
+		t.Fatalf("delete PLMNs: %v", err)
+	}
+
+	for _, table := range []string{"global_enb_ids", "global_gnb_ids"} {
+		var n int
+		if err := d.writer.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&n); err != nil || n != 0 {
+			t.Errorf("%s rows after their PLMNs are deleted = %d, %v, want 0", table, n, err)
+		}
+	}
+}
+
+func TestIdentifierText(t *testing.T) {
+	t.Parallel()
+
+	plmn := PLMN{MCC: "001", MNC: "01"}
+
+	for _, c := range []struct{ got, want string }{
+		{plmn.String(), "001-01"},
+		{PLMN{MCC: "315", MNC: "010"}.String(), "315-010"},
+		{GlobalENBID{PLMN: plmn, Type: ENBIDMacro, ID: 411}.Ref(), "eNB:001-01:MacroeNB-0019b"},
+		{GlobalENBID{PLMN: plmn, Type: ENBIDHome, ID: 411}.Ref(), "eNB:001-01:HomeeNB-000019b"},
+		{GlobalENBID{PLMN: plmn, Type: ENBIDShortMacro, ID: 411}.Ref(), "eNB:001-01:SMacroeNB-0019b"},
+		{GlobalENBID{PLMN: plmn, Type: ENBIDLongMacro, ID: 411}.Ref(), "eNB:001-01:LMacroeNB-00019b"},
+		{GlobalGNBID{PLMN: plmn, ID: 1, Length: 22}.Ref(), "gNB:001-01:000001@22"},
+		{GlobalGNBID{PLMN: plmn, ID: 412, Length: 24}.Ref(), "gNB:001-01:00019c@24"},
+	} {
+		if c.got != c.want {
+			t.Errorf("got %q, want %q", c.got, c.want)
+		}
 	}
 }

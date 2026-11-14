@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ellanetworks/core/s1ap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
 )
 
@@ -16,7 +17,9 @@ var (
 )
 
 func TestGlobalENBIDConversion(t *testing.T) {
-	for _, typ := range []db.ENBIDType{db.ENBIDMacro, ENBIDHome, db.ENBIDShortMacro, db.ENBIDLongMacro} {
+	t.Parallel()
+
+	for _, typ := range []db.ENBIDType{db.ENBIDMacro, db.ENBIDHome, db.ENBIDShortMacro, db.ENBIDLongMacro} {
 		in := db.GlobalENBID{PLMN: p3, Type: typ, ID: 42}
 
 		id, err := globalENBIDTo(in)
@@ -36,7 +39,9 @@ func TestGlobalENBIDConversion(t *testing.T) {
 }
 
 func TestServingOperators(t *testing.T) {
-	ops := []operatorView{{id: 1, plmns: []db.PLMN{p1}}, {id: 2, plmns: []db.PLMN{p2, p3}}, {id: 3, plmns: []db.PLMN{p4}}}
+	t.Parallel()
+
+	ops := []assoc.Operator{{ID: 1, PLMNs: []db.PLMN{p1}}, {ID: 2, PLMNs: []db.PLMN{p2, p3}}, {ID: 3, PLMNs: []db.PLMN{p4}}}
 
 	for name, tc := range map[string]struct {
 		tas  []TA
@@ -47,13 +52,15 @@ func TestServingOperators(t *testing.T) {
 		"shared cell": {[]TA{{TAC: 1, BroadcastPLMNs: []db.PLMN{p1, p2}}}, []int64{1, 2}},
 		"two TAs":     {[]TA{{TAC: 1, BroadcastPLMNs: []db.PLMN{p1}}, {TAC: 2, BroadcastPLMNs: []db.PLMN{p4}}}, []int64{1, 3}},
 	} {
-		if got := servingOperators(tc.tas, ops); !reflect.DeepEqual(got, tc.want) {
+		if got := assoc.Serving(ranSetup{tas: tc.tas}, ops); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("%s: %v, want %v", name, got, tc.want)
 		}
 	}
 }
 
 func TestENBConfigFor(t *testing.T) {
+	t.Parallel()
+
 	nodes := []ranSetup{
 		{tas: []TA{{TAC: 7, BroadcastPLMNs: []db.PLMN{p2, p1}}, {TAC: 3, BroadcastPLMNs: []db.PLMN{p4}}}, drx: s1ap.PagingDRXv64},
 		{tas: []TA{{TAC: 3, BroadcastPLMNs: []db.PLMN{p1}}}, drx: s1ap.PagingDRXv32},
@@ -98,6 +105,8 @@ func TestENBConfigFor(t *testing.T) {
 }
 
 func TestENBConfigForLimits(t *testing.T) {
+	t.Parallel()
+
 	var (
 		plmns []db.PLMN
 		nodes []ranSetup
@@ -120,6 +129,8 @@ func TestENBConfigForLimits(t *testing.T) {
 }
 
 func TestMergeServedGUMMEIs(t *testing.T) {
+	t.Parallel()
+
 	for name, tc := range map[string]struct {
 		pools []mmePool
 		want  []ServedGUMMEIs
@@ -143,13 +154,15 @@ func TestMergeServedGUMMEIs(t *testing.T) {
 			want: []ServedGUMMEIs{{PLMNs: []db.PLMN{p1, p3}, GroupIDs: []uint16{2, 5, 0x8001}, MMECodes: []uint8{1, 2, 3}}},
 		},
 	} {
-		if got := mergeServedGUMMEIs(tc.pools); !reflect.DeepEqual(got, tc.want) {
+		if got := mergeServedGUMMEIs(tc.pools); !reflect.DeepEqual([]ServedGUMMEIs(got), tc.want) {
 			t.Errorf("%s: %+v, want %+v", name, got, tc.want)
 		}
 	}
 }
 
 func TestMergeServedGUMMEIsPLMNLimit(t *testing.T) {
+	t.Parallel()
+
 	var pools []mmePool
 
 	for i := range 40 {
@@ -168,6 +181,8 @@ func TestMergeServedGUMMEIsPLMNLimit(t *testing.T) {
 }
 
 func TestPagingDRXAndTimeToWait(t *testing.T) {
+	t.Parallel()
+
 	if got := []int{
 		pagingDRXFrames(s1ap.PagingDRXv32), pagingDRXFrames(s1ap.PagingDRXv64), pagingDRXFrames(s1ap.PagingDRXv128),
 		pagingDRXFrames(s1ap.PagingDRXv256),

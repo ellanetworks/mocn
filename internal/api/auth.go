@@ -41,53 +41,29 @@ const (
 	touchInterval           = time.Minute
 )
 
-type AuthStore interface {
-	CountUsers(ctx context.Context) (int, error)
-	CreateUser(ctx context.Context, u db.NewUser, maxUsers int) (int64, error)
-	GetUser(ctx context.Context, email string) (db.User, error)
-	GetUserByID(ctx context.Context, id int64) (db.User, error)
-	ListUsers(ctx context.Context, page, perPage int) ([]db.User, int, error)
-	UpdateUserRole(ctx context.Context, id int64, role db.Role, pinned bool) error
-	UpdateUserPassword(ctx context.Context, id int64, passwordHash string, keepSession []byte) error
-	DeleteUser(ctx context.Context, id int64) error
+type permission string
 
-	CreateSession(ctx context.Context, s db.NewSession, maxPerUser int) (int64, error)
-	GetSession(ctx context.Context, id int64) (db.Session, error)
-	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (db.Session, error)
-	DeleteSessionByTokenHash(ctx context.Context, tokenHash []byte) error
-	DeleteExpiredSessions(ctx context.Context, now time.Time) error
-
-	CreateAPIToken(ctx context.Context, t db.NewAPIToken) (int64, error)
-	GetAPITokenByTokenID(ctx context.Context, tokenID string) (db.APIToken, error)
-	ListAPITokens(ctx context.Context, userID int64, page, perPage int) ([]db.APIToken, int, error)
-	CountAPITokens(ctx context.Context, userID int64) (int, error)
-	DeleteAPIToken(ctx context.Context, userID int64, tokenID string) error
-	TouchAPIToken(ctx context.Context, id int64, at time.Time) error
-}
-
-type Permission string
-
-const public Permission = ""
+const public permission = ""
 
 const (
-	PermReadOperators   Permission = "operator:read"
-	PermUpdateOperators Permission = "operator:update"
-	PermSelf            Permission = "user:self"
-	PermManageUsers     Permission = "user:admin"
-	PermReadProfiles    Permission = "pprof:read"
+	permReadOperators   permission = "operator:read"
+	permUpdateOperators permission = "operator:update"
+	permSelf            permission = "user:self"
+	permManageUsers     permission = "user:admin"
+	permReadProfiles    permission = "pprof:read"
 )
 
-var readPermissions = []Permission{PermReadOperators, PermSelf}
+var readPermissions = []permission{permReadOperators, permSelf}
 
-var operatePermissions = []Permission{PermUpdateOperators}
+var operatePermissions = []permission{permUpdateOperators}
 
-var permissions = map[db.Role][]Permission{
-	db.RoleAdmin:          slices.Concat(readPermissions, operatePermissions, []Permission{PermManageUsers, PermReadProfiles}),
+var permissions = map[db.Role][]permission{
+	db.RoleAdmin:          slices.Concat(readPermissions, operatePermissions, []permission{permManageUsers, permReadProfiles}),
 	db.RoleReadOnly:       readPermissions,
 	db.RoleNetworkManager: slices.Concat(readPermissions, operatePermissions),
 }
 
-func allowed(role db.Role, perm Permission) bool {
+func allowed(role db.Role, perm permission) bool {
 	return slices.Contains(permissions[role], perm)
 }
 
@@ -96,7 +72,7 @@ func validRole(role db.Role) bool {
 	return ok
 }
 
-type Principal struct {
+type principal struct {
 	UserID   int64
 	Email    string
 	Role     db.Role
@@ -105,8 +81,8 @@ type Principal struct {
 
 type principalKey struct{}
 
-func PrincipalFrom(ctx context.Context) (Principal, bool) {
-	p, ok := ctx.Value(principalKey{}).(Principal)
+func principalFrom(ctx context.Context) (principal, bool) {
+	p, ok := ctx.Value(principalKey{}).(principal)
 	return p, ok
 }
 
@@ -123,10 +99,6 @@ type auth struct {
 }
 
 func newAuth(cfg Config) *auth {
-	if c := cfg.BcryptCost; c != 0 && (c < bcrypt.MinCost || c > bcrypt.MaxCost) {
-		panic(fmt.Sprintf("api: bcrypt cost %d is out of range", c))
-	}
-
 	dummyHash := sync.OnceValue(func() []byte {
 		password := make([]byte, 32)
 		_, _ = rand.Read(password)
@@ -215,15 +187,15 @@ func (a *auth) authenticate(next http.Handler) http.Handler {
 	})
 }
 
-func (a *auth) principal(r *http.Request) (Principal, error) {
+func (a *auth) principal(r *http.Request) (principal, error) {
 	scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
 	if !ok || !strings.EqualFold(scheme, "Bearer") {
-		return Principal{}, errors.New("no bearer token")
+		return principal{}, errors.New("no bearer token")
 	}
 
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return Principal{}, errors.New("empty bearer token")
+		return principal{}, errors.New("empty bearer token")
 	}
 
 	var (
@@ -239,15 +211,15 @@ func (a *auth) principal(r *http.Request) (Principal, error) {
 	}
 
 	if err != nil {
-		return Principal{}, err
+		return principal{}, err
 	}
 
 	u, err := a.cfg.Auth.GetUserByID(r.Context(), userID)
 	if err != nil {
-		return Principal{}, storeError("get user", err)
+		return principal{}, storeError("get user", err)
 	}
 
-	return Principal{UserID: u.ID, Email: u.Email, Role: u.Role, APIToken: isAPIToken}, nil
+	return principal{UserID: u.ID, Email: u.Email, Role: u.Role, APIToken: isAPIToken}, nil
 }
 
 func (a *auth) checkAPIToken(ctx context.Context, token string) (int64, error) {
@@ -336,9 +308,9 @@ func (a *auth) checkAccessToken(ctx context.Context, token string) (int64, error
 	return c.ID, nil
 }
 
-func (a *auth) authorize(perm Permission, next http.Handler) http.Handler {
+func (a *auth) authorize(perm permission, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if p, ok := PrincipalFrom(r.Context()); !ok || !allowed(p.Role, perm) {
+		if p, ok := principalFrom(r.Context()); !ok || !allowed(p.Role, perm) {
 			writeError(r.Context(), w, http.StatusForbidden, "Forbidden", nil, a.cfg.Logger)
 			return
 		}
@@ -349,7 +321,7 @@ func (a *auth) authorize(perm Permission, next http.Handler) http.Handler {
 
 func (a *auth) needsLogin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if p, _ := PrincipalFrom(r.Context()); p.APIToken {
+		if p, _ := principalFrom(r.Context()); p.APIToken {
 			writeError(r.Context(), w, http.StatusForbidden, "This needs a login, not an API token", nil, a.cfg.Logger)
 			return
 		}

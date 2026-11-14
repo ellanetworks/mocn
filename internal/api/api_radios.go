@@ -1,50 +1,64 @@
 package api
 
 import (
-	"cmp"
-	"fmt"
 	"net/http"
 	"slices"
 	"time"
 
-	"github.com/ellanetworks/mocn/internal/db"
-	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/ellanetworks/mocn/internal/s1"
 )
 
-type TA struct {
-	TAC            uint32 `json:"tac"`
-	BroadcastPLMNs []PLMN `json:"broadcast_plmns"`
+// TS 36.413 clause 9.1.8.4
+// TS 38.413 clause 9.2.6.1
+type BroadcastPLMN struct {
+	PLMN    PLMN     `json:"plmn"`
+	SNSSAIs []SNSSAI `json:"snssais,omitempty"`
+}
+
+// TS 36.413 clause 9.1.8.4
+// TS 38.413 clause 9.2.6.1
+type SupportedTA struct {
+	TAC            string          `json:"tac"`
+	BroadcastPLMNs []BroadcastPLMN `json:"broadcast_plmns"`
 }
 
 type Radio struct {
 	Ref                     string                  `json:"ref,omitempty"`
-	Interface               string                  `json:"interface"`
+	Type                    string                  `json:"type"`
 	GlobalENBID             *GlobalENBID            `json:"global_enb_id,omitempty"`
 	GlobalGNBID             *GlobalGNBID            `json:"global_gnb_id,omitempty"`
-	ENBName                 string                  `json:"enb_name,omitempty"`
-	RANNodeName             string                  `json:"ran_node_name,omitempty"`
-	SupportedTAs            []TA                    `json:"supported_tas"`
+	Name                    string                  `json:"name,omitempty"`
+	SupportedTAs            []SupportedTA           `json:"supported_tas"`
 	DefaultPagingDRX        int                     `json:"default_paging_drx,omitempty"`
 	State                   string                  `json:"state"`
-	ConnectedSince          time.Time               `json:"connected_since"`
+	ConnectedAt             time.Time               `json:"connected_at"`
 	TNLAddresses            []string                `json:"tnl_addresses"`
 	UEConnections           int                     `json:"ue_connections"`
-	UEConnectionsByOperator []OperatorUEConnections `json:"ue_connections_by_operator,omitzero"`
+	UEConnectionsByOperator []OperatorUEConnections `json:"ue_connections_by_operator,omitempty"`
 }
 
 type ListRadiosResponse struct {
-	Items []Radio `json:"items"`
+	Items      []Radio `json:"items"`
+	Page       int     `json:"page"`
+	PerPage    int     `json:"per_page"`
+	TotalCount int     `json:"total_count"`
 }
 
-func ListRadios(cfg Config) http.Handler {
+func listRadios(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeResponse(r.Context(), w, ListRadiosResponse{Items: radios(cfg, ueConnections(cfg))}, http.StatusOK, cfg.Logger)
+		page, perPage, ok := pagination(w, r, cfg)
+		if !ok {
+			return
+		}
+
+		all := radios(cfg, ueConnections(cfg))
+		resp := ListRadiosResponse{Items: pageOf(all, page, perPage), Page: page, PerPage: perPage, TotalCount: len(all)}
+		writeResponse(r.Context(), w, resp, http.StatusOK, cfg.Logger)
 	})
 }
 
-func GetRadio(cfg Config) http.Handler {
+func getRadio(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ref := r.PathValue("ref")
 		ues := ueConnections(cfg)
@@ -85,7 +99,7 @@ func radios(cfg Config, ues []ueRecord) []Radio {
 		}
 	}
 
-	slices.SortStableFunc(out, func(a, b Radio) int { return a.ConnectedSince.Compare(b.ConnectedSince) })
+	slices.SortStableFunc(out, func(a, b Radio) int { return a.ConnectedAt.Compare(b.ConnectedAt) })
 
 	return out
 }
@@ -96,19 +110,24 @@ func onRadio(ref string) func(ueRecord) bool {
 
 func s1RadioResponse(n s1.RANNode, ues []ueRecord) Radio {
 	resp := Radio{
-		Interface: metrics.InterfaceS1, ENBName: n.Name, SupportedTAs: make([]TA, 0, len(n.SupportedTAs)),
-		DefaultPagingDRX: n.DefaultPagingDRX, State: string(n.State), ConnectedSince: n.ConnectedSince.UTC(),
-		TNLAddresses: append([]string{}, n.TNLAddresses...),
+		Type: ranNodeTypeENB, Name: n.Name,
+		SupportedTAs: make([]SupportedTA, 0, len(n.SupportedTAs)), DefaultPagingDRX: n.DefaultPagingDRX,
+		State: string(n.State), ConnectedAt: n.ConnectedSince.UTC(), TNLAddresses: append([]string{}, n.TNLAddresses...),
 	}
 
 	if e := n.GlobalENBID; e != nil {
-		resp.GlobalENBID = &GlobalENBID{PLMN: PLMN(e.PLMN), Type: e.Type, ID: int64(e.ID)}
-		resp.Ref = radioRef(*e)
+		resp.GlobalENBID = globalENBIDOfDB(*e)
+		resp.Ref = e.Ref()
 		resp.UEConnections = countUEConnections(ues, onRadio(resp.Ref))
 	}
 
 	for _, ta := range n.SupportedTAs {
-		resp.SupportedTAs = append(resp.SupportedTAs, TA{TAC: uint32(ta.TAC), BroadcastPLMNs: plmnsResponse(ta.BroadcastPLMNs)})
+		plmns := make([]BroadcastPLMN, 0, len(ta.BroadcastPLMNs))
+		for _, p := range ta.BroadcastPLMNs {
+			plmns = append(plmns, BroadcastPLMN{PLMN: plmnOfDB(p)})
+		}
+
+		resp.SupportedTAs = append(resp.SupportedTAs, SupportedTA{TAC: tacString(uint32(ta.TAC)), BroadcastPLMNs: plmns})
 	}
 
 	return resp
@@ -116,37 +135,25 @@ func s1RadioResponse(n s1.RANNode, ues []ueRecord) Radio {
 
 func ngRadioResponse(n ng.RANNode, ues []ueRecord) Radio {
 	resp := Radio{
-		Interface: metrics.InterfaceNG, RANNodeName: n.Name, SupportedTAs: make([]TA, 0, len(n.SupportedTAs)),
-		DefaultPagingDRX: n.DefaultPagingDRX, State: string(n.State), ConnectedSince: n.ConnectedSince.UTC(),
-		TNLAddresses: append([]string{}, n.TNLAddresses...),
+		Type: ranNodeTypeGNB, Name: n.Name,
+		SupportedTAs: make([]SupportedTA, 0, len(n.SupportedTAs)), DefaultPagingDRX: n.DefaultPagingDRX,
+		State: string(n.State), ConnectedAt: n.ConnectedSince.UTC(), TNLAddresses: append([]string{}, n.TNLAddresses...),
 	}
 
 	if g := n.GlobalGNBID; g != nil {
-		resp.GlobalGNBID = &GlobalGNBID{PLMN: PLMN(g.PLMN), ID: int64(g.ID), Length: g.Length}
-		resp.Ref = gnbRef(*g)
+		resp.GlobalGNBID = globalGNBIDOfDB(*g)
+		resp.Ref = g.Ref()
 		resp.UEConnections = countUEConnections(ues, onRadio(resp.Ref))
 	}
 
 	for _, ta := range n.SupportedTAs {
-		plmns := make([]PLMN, 0, len(ta.BroadcastPLMNs))
+		plmns := make([]BroadcastPLMN, 0, len(ta.BroadcastPLMNs))
 		for _, b := range ta.BroadcastPLMNs {
-			plmns = append(plmns, PLMN(b.PLMN))
+			plmns = append(plmns, BroadcastPLMN{PLMN: plmnOfDB(b.PLMN), SNSSAIs: snssaisResponse(b.Slices)})
 		}
 
-		resp.SupportedTAs = append(resp.SupportedTAs, TA{TAC: ta.TAC, BroadcastPLMNs: plmns})
+		resp.SupportedTAs = append(resp.SupportedTAs, SupportedTA{TAC: tacString(ta.TAC), BroadcastPLMNs: plmns})
 	}
 
 	return resp
-}
-
-func (r Radio) name() string {
-	return cmp.Or(r.ENBName, r.RANNodeName)
-}
-
-func radioRef(e db.GlobalENBID) string {
-	return fmt.Sprintf("%s-%s:%s:%d", e.PLMN.MCC, e.PLMN.MNC, e.Type, e.ID)
-}
-
-func gnbRef(g db.GlobalGNBID) string {
-	return fmt.Sprintf("%s-%s:gnb%d:%d", g.PLMN.MCC, g.PLMN.MNC, g.Length, g.ID)
 }

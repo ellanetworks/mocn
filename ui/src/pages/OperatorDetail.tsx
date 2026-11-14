@@ -6,22 +6,28 @@ import {
   Link,
   Skeleton,
   Tooltip,
+  useMediaQuery,
 } from "@mui/material";
-import {
-  Add as AddIcon,
-  Delete as DeleteIcon,
-  Edit as EditIcon,
-} from "@mui/icons-material";
+import { useTheme } from "@mui/material/styles";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
+import ViewIcon from "@mui/icons-material/Visibility";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate, useParams } from "react-router-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import CoreNodeDetailsDialog, {
+  type CoreNodeDetails,
+  type CoreNodeStatus,
+} from "@/components/CoreNodeDetailsDialog";
 import StateChip from "@/components/StateChip";
 import {
   CoreNodeDialog,
   DeleteDialog,
+  EditENBIdentityDialog,
+  EditGNBIdentityDialog,
   EditPLMNsDialog,
-  EditGatewayIdentityDialog,
   EditPWSOperatorDialog,
   RenameOperatorDialog,
 } from "@/components/OperatorDialogs";
@@ -38,26 +44,28 @@ import {
   type AMF,
   type CoreNodeKind,
   type MME,
-  type MMEState,
   type Operator,
   type RadioUEConnections,
 } from "@/queries/operators";
-import { radioPath } from "@/queries/radios";
+import { radioLabel, radioPath } from "@/queries/radios";
 import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
 import {
-  formatAMFOverload,
+  CORE_NODE_KIND_LABELS,
+  coreNodeKey,
+  ENB_IDENTITY_HELP,
+  ENB_IDENTITY_LABEL,
+  formatAddresses,
   formatAMFOverloadDetail,
   formatGlobalENBID,
   formatGlobalGNBID,
-  formatGUMMEI,
-  formatOverload,
-  formatOverloadDetail,
+  formatMMEOverloadDetail,
   formatPLMN,
   formatPLMNSupport,
   formatServedGUAMIs,
-  formatTNLAddresses,
-  GATEWAY_IDENTITY_HELP,
+  formatServedGUMMEIsItem,
+  GNB_IDENTITY_HELP,
+  GNB_IDENTITY_LABEL,
   operatorPath,
   PWS_HELP,
 } from "@/utils/operators";
@@ -75,201 +83,83 @@ const gridSx = {
   },
 };
 
+const linkSx = { color: "link", textDecoration: "underline" };
+
 type Editing =
   | { type: "name" }
   | { type: "plmns" }
   | { type: "pws" }
-  | { type: "identity" }
+  | { type: "enb" }
+  | { type: "gnb" }
   | { type: "add" }
-  | { type: "edit"; kind: CoreNodeKind; index: number }
-  | { type: "delete"; kind: CoreNodeKind; index: number };
+  | { type: "view"; kind: CoreNodeKind; key: string }
+  | { type: "edit"; kind: CoreNodeKind; key: string }
+  | { type: "delete"; kind: CoreNodeKind; key: string };
 
-interface NodeStatus {
-  state: MMEState;
-  since: string;
-  name?: string;
-  servedIDs?: string;
-  capacity?: number;
-  ueConnections: number;
-  overload?: { text: string; detail: string };
-}
-
-interface NodeRow {
+interface NodeRow extends CoreNodeDetails {
   id: string;
-  kind: CoreNodeKind;
-  index: number;
-  addresses: string[];
-  status?: NodeStatus;
+  key: string;
 }
 
-const mmeStatus = ({ status }: MME): NodeStatus | undefined =>
+const mmeStatus = ({ status }: MME): CoreNodeStatus | undefined =>
   status && {
     state: status.state,
     since: status.since,
     name: status.mme_name,
+    primaryAddress: status.primary_tnl_address,
     servedIDs: status.served_gummeis?.length
-      ? status.served_gummeis.map(formatGUMMEI).join("; ")
+      ? status.served_gummeis.map(formatServedGUMMEIsItem).join("; ")
       : undefined,
     capacity: status.relative_mme_capacity,
     ueConnections: status.ue_connections,
     overload: status.overload?.length
-      ? {
-          text: formatOverload(status.overload),
-          detail: formatOverloadDetail(status.overload),
-        }
+      ? formatMMEOverloadDetail(status.overload)
       : undefined,
   };
 
-const amfStatus = ({ status }: AMF): NodeStatus | undefined =>
+const amfStatus = ({ status }: AMF): CoreNodeStatus | undefined =>
   status && {
     state: status.state,
     since: status.since,
     name: status.amf_name,
+    primaryAddress: status.primary_tnl_address,
     servedIDs: status.served_guamis?.length
-      ? [
-          `GUAMIs ${formatServedGUAMIs(status.served_guamis, status.unavailable_guamis)}`,
-          ...(status.plmn_support?.length
-            ? [`PLMN support ${formatPLMNSupport(status.plmn_support)}`]
-            : []),
-        ].join(" · ")
+      ? formatServedGUAMIs(status.served_guamis, status.unavailable_guamis)
+      : undefined,
+    plmnSupport: status.plmn_support?.length
+      ? formatPLMNSupport(status.plmn_support)
       : undefined,
     capacity: status.relative_amf_capacity,
     ueConnections: status.ue_connections,
-    overload: status.overload
-      ? {
-          text: formatAMFOverload(status.overload),
-          detail: formatAMFOverloadDetail(status.overload),
-        }
+    overload: status.overload?.length
+      ? formatAMFOverloadDetail(status.overload)
       : undefined,
   };
 
 const NONE = "—";
 
-const KIND_RAT: Record<CoreNodeKind, string> = { MME: "4G", AMF: "5G" };
+const mmeRow = (node: MME) => nodeRow("MME", node, mmeStatus(node));
 
-const NODE_COLUMNS: GridColDef<NodeRow>[] = [
-  {
-    field: "addresses",
-    headerName: "Addresses",
-    description: "The TNL addresses Ella MOCN uses to reach the node.",
-    flex: 0.8,
-    minWidth: 150,
-    renderCell: ({ row }) => <OneLine title={row.addresses.join(", ")} />,
-  },
-  {
-    field: "kind",
-    headerName: "Type",
-    description: "MME: the 4G core, over S1. AMF: the 5G core, over NG.",
-    flex: 0.3,
-    minWidth: 100,
-    valueGetter: (_value, row) => `${row.kind} (${KIND_RAT[row.kind]})`,
-  },
-  {
-    field: "mme_name",
-    headerName: "Name",
-    description:
-      "The name the MME sent in its S1 Setup Response, or the AMF in its NG Setup Response.",
-    flex: 0.6,
-    minWidth: 120,
-    valueGetter: (_value, row) => row.status?.name ?? NONE,
-  },
-  {
-    field: "served_ids",
-    headerName: "Served IDs",
-    description:
-      "MME: the GUMMEIs it serves (PLMNs, MME group IDs and MME codes), from its S1 Setup Response. AMF: the GUAMIs it serves, from its NG Setup Response, marked unavailable after an AMF Status Indication, and the S-NSSAIs it supports for each PLMN.",
-    flex: 1,
-    minWidth: 200,
-    renderCell: ({ row }) =>
-      row.status?.servedIDs ? <OneLine title={row.status.servedIDs} /> : NONE,
-  },
-  {
-    field: "capacity",
-    headerName: "Capacity",
-    description:
-      "The relative capacity the node sent in its S1 or NG Setup Response. Ella MOCN selects among the operator's nodes in proportion to it, and never selects a node with 0 for a new UE.",
-    flex: 0.3,
-    minWidth: 110,
-    valueGetter: (_value, row) =>
-      row.status?.capacity === undefined ? NONE : String(row.status.capacity),
-  },
-  {
-    field: "ue_connections",
-    headerName: "UE connections",
-    description:
-      "The UE-associated logical S1-connections (MME) or NG-connections (AMF) Ella MOCN relays to the node, one per connected UE.",
-    flex: 0.4,
-    minWidth: 140,
-    valueGetter: (_value, row) =>
-      row.status ? String(row.status.ueConnections) : NONE,
-  },
-  {
-    field: "overload",
-    headerName: "Overload",
-    description:
-      "The overload action the node requested in OVERLOAD START. For an MME, Ella MOCN relays it to the radios that broadcast one of the operator's PLMNs, with the GUMMEIs it applies to. For an AMF, it shows the action for the AMF and for each overloaded slice. None: no ongoing overload action.",
-    flex: 0.6,
-    minWidth: 140,
-    renderCell: ({ row }) => {
-      if (!row.status) {
-        return NONE;
-      }
-      return row.status.overload ? (
-        <OneLine title={row.status.overload.detail}>
-          {row.status.overload.text}
-        </OneLine>
-      ) : (
-        "None"
-      );
-    },
-  },
-  {
-    field: "state",
-    headerName: "Status",
-    description:
-      "Disconnected: no SCTP association to the node. Connected: SCTP association up, S1 or NG Setup not done yet. Up: S1 or NG Setup succeeded. Setup failed: the node rejected the S1 or NG Setup.",
-    flex: 0.4,
-    minWidth: 150,
-    renderCell: ({ row }) =>
-      row.status ? (
-        <StateChip
-          state={row.status.state}
-          hint={`Since ${formatDateTime(row.status.since, { seconds: true })}`}
-        />
-      ) : (
-        NONE
-      ),
-  },
-];
+const amfRow = (node: AMF) => nodeRow("AMF", node, amfStatus(node));
 
-const RADIO_COLUMNS: GridColDef<RadioUEConnections>[] = [
-  {
-    field: "radio",
-    headerName: "Radio",
-    description:
-      "A radio that broadcasts one of the operator's PLMNs, or that has UE connections for it.",
-    flex: 1,
-    minWidth: 160,
-    renderCell: ({ row }) => (
-      <Link
-        component={RouterLink}
-        to={radioPath(row.radio)}
-        variant="body2"
-        sx={{ color: "link", textDecoration: "underline" }}
-      >
-        {row.name ?? row.radio}
-      </Link>
-    ),
-  },
-  {
-    field: "ue_connections",
-    headerName: "UE connections",
-    description:
-      "The UE-associated logical S1-connections or NG-connections Ella MOCN relays from the radio to the operator, one per connected UE.",
-    flex: 0.5,
-    minWidth: 140,
-  },
-];
+const nodeRow = (
+  kind: CoreNodeKind,
+  node: MME | AMF,
+  status: CoreNodeStatus | undefined,
+): NodeRow => ({
+  id: `${kind} ${coreNodeKey(node)}`,
+  key: coreNodeKey(node),
+  kind,
+  addresses: node.tnl_addresses,
+  status,
+  label: status?.name ?? `${kind} ${node.tnl_addresses[0] ?? ""}`.trim(),
+});
+
+const HIDDEN_ON_PHONE = {
+  addresses: false,
+  kind: false,
+  ue_connections: false,
+};
 
 function CoreNodes({
   mmes,
@@ -277,6 +167,7 @@ function CoreNodes({
   identity,
   editable,
   onAdd,
+  onView,
   onEdit,
   onDelete,
 }: {
@@ -285,93 +176,175 @@ function CoreNodes({
   identity: Record<CoreNodeKind, boolean>;
   editable: boolean;
   onAdd: () => void;
-  onEdit: (kind: CoreNodeKind, index: number) => void;
-  onDelete: (kind: CoreNodeKind, index: number) => void;
+  onView: (row: NodeRow) => void;
+  onEdit: (row: NodeRow) => void;
+  onDelete: (row: NodeRow) => void;
 }) {
-  const rows: NodeRow[] = [
-    ...mmes.map((node, index) => ({
-      id: `MME ${node.tnl_addresses.join(",")}`,
-      kind: "MME" as const,
-      index,
-      addresses: node.tnl_addresses,
-      status: mmeStatus(node),
-    })),
-    ...amfs.map((node, index) => ({
-      id: `AMF ${node.tnl_addresses.join(",")}`,
-      kind: "AMF" as const,
-      index,
-      addresses: node.tnl_addresses,
-      status: amfStatus(node),
-    })),
-  ];
-  const columns: GridColDef<NodeRow>[] = [...NODE_COLUMNS];
-  if (editable) {
-    columns.push({
+  const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down("sm"));
+  const rows: NodeRow[] = [...mmes.map(mmeRow), ...amfs.map(amfRow)];
+  const columns: GridColDef<NodeRow>[] = [
+    {
+      field: "addresses",
+      headerName: "Addresses",
+      description: "The addresses Ella MOCN uses to reach the node.",
+      flex: 0.8,
+      minWidth: 150,
+      renderCell: ({ row }) => (
+        <OneLine title={formatAddresses({ tnl_addresses: row.addresses })} />
+      ),
+    },
+    {
+      field: "kind",
+      headerName: "Type",
+      description:
+        "MME: the 4G core, reached over S1. AMF: the 5G core, reached over NG.",
+      flex: 0.4,
+      minWidth: 100,
+      renderCell: ({ row }) => (
+        <OneLine title={CORE_NODE_KIND_LABELS[row.kind]} />
+      ),
+    },
+    {
+      field: "label",
+      headerName: "Name",
+      description: "The name the node gave itself. Open it to see its details.",
+      flex: 0.8,
+      minWidth: 90,
+      renderCell: ({ row }) => (
+        <OneLine title={row.label}>
+          <Link
+            component="button"
+            type="button"
+            variant="body2"
+            onClick={() => onView(row)}
+            sx={{ ...linkSx, verticalAlign: "baseline" }}
+          >
+            {row.label}
+          </Link>
+        </OneLine>
+      ),
+    },
+    {
+      field: "ue_connections",
+      headerName: "UE Connections",
+      description: "Devices connected through this node: one per active phone.",
+      flex: 0.5,
+      minWidth: 145,
+      renderCell: ({ row }) => (
+        <OneLine title={row.status ? String(row.status.ueConnections) : NONE} />
+      ),
+    },
+    {
+      field: "state",
+      headerName: "Status",
+      description:
+        "Up: connected and ready. Connected: link up, setup not done yet. Disconnected: no link. Setup failed: the node refused the connection.",
+      width: 124,
+      renderCell: ({ row }) =>
+        row.status ? (
+          <StateChip
+            state={row.status.state}
+            hint={`Since ${formatDateTime(row.status.since, { seconds: true })}`}
+          />
+        ) : (
+          NONE
+        ),
+    },
+    {
       field: "actions",
       headerName: "Actions",
-      width: 100,
+      width: editable ? 112 : 56,
       align: "right",
       headerAlign: "right",
       renderCell: ({ row }) => {
         const name = row.addresses.join(", ");
         return (
           <>
-            <Tooltip title={`Edit ${row.kind}`} arrow>
+            <Tooltip title={`View ${row.kind}`} arrow>
               <IconButton
                 size="small"
-                aria-label={`Edit ${row.kind} ${name}`}
-                onClick={() => onEdit(row.kind, row.index)}
+                aria-label={`View ${row.kind} ${name}`}
+                onClick={() => onView(row)}
               >
-                <EditIcon fontSize="small" color="primary" />
+                <ViewIcon fontSize="small" color="primary" />
               </IconButton>
             </Tooltip>
-            <Tooltip title={`Delete ${row.kind}`} arrow>
-              <IconButton
-                size="small"
-                aria-label={`Delete ${row.kind} ${name}`}
-                onClick={() => onDelete(row.kind, row.index)}
-              >
-                <DeleteIcon fontSize="small" color="primary" />
-              </IconButton>
-            </Tooltip>
+            {editable && (
+              <>
+                <Tooltip title={`Edit ${row.kind}`} arrow>
+                  <IconButton
+                    size="small"
+                    aria-label={`Edit ${row.kind} ${name}`}
+                    onClick={() => onEdit(row)}
+                  >
+                    <EditIcon fontSize="small" color="primary" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={`Delete ${row.kind}`} arrow>
+                  <IconButton
+                    size="small"
+                    aria-label={`Delete ${row.kind} ${name}`}
+                    onClick={() => onDelete(row)}
+                  >
+                    <DeleteIcon fontSize="small" color="primary" />
+                  </IconButton>
+                </Tooltip>
+              </>
+            )}
           </>
         );
       },
-    });
-  }
+    },
+  ];
   const addable = identity.MME || identity.AMF;
+  const blocked =
+    "Set the 4G or 5G gateway identity first. MMEs need the Global eNB ID, AMFs the Global gNB ID.";
 
   return (
     <>
       <SectionHeader
         id="core-nodes-title"
-        title={`Core network nodes (${rows.length})`}
-        description="The MMEs and AMFs of this operator's core, each with its TNL addresses."
+        title={`Core Network Nodes (${rows.length})`}
+        description="The MMEs and AMFs of this operator's core."
       >
-        {editable && (
-          <Tooltip
-            title={addable ? "" : "Set the gateway identity first"}
-            describeChild
-          >
-            <span>
-              <Button
-                variant="contained"
-                color="success"
-                startIcon={<AddIcon />}
-                onClick={onAdd}
-                disabled={!addable}
+        {editable &&
+          (addable ? (
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<AddIcon />}
+              onClick={onAdd}
+              sx={{ flexShrink: 0 }}
+            >
+              Add Core Node
+            </Button>
+          ) : (
+            <Tooltip title={blocked} arrow describeChild>
+              <Box
+                component="span"
+                tabIndex={0}
+                aria-label={`Add Core Node: ${blocked}`}
                 sx={{ flexShrink: 0 }}
               >
-                Add
-              </Button>
-            </span>
-          </Tooltip>
-        )}
+                <Button
+                  variant="contained"
+                  color="success"
+                  startIcon={<AddIcon />}
+                  disabled
+                  tabIndex={-1}
+                >
+                  Add Core Node
+                </Button>
+              </Box>
+            </Tooltip>
+          ))}
       </SectionHeader>
       <DataGrid<NodeRow>
         aria-labelledby="core-nodes-title"
         rows={rows}
         columns={columns}
+        columnVisibilityModel={phone ? HIDDEN_ON_PHONE : {}}
         disableColumnSorting
         disableColumnFilter
         disableColumnMenu
@@ -386,22 +359,57 @@ function CoreNodes({
   );
 }
 
-function GatewayIdentity({ parts }: { parts: [string, string | undefined][] }) {
+function RadioConnections({ rows }: { rows: RadioUEConnections[] }) {
+  const columns: GridColDef<RadioUEConnections>[] = [
+    {
+      field: "ref",
+      headerName: "Radio",
+      description:
+        "A radio that broadcasts one of this operator's PLMNs, or that has devices connected to it.",
+      flex: 1,
+      minWidth: 160,
+      renderCell: ({ row }) => {
+        const label = radioLabel(row, row.ref);
+        return (
+          <OneLine title={label}>
+            <Link
+              component={RouterLink}
+              to={radioPath(row.ref)}
+              variant="body2"
+              sx={linkSx}
+            >
+              {label}
+            </Link>
+          </OneLine>
+        );
+      },
+    },
+    {
+      field: "ue_connections",
+      headerName: "UE Connections",
+      description:
+        "Devices connected to this operator through the radio: one per active phone, over 4G (S1) or 5G (NG).",
+      flex: 0.5,
+      minWidth: 145,
+      renderCell: ({ row }) => <OneLine title={String(row.ue_connections)} />,
+    },
+  ];
   return (
-    <Box>
-      {parts.map(([rat, id]) => (
-        <OneLine key={rat} title={`${rat} ${id ?? "Not set"}`}>
-          <Box component="span" sx={{ fontWeight: 600, mr: 1 }}>
-            {rat}
-          </Box>
-          {id ?? (
-            <Box component="span" sx={{ color: "text.secondary" }}>
-              Not set
-            </Box>
-          )}
-        </OneLine>
-      ))}
-    </Box>
+    <DataGrid<RadioUEConnections>
+      aria-labelledby="ue-connections-title"
+      rows={rows}
+      columns={columns}
+      getRowId={(row) => row.ref}
+      disableColumnSorting
+      disableColumnFilter
+      disableColumnMenu
+      disableRowSelectionOnClick
+      disableVirtualization
+      hideFooter
+      autoHeight
+      localeText={{ noRowsLabel: "No radios." }}
+      sx={gridSx}
+    />
   );
 }
 
@@ -419,14 +427,32 @@ function OperatorSections({
   const edit = (next: Editing) =>
     editable ? () => setEditing(next) : undefined;
 
-  const enb = operator.global_enb_id ?? undefined;
-  const gnb = operator.global_gnb_id ?? undefined;
-  const mmes = operator.mmes ?? [];
-  const amfs = operator.amfs ?? [];
-  const deleting =
-    editing?.type === "delete"
-      ? (editing.kind === "MME" ? mmes : amfs)[editing.index]
+  const enb = operator.global_enb_id;
+  const gnb = operator.global_gnb_id;
+  const { mmes, amfs } = operator;
+  const nodeOf = (kind: CoreNodeKind, key: string) =>
+    kind === "MME"
+      ? mmes.find((n) => coreNodeKey(n) === key)
+      : amfs.find((n) => coreNodeKey(n) === key);
+  const rowOf = (kind: CoreNodeKind, key: string) => {
+    if (kind === "MME") {
+      const mme = mmes.find((n) => coreNodeKey(n) === key);
+      return mme && mmeRow(mme);
+    }
+    const amf = amfs.find((n) => coreNodeKey(n) === key);
+    return amf && amfRow(amf);
+  };
+  const selected =
+    editing?.type === "edit" || editing?.type === "delete"
+      ? nodeOf(editing.kind, editing.key)
       : undefined;
+  const viewing =
+    editing?.type === "view" ? rowOf(editing.kind, editing.key) : undefined;
+  const notSet = (
+    <Box component="span" sx={{ color: "text.secondary" }}>
+      Not set
+    </Box>
+  );
 
   return (
     <>
@@ -442,36 +468,34 @@ function OperatorSections({
           {
             label: "Name",
             help: "The name of this operator in Ella MOCN.",
-            value: operator.name,
+            value: <OneLine title={operator.name} />,
             onEdit: edit({ type: "name" }),
           },
           {
             label: "PLMNs",
-            help: "The PLMN IDs of this operator. UEs that select one of them are routed to this operator's core.",
+            help: "The network codes (PLMN IDs, MCC-MNC) of this operator. Phones that pick one of them are sent to this operator's core.",
             value: (
               <OneLine title={operator.plmns.map(formatPLMN).join(", ")} />
             ),
             onEdit: edit({ type: "plmns" }),
           },
           {
-            label: "PWS operator",
+            label: "PWS Operator",
             help: PWS_HELP,
             value: operator.pws_operator ? "Yes" : "No",
             onEdit: edit({ type: "pws" }),
           },
           {
-            label: "Gateway identity",
-            help: GATEWAY_IDENTITY_HELP,
-            dense: true,
-            value: (
-              <GatewayIdentity
-                parts={[
-                  ["4G", enb ? formatGlobalENBID(enb) : undefined],
-                  ["5G", gnb ? formatGlobalGNBID(gnb) : undefined],
-                ]}
-              />
-            ),
-            onEdit: edit({ type: "identity" }),
+            label: ENB_IDENTITY_LABEL,
+            help: ENB_IDENTITY_HELP,
+            value: enb ? <OneLine title={formatGlobalENBID(enb)} /> : notSet,
+            onEdit: edit({ type: "enb" }),
+          },
+          {
+            label: GNB_IDENTITY_LABEL,
+            help: GNB_IDENTITY_HELP,
+            value: gnb ? <OneLine title={formatGlobalGNBID(gnb)} /> : notSet,
+            onEdit: edit({ type: "gnb" }),
           },
         ]}
       />
@@ -482,30 +506,17 @@ function OperatorSections({
         identity={{ MME: enb !== undefined, AMF: gnb !== undefined }}
         editable={editable}
         onAdd={() => setEditing({ type: "add" })}
-        onEdit={(kind, index) => setEditing({ type: "edit", kind, index })}
-        onDelete={(kind, index) => setEditing({ type: "delete", kind, index })}
+        onView={({ kind, key }) => setEditing({ type: "view", kind, key })}
+        onEdit={({ kind, key }) => setEditing({ type: "edit", kind, key })}
+        onDelete={({ kind, key }) => setEditing({ type: "delete", kind, key })}
       />
 
       <SectionHeader
         id="ue-connections-title"
-        title="UE connections by radio"
-        description="The UE connections Ella MOCN relays to this operator from each radio."
+        title="UE Connections by Radio"
+        description="The devices connected to this operator through each radio."
       />
-      <DataGrid<RadioUEConnections>
-        aria-labelledby="ue-connections-title"
-        rows={operator.ue_connections_by_radio ?? []}
-        columns={RADIO_COLUMNS}
-        getRowId={(row) => row.radio}
-        disableColumnSorting
-        disableColumnFilter
-        disableColumnMenu
-        disableRowSelectionOnClick
-        disableVirtualization
-        hideFooter
-        autoHeight
-        localeText={{ noRowsLabel: "No radios." }}
-        sx={gridSx}
-      />
+      <RadioConnections rows={operator.ue_connections_by_radio ?? []} />
 
       {editing?.type === "name" && (
         <RenameOperatorDialog
@@ -520,31 +531,36 @@ function OperatorSections({
       {editing?.type === "pws" && (
         <EditPWSOperatorDialog operator={operator} onClose={close} />
       )}
-      {editing?.type === "identity" && (
-        <EditGatewayIdentityDialog operator={operator} onClose={close} />
+      {editing?.type === "enb" && (
+        <EditENBIdentityDialog operator={operator} onClose={close} />
+      )}
+      {editing?.type === "gnb" && (
+        <EditGNBIdentityDialog operator={operator} onClose={close} />
       )}
       {editing?.type === "add" && (
         <CoreNodeDialog operator={operator} onClose={close} />
       )}
-      {editing?.type === "edit" && (
+      {viewing && <CoreNodeDetailsDialog node={viewing} onClose={close} />}
+      {editing?.type === "edit" && selected && (
         <CoreNodeDialog
           operator={operator}
           kind={editing.kind}
-          index={editing.index}
+          node={selected}
           onClose={close}
         />
       )}
-      {editing?.type === "delete" && deleting && (
+      {editing?.type === "delete" && selected && (
         <DeleteDialog
           operator={operator}
           title={`Delete ${editing.kind}`}
-          description={`Delete ${editing.kind} ${formatTNLAddresses(deleting)}?`}
+          description={`Delete ${editing.kind} ${formatAddresses(selected)}? Ella MOCN closes its ${editing.kind === "MME" ? "S1" : "NG"} association, and the phones it serves lose their connection.`}
           change={
             editing.kind === "MME"
-              ? { mmes: mmes.filter((_, i) => i !== editing.index) }
-              : { amfs: amfs.filter((_, i) => i !== editing.index) }
+              ? { mmes: mmes.filter((n) => coreNodeKey(n) !== editing.key) }
+              : { amfs: amfs.filter((n) => coreNodeKey(n) !== editing.key) }
           }
           message={`${editing.kind} deleted successfully.`}
+          failure={`Failed to delete ${editing.kind}`}
           onClose={close}
         />
       )}
@@ -619,7 +635,7 @@ export default function OperatorDetail() {
       {deleting && (
         <ConfirmDialog
           title="Delete Operator"
-          description={`Delete ${name}? This cannot be undone.`}
+          description={`Delete ${name}? Ella MOCN disconnects from its MMEs and AMFs, and its phones lose service on the shared radios. This cannot be undone.`}
           confirmLabel="Delete"
           pending={remove.isPending}
           onConfirm={() => remove.mutate()}

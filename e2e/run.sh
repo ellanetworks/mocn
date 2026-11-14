@@ -9,10 +9,11 @@ artifacts=${E2E_ARTIFACTS:-$PWD/.artifacts}
 
 finish() {
 	local rc=$?
+	rm -f "$artifacts/e2e.test"
 	if [ "$rc" -ne 0 ]; then
 		mkdir -p "$artifacts"
 		docker compose ps -a || true
-		for svc in mocn open5gs open5gs-b open5gs-5g open5gs-5g-b srsenb srsue srsenb-b srsue-b srsgnb srsue-5g srsgnb-b srsue-5g-b ueransim; do
+		for svc in mocn open5gs open5gs-b open5gs-5g open5gs-5g-b srsenb srsue srsenb-b srsue-b gnb srsue-5g gnb-b srsue-5g-b gnb-c srsue-5g-c; do
 			docker compose logs --no-color "$svc" >"$artifacts/$svc.log" 2>&1 || true
 		done
 		docker compose cp open5gs:/var/log/open5gs "$artifacts/open5gs" >/dev/null 2>&1 || true
@@ -32,20 +33,39 @@ finish() {
 		tail -n 100 "$artifacts/srsenb.log" || true
 		echo "--- open5gs-5g amf"
 		tail -n 100 "$artifacts/open5gs-5g/amf.log" || true
-		echo "--- srsgnb"
-		tail -n 100 "$artifacts/srsgnb.log" || true
+		echo "--- gnb"
+		tail -n 100 "$artifacts/gnb.log" || true
 		echo "logs and S1/NG pcap in $artifacts"
 	fi
 	if [ -z "${E2E_KEEP:-}" ]; then
-		docker compose down -v --remove-orphans >/dev/null 2>&1 || true
+		docker compose down -v -t 1 --remove-orphans >/dev/null 2>&1 || true
 	fi
 	exit "$rc"
 }
 trap finish EXIT
 
-docker compose build mocn
+mkdir -p "$artifacts"
+
+docker compose pull --quiet --ignore-buildable --policy missing &
+pull=$!
+
+{ go vet -tags e2e . && go test -tags e2e -c -o "$artifacts/e2e.test" .; } &
+compile=$!
+
+docker compose build mocn gnb
+wait "$pull"
 docker compose up -d --wait mocn open5gs open5gs-b open5gs-5g open5gs-5g-b
 docker compose exec -d mocn tcpdump -i any -U -w /data/sctp.pcap sctp
 docker compose up -d srsenb srsue srsenb-b srsue-b
 
-go test -tags e2e -count=1 -v -timeout 20m . "$@"
+wait "$compile"
+
+args=()
+for arg in "$@"; do
+	case $arg in
+	-test.* | [!-]*) args+=("$arg") ;;
+	*) args+=("-test.${arg#-}") ;;
+	esac
+done
+
+"$artifacts/e2e.test" -test.v -test.timeout 20m "${args[@]}"

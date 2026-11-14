@@ -53,6 +53,8 @@ func listTokens(t *testing.T, a *testAPI, token, path string) []api.APIToken {
 }
 
 func TestUsers(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	a.createUser(t, "NM@example.com", db.RoleNetworkManager)
@@ -116,6 +118,8 @@ func TestUsers(t *testing.T) {
 }
 
 func TestMaxNumUsers(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	for i := 1; i < api.MaxNumUsers; i++ {
@@ -129,6 +133,8 @@ func TestMaxNumUsers(t *testing.T) {
 }
 
 func TestUserChangesEndSessions(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	a.createUser(t, "nm@example.com", db.RoleNetworkManager)
 
@@ -154,6 +160,8 @@ func TestUserChangesEndSessions(t *testing.T) {
 }
 
 func TestUpdateMyPassword(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	a.createUser(t, "ro@example.com", db.RoleReadOnly)
 
@@ -197,6 +205,8 @@ func TestUpdateMyPassword(t *testing.T) {
 }
 
 func TestAPITokens(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	token := a.userToken(t, "app@example.com")
 	login, _ := a.login(t, "app@example.com", testPassword)
@@ -255,6 +265,8 @@ func TestAPITokens(t *testing.T) {
 }
 
 func TestAPITokenExpiry(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	token := a.createToken(t, a.token, "/api/v1/users/me/api-tokens",
 		`{"name": "expiring", "expires_at": "2026-09-29T11:00:00Z"}`)
@@ -273,6 +285,8 @@ func TestAPITokenExpiry(t *testing.T) {
 }
 
 func TestAdminManagesAnotherUsersTokens(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	a.createUser(t, "app@example.com", db.RoleNetworkManager)
 
@@ -298,6 +312,8 @@ func TestAdminManagesAnotherUsersTokens(t *testing.T) {
 }
 
 func TestMaxNumAPITokens(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	for i := range api.MaxNumAPITokens {
@@ -310,6 +326,8 @@ func TestMaxNumAPITokens(t *testing.T) {
 }
 
 func TestAPITokensCannotCreateCredentials(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	app := a.userToken(t, "app@example.com")
 	admin := a.createToken(t, a.token, "/api/v1/users/me/api-tokens", `{"name": "automation"}`)

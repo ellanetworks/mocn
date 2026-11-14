@@ -24,7 +24,7 @@ func main() {
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		logging.New(os.Stdout, slog.LevelInfo).Error("mocn stopped", "error", err)
+		logging.New(os.Stdout, slog.LevelInfo).Error("mocn stopped", slog.Any("error", err))
 		os.Exit(1)
 	}
 
@@ -34,7 +34,7 @@ func main() {
 	defer stop()
 
 	if err := start(ctx, cfg, logger); err != nil {
-		logger.ErrorContext(ctx, "mocn stopped", "error", err)
+		logger.ErrorContext(ctx, "mocn stopped", slog.Any("error", err))
 		os.Exit(1)
 	}
 }

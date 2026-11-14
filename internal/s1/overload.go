@@ -4,27 +4,20 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"maps"
 	"slices"
 
 	"github.com/ellanetworks/core/s1ap"
-	"github.com/ellanetworks/mocn/internal/gw"
+	"github.com/ellanetworks/mocn/internal/assoc"
+	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/plmnid"
 	"github.com/ellanetworks/mocn/internal/tracing"
 )
 
-const (
-	procOverloadStart = "overload_start"
-	procOverloadStop  = "overload_stop"
-	overloadRelayed   = "relayed"
-	overloadNoRadio   = "no_radio"
-	overloadIgnored   = "ignored"
-	overloadInvalid   = "invalid"
-	maxnoofMMECs      = 256
-)
+const maxnoofMMECs = 256
 
-var overloadResults = map[string][]string{
-	procOverloadStart: {overloadRelayed, overloadNoRadio, overloadInvalid},
-	procOverloadStop:  {overloadRelayed, overloadNoRadio, overloadIgnored, overloadInvalid},
+var overloadProcedures = map[string]s1ap.ProcedureCode{
+	assoc.OverloadStart: s1ap.ProcOverloadStart,
+	assoc.OverloadStop:  s1ap.ProcOverloadStop,
 }
 
 // TS 36.413 clause 9.2.3.20
@@ -40,7 +33,7 @@ var overloadActions = map[s1ap.OverloadAction]OverloadAction{
 
 // TS 36.413 clause 9.2.3.9
 func gummeiFrom(g s1ap.GUMMEI) (GUMMEI, error) {
-	plmn, err := gw.DecodePLMN(g.PLMNIdentity)
+	plmn, err := plmnid.Decode(g.PLMNIdentity)
 	if err != nil {
 		return GUMMEI{}, err
 	}
@@ -50,7 +43,7 @@ func gummeiFrom(g s1ap.GUMMEI) (GUMMEI, error) {
 
 // TS 36.413 clause 9.2.3.9
 func gummeiTo(g GUMMEI) (s1ap.GUMMEI, error) {
-	plmn, err := gw.EncodePLMN[s1ap.PLMNIdentity](g.PLMN)
+	plmn, err := plmnid.Encode[s1ap.PLMNIdentity](g.PLMN)
 	if err != nil {
 		return s1ap.GUMMEI{}, err
 	}
@@ -95,7 +88,7 @@ func gummeiListTo(in []GUMMEI) ([]s1ap.GUMMEI, error) {
 
 // TS 36.413 clause 9.1.8.5
 // TS 36.300 clause 4.6.2
-func mmeGUMMEIs(served []ServedGUMMEIs) []GUMMEI {
+func mmeGUMMEIs(served []ServedGUMMEIs, plmns []db.PLMN) []GUMMEI {
 	if len(served) == 0 {
 		return nil
 	}
@@ -105,6 +98,10 @@ func mmeGUMMEIs(served []ServedGUMMEIs) []GUMMEI {
 	lte := served[0]
 
 	for _, p := range lte.PLMNs {
+		if !slices.Contains(plmns, p) {
+			continue
+		}
+
 		for _, group := range lte.GroupIDs {
 			for _, code := range lte.MMECodes {
 				if len(out) == maxnoofMMECs {
@@ -119,83 +116,62 @@ func mmeGUMMEIs(served []ServedGUMMEIs) []GUMMEI {
 	return out
 }
 
-func (g *Gateway) operatorRadiosLocked(operatorID int64) []*RANAssociation {
-	o, ok := g.operatorLocked(operatorID)
-	if !ok {
-		return nil
-	}
-
-	var out []*RANAssociation
-
-	for _, n := range g.ranNodes {
-		if n.up && n.setup != nil && broadcasts(n.setup.tas, o.plmns) {
-			out = append(out, n)
-		}
-	}
-
-	return out
-}
-
-func (g *Gateway) countOverload(proc, result string) {
-	g.cfg.Metrics.Overload.WithLabelValues(interfaceS1, proc, result).Inc()
-}
-
-func (g *Gateway) rejectOverload(ctx context.Context, a *MMEAssociation, log *slog.Logger, proc string, err error) {
-	g.countOverload(proc, overloadInvalid)
-	tracing.SpanFailed(ctx, overloadInvalid)
+func (g *Gateway) rejectOverload(ctx context.Context, a *mmeAssoc, log *slog.Logger, proc string, err error) {
+	g.core.CountOverload(proc, assoc.OverloadInvalid)
+	tracing.SpanFailed(ctx, assoc.OverloadInvalid)
 	log.WarnContext(ctx, "rejected "+proc+" from MME", slog.Any("error", err))
 
-	if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
-		sendErrorIndication(ctx, a, log, ase.Cause, ase.ErrorIndicationDiagnostics())
+	if codecError(err) {
+		indicateParseError(ctx, a, log, overloadProcedures[proc], err)
 	}
 }
 
 // TS 36.413 clause 8.7.6
 // TS 36.300 clause 4.6.2
 // TS 36.300 clause 19.2.2.12.1
-func (g *Gateway) overloadStart(ctx context.Context, a *MMEAssociation, log *slog.Logger, value []byte) {
+func (g *Gateway) overloadStart(ctx context.Context, a *mmeAssoc, log *slog.Logger, value []byte) {
 	start, err := s1ap.ParseOverloadStart(value)
 	if err != nil {
-		g.rejectOverload(ctx, a, log, procOverloadStart, err)
+		g.rejectOverload(ctx, a, log, assoc.OverloadStart, err)
 		return
 	}
 
 	gummeis, err := gummeiListFrom(start.GUMMEIList)
 	if err != nil {
-		g.rejectOverload(ctx, a, log, procOverloadStart, err)
+		g.rejectOverload(ctx, a, log, assoc.OverloadStart, err)
 		return
 	}
 
 	action := overloadActions[start.OverloadResponse.OverloadAction]
 
-	g.mu.Lock()
+	var radios []*ranAssoc
 
-	c := a.client
-	if c.assoc != a {
-		g.mu.Unlock()
+	if !g.core.UpdateCore(ctx, a, func(c *mmeClient) bool {
+		if len(gummeis) == 0 {
+			o, _ := g.core.OperatorLocked(c.OperatorID())
+			gummeis = mmeGUMMEIs(c.Info.served, o.PLMNs)
+		}
+
+		for _, id := range gummeis {
+			entry := Overload{GUMMEI: id, Action: action, TrafficLoadReductionIndication: start.TrafficLoadReductionIndication}
+
+			if i := slices.IndexFunc(c.Info.overload, func(o Overload) bool { return o.GUMMEI == id }); i >= 0 {
+				c.Info.overload[i] = entry
+			} else {
+				c.Info.overload = append(c.Info.overload, entry)
+			}
+		}
+
+		radios = g.core.OperatorRadiosLocked(c.OperatorID())
+
+		return false
+	}) {
 		return
 	}
 
-	if len(gummeis) == 0 {
-		gummeis = mmeGUMMEIs(c.status.ServedGUMMEIs)
-	}
-
-	for _, id := range gummeis {
-		entry := Overload{GUMMEI: id, Action: action, TrafficLoadReductionIndication: start.TrafficLoadReductionIndication}
-
-		if i := slices.IndexFunc(c.status.Overload, func(o Overload) bool { return o.GUMMEI == id }); i >= 0 {
-			c.status.Overload[i] = entry
-		} else {
-			c.status.Overload = append(c.status.Overload, entry)
-		}
-	}
-
-	radios := g.operatorRadiosLocked(c.operatorID)
-	g.mu.Unlock()
-
 	list, err := gummeiListTo(gummeis)
 	if err != nil || len(list) == 0 {
-		g.rejectOverload(ctx, a, log, procOverloadStart, errors.Join(errors.New("no GUMMEI of the MME"), err))
+		g.rejectOverload(ctx, a, log, assoc.OverloadStart, errors.Join(errors.New("no GUMMEI of the MME"), err))
 		return
 	}
 
@@ -204,8 +180,8 @@ func (g *Gateway) overloadStart(ctx context.Context, a *MMEAssociation, log *slo
 		TrafficLoadReductionIndication: start.TrafficLoadReductionIndication,
 	}).Marshal()
 	if err != nil {
-		g.countOverload(procOverloadStart, overloadInvalid)
-		tracing.SpanFailed(ctx, overloadInvalid)
+		g.core.CountOverload(assoc.OverloadStart, assoc.OverloadInvalid)
+		tracing.SpanFailed(ctx, assoc.OverloadInvalid)
 		log.ErrorContext(ctx, "failed to marshal Overload Start", slog.Any("error", err))
 
 		return
@@ -214,16 +190,16 @@ func (g *Gateway) overloadStart(ctx context.Context, a *MMEAssociation, log *slo
 	log = log.With(slog.String("overload_action", string(action)), slog.Int("gummeis", len(list)))
 
 	if len(radios) == 0 {
-		g.countOverload(procOverloadStart, overloadNoRadio)
-		tracing.SpanFailed(ctx, overloadNoRadio)
+		g.core.CountOverload(assoc.OverloadStart, assoc.OverloadNoRadio)
+		tracing.SpanFailed(ctx, assoc.OverloadNoRadio)
 		log.InfoContext(ctx, "Overload Start from MME, no radio of the operator is up")
 
 		return
 	}
 
-	g.countOverload(procOverloadStart, overloadRelayed)
+	g.core.CountOverload(assoc.OverloadStart, assoc.OverloadRelayed)
 	log.InfoContext(ctx, "Overload Start from MME relayed to radios", slog.Int("radios", len(radios)))
-	sendRadios(ctx, radios, a.client.operator(), log, "Overload Start", out)
+	assoc.SendRadios(ctx, radios, a.Operator(), log, "Overload Start", out)
 }
 
 func overloadActionTo(a OverloadAction) (s1ap.OverloadAction, bool) {
@@ -282,22 +258,22 @@ func overloadStarts(entries []Overload) ([]*s1ap.OverloadStart, error) {
 }
 
 // TS 36.413 clause 8.7.3.1
+// TS 36.413 clause 8.7.4
 // TS 36.413 clause 8.7.6
-func (g *Gateway) replayOverloadLocked(ctx context.Context, n *RANAssociation) {
-	for _, key := range slices.Sorted(maps.Keys(g.mmes)) {
-		c := g.mmes[key]
-		if len(c.status.Overload) == 0 {
+func (g *Gateway) replayOverloadLocked(ctx context.Context, n *ranAssoc, operators []int64) {
+	for c := range g.core.ClientsLocked() {
+		if len(c.Info.overload) == 0 || (operators != nil && !slices.Contains(operators, c.OperatorID())) {
 			continue
 		}
 
-		o, ok := g.operatorLocked(c.operatorID)
-		if !ok || !broadcasts(n.setup.tas, o.plmns) {
+		o, ok := g.core.OperatorLocked(c.OperatorID())
+		if !ok || !n.Setup.Broadcasts(o.PLMNs) {
 			continue
 		}
 
-		log := ranLog(c.logger(), n)
+		log := n.Logger(c.Logger())
 
-		starts, err := overloadStarts(c.status.Overload)
+		starts, err := overloadStarts(c.Info.overload)
 		if err != nil {
 			log.ErrorContext(ctx, "failed to build Overload Start", slog.Any("error", err))
 			continue
@@ -310,14 +286,13 @@ func (g *Gateway) replayOverloadLocked(ctx context.Context, n *RANAssociation) {
 				continue
 			}
 
-			if err := (operatorRAN{n: n, operator: o.name}).Send(ctx, out, nonUEStream); err != nil {
+			if err := n.For(o.Name).Send(ctx, out, assoc.NonUEStream); err != nil {
 				log.WarnContext(ctx, "failed to send Overload Start to radio", slog.Any("error", err))
 				continue
 			}
 
-			g.countOverload(procOverloadStart, overloadRelayed)
-			log.InfoContext(ctx, "ongoing MME overload sent to radio after S1 Setup",
-				slog.Int("gummeis", len(start.GUMMEIList)))
+			g.core.CountOverload(assoc.OverloadStart, assoc.OverloadRelayed)
+			log.InfoContext(ctx, "ongoing MME overload sent to radio", slog.Int("gummeis", len(start.GUMMEIList)))
 		}
 	}
 }
@@ -325,31 +300,59 @@ func (g *Gateway) replayOverloadLocked(ctx context.Context, n *RANAssociation) {
 // TS 36.413 clause 8.7.7
 // TS 36.300 clause 4.6.2
 // TS 36.300 clause 19.2.2.12.2
-func (g *Gateway) overloadStop(ctx context.Context, a *MMEAssociation, log *slog.Logger, value []byte) {
+func (g *Gateway) overloadStop(ctx context.Context, a *mmeAssoc, log *slog.Logger, value []byte) {
 	stop, err := s1ap.ParseOverloadStop(value)
 	if err != nil {
-		g.rejectOverload(ctx, a, log, procOverloadStop, err)
+		g.rejectOverload(ctx, a, log, assoc.OverloadStop, err)
 		return
 	}
 
 	gummeis, err := gummeiListFrom(stop.GUMMEIList)
 	if err != nil {
-		g.rejectOverload(ctx, a, log, procOverloadStop, err)
+		g.rejectOverload(ctx, a, log, assoc.OverloadStop, err)
 		return
 	}
 
-	g.mu.Lock()
+	var (
+		ended  []GUMMEI
+		radios []*ranAssoc
+	)
 
-	c := a.client
-	if c.assoc != a {
-		g.mu.Unlock()
+	if !g.core.UpdateCore(ctx, a, func(c *mmeClient) bool {
+		ended = endOverload(c, func(id GUMMEI) bool { return len(gummeis) == 0 || slices.Contains(gummeis, id) })
+		radios = g.core.OperatorRadiosLocked(c.OperatorID())
+
+		return false
+	}) {
 		return
 	}
 
+	if len(ended) == 0 {
+		g.core.CountOverload(assoc.OverloadStop, assoc.OverloadIgnored)
+		log.InfoContext(ctx, "Overload Stop from MME ignored: no ongoing overload action")
+
+		return
+	}
+
+	if len(radios) == 0 {
+		g.core.CountOverload(assoc.OverloadStop, assoc.OverloadNoRadio)
+		tracing.SpanFailed(ctx, assoc.OverloadNoRadio)
+		log.InfoContext(ctx, "Overload Stop from MME, no radio of the operator is up", slog.Int("gummeis", len(ended)))
+
+		return
+	}
+
+	g.core.CountOverload(assoc.OverloadStop, assoc.OverloadRelayed)
+	log.InfoContext(ctx, "Overload Stop from MME relayed to radios", slog.Int("gummeis", len(ended)),
+		slog.Int("radios", len(radios)))
+	g.sendOverloadStop(ctx, radios, a.Operator(), log, ended)
+}
+
+func endOverload(c *mmeClient, ends func(GUMMEI) bool) []GUMMEI {
 	var ended []GUMMEI
 
-	c.status.Overload = slices.DeleteFunc(c.status.Overload, func(o Overload) bool {
-		if len(gummeis) == 0 || slices.Contains(gummeis, o.GUMMEI) {
+	c.Info.overload = slices.DeleteFunc(c.Info.overload, func(o Overload) bool {
+		if ends(o.GUMMEI) {
 			ended = append(ended, o.GUMMEI)
 			return true
 		}
@@ -357,32 +360,11 @@ func (g *Gateway) overloadStop(ctx context.Context, a *MMEAssociation, log *slog
 		return false
 	})
 
-	radios := g.operatorRadiosLocked(c.operatorID)
-	g.mu.Unlock()
-
-	if len(ended) == 0 {
-		g.countOverload(procOverloadStop, overloadIgnored)
-		log.InfoContext(ctx, "Overload Stop from MME ignored: no ongoing overload action")
-
-		return
-	}
-
-	if len(radios) == 0 {
-		g.countOverload(procOverloadStop, overloadNoRadio)
-		tracing.SpanFailed(ctx, overloadNoRadio)
-		log.InfoContext(ctx, "Overload Stop from MME, no radio of the operator is up", slog.Int("gummeis", len(ended)))
-
-		return
-	}
-
-	g.countOverload(procOverloadStop, overloadRelayed)
-	log.InfoContext(ctx, "Overload Stop from MME relayed to radios", slog.Int("gummeis", len(ended)),
-		slog.Int("radios", len(radios)))
-	g.sendOverloadStop(ctx, radios, a.client.operator(), log, ended)
+	return ended
 }
 
 // TS 36.413 clause 8.7.3.1
-func (g *Gateway) overloadCleared(ctx context.Context, radios []*RANAssociation, operator string, log *slog.Logger,
+func (g *Gateway) overloadCleared(ctx context.Context, radios []*ranAssoc, operator string, log *slog.Logger,
 	cleared []Overload,
 ) {
 	if len(cleared) == 0 || len(radios) == 0 {
@@ -399,7 +381,7 @@ func (g *Gateway) overloadCleared(ctx context.Context, radios []*RANAssociation,
 	g.sendOverloadStop(ctx, radios, operator, log, ended)
 }
 
-func (g *Gateway) sendOverloadStop(ctx context.Context, radios []*RANAssociation, operator string, log *slog.Logger,
+func (g *Gateway) sendOverloadStop(ctx context.Context, radios []*ranAssoc, operator string, log *slog.Logger,
 	ended []GUMMEI,
 ) {
 	list, err := gummeiListTo(ended)
@@ -414,15 +396,26 @@ func (g *Gateway) sendOverloadStop(ctx context.Context, radios []*RANAssociation
 		return
 	}
 
-	sendRadios(ctx, radios, operator, log, "Overload Stop", out)
+	assoc.SendRadios(ctx, radios, operator, log, "Overload Stop", out)
 }
 
-func sendRadios(ctx context.Context, radios []*RANAssociation, operator string, log *slog.Logger, what string,
-	out []byte,
-) {
-	for _, n := range radios {
-		if err := (operatorRAN{n: n, operator: operator}).Send(ctx, out, nonUEStream); err != nil {
-			ranLog(log, n).WarnContext(ctx, "failed to send "+what+" to radio", slog.Any("error", err))
+// TS 36.300 clause 4.6.2
+// TS 36.413 clause 9.1.4.1
+func (g *Gateway) servingGUMMEI(a *mmeAssoc, plmn db.PLMN) (id GUMMEI, ok bool) {
+	g.core.View(func() {
+		for c := range g.core.ClientsLocked() {
+			if c.Assoc != a {
+				continue
+			}
+
+			for _, s := range c.Info.served {
+				if slices.Contains(s.PLMNs, plmn) && len(s.GroupIDs) > 0 && len(s.MMECodes) > 0 {
+					id, ok = GUMMEI{PLMN: plmn, MMEGroupID: s.GroupIDs[0], MMECode: s.MMECodes[0]}, true
+					return
+				}
+			}
 		}
-	}
+	})
+
+	return id, ok
 }

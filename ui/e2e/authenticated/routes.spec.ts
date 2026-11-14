@@ -26,7 +26,7 @@ const createOperator = async (request: APIRequestContext) => {
     token,
     data: {
       name: OPERATOR,
-      pws_operator: true,
+      pws_operator: false,
       plmns: [{ mcc: "901", mnc: "74" }],
       global_enb_id: {
         plmn: { mcc: "901", mnc: "74" },
@@ -36,7 +36,7 @@ const createOperator = async (request: APIRequestContext) => {
       global_gnb_id: {
         plmn: { mcc: "901", mnc: "74" },
         gnb_id: 74565,
-        gnb_id_length: 22,
+        bit_length: 22,
       },
       mmes: [{ tnl_addresses: ["10.0.0.1"] }],
       amfs: [{ tnl_addresses: ["10.0.1.1"] }],

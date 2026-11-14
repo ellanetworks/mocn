@@ -3,28 +3,25 @@ package ng
 import (
 	"time"
 
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
 )
 
-type AMFState string
+type AMFState = assoc.State
 
 const (
-	AMFDisconnected AMFState = "disconnected"
-	AMFConnected    AMFState = "connected"
-	AMFUp           AMFState = "up"
-	AMFSetupFailed  AMFState = "setup_failed"
+	AMFDisconnected = assoc.Disconnected
+	AMFConnected    = assoc.Connected
+	AMFUp           = assoc.Up
+	AMFSetupFailed  = assoc.SetupFailed
 )
 
-var AMFStates = []AMFState{AMFDisconnected, AMFConnected, AMFUp, AMFSetupFailed}
-
-type RANNodeState string
+type RANNodeState = assoc.RadioState
 
 const (
-	RANNodeConnected RANNodeState = "connected"
-	RANNodeUp        RANNodeState = "up"
+	RANNodeConnected = assoc.RadioConnected
+	RANNodeUp        = assoc.RadioUp
 )
-
-var RANNodeStates = []RANNodeState{RANNodeConnected, RANNodeUp}
 
 // TS 38.413 clause 9.3.3.3
 type GUAMI struct {
@@ -77,6 +74,7 @@ type SliceOverload struct {
 
 // TS 38.413 clause 9.2.6.14
 type Overload struct {
+	GUAMIs                         []GUAMI
 	Action                         *OverloadAction
 	TrafficLoadReductionIndication *uint8
 	Slices                         []SliceOverload
@@ -91,7 +89,7 @@ type AMFStatus struct {
 	PLMNSupport         []PLMNSupport
 	RelativeAMFCapacity *uint8
 	UnavailableGUAMIs   []GUAMI
-	Overload            *Overload
+	Overload            []Overload
 }
 
 type RANNode struct {

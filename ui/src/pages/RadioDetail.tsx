@@ -11,15 +11,15 @@ import StateChip from "@/components/StateChip";
 import {
   getRadio,
   radioLabel,
-  radioName,
+  type BroadcastPLMN,
   type OperatorUEConnections,
   type Radio,
   type SupportedTA,
 } from "@/queries/radios";
 import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
-import { formatPLMN, operatorPath } from "@/utils/operators";
-import { formatRadioID, RADIO_TYPES } from "@/utils/radios";
+import { formatPLMN, formatSNSSAI, operatorPath } from "@/utils/operators";
+import { formatRadioID, RADIO_TYPE_HELP, RADIO_TYPES } from "@/utils/radios";
 
 export const RADIO_REFRESH_MS = 5000;
 
@@ -34,11 +34,16 @@ const gridSx = {
   },
 };
 
+const formatBroadcastPLMN = ({ plmn, snssais }: BroadcastPLMN) =>
+  snssais?.length
+    ? `${formatPLMN(plmn)} (${snssais.map(formatSNSSAI).join(", ")})`
+    : formatPLMN(plmn);
+
 const formatSupportedTAs = (tas: SupportedTA[]) =>
   tas
     .map(
       ({ tac, broadcast_plmns }) =>
-        `TAC ${tac}: ${broadcast_plmns.map(formatPLMN).join(", ")}`,
+        `TAC ${tac}: ${broadcast_plmns.map(formatBroadcastPLMN).join(", ")}`,
     )
     .join("; ");
 
@@ -47,45 +52,56 @@ const OPERATOR_COLUMNS: GridColDef<OperatorUEConnections>[] = [
     field: "operator",
     headerName: "Operator",
     description:
-      "An operator that owns a PLMN the radio broadcasts, or that has UE connections from it.",
+      "An operator whose network the radio broadcasts, or that has devices connected through it.",
     flex: 1,
     minWidth: 160,
     renderCell: ({ row }) => (
-      <Link
-        component={RouterLink}
-        to={operatorPath(row.operator)}
-        variant="body2"
-        sx={{ color: "link", textDecoration: "underline" }}
-      >
-        {row.operator}
-      </Link>
+      <OneLine title={row.operator}>
+        <Link
+          component={RouterLink}
+          to={operatorPath(row.operator)}
+          variant="body2"
+          sx={{ color: "link", textDecoration: "underline" }}
+        >
+          {row.operator}
+        </Link>
+      </OneLine>
     ),
   },
   {
     field: "ue_connections",
-    headerName: "UE connections",
+    headerName: "UE Connections",
     description:
-      "The UE-associated logical S1-connections or NG-connections Ella MOCN relays from the radio to the operator, one per connected UE.",
+      "Devices connected to the operator through this radio: one per active phone, over 4G (S1) or 5G (NG).",
     flex: 0.5,
-    minWidth: 140,
+    minWidth: 145,
+    renderCell: ({ row }) => <OneLine title={String(row.ue_connections)} />,
   },
 ];
 
-const SETUP: Record<Radio["interface"], string> = {
-  s1: "S1 Setup Request",
-  ng: "NG Setup Request",
+const SETUP: Record<Radio["type"], string> = {
+  eNB: "S1 Setup Request",
+  gNB: "NG Setup Request",
 };
 
+const NAME_IE: Record<Radio["type"], string> = {
+  eNB: "eNB Name",
+  gNB: "RAN Node Name",
+};
+
+const radioTitle = (radio: Radio) =>
+  radioLabel(radio, radio.ref ?? radio.tnl_addresses.join(", "));
+
 function RadioSections({ radio }: { radio: Radio }) {
-  const setup = SETUP[radio.interface];
-  const ng = radio.interface === "ng";
+  const setup = SETUP[radio.type];
+  const ng = radio.type === "gNB";
 
   return (
     <>
       <SectionHeader
         id="overview-title"
         title="Overview"
-        description={`What the radio sent in its ${setup}.`}
+        description="What this radio is and whether it is up."
         first
       />
       <SettingsTable
@@ -93,41 +109,41 @@ function RadioSections({ radio }: { radio: Radio }) {
         rows={[
           {
             label: "Name",
-            help: `The ${ng ? "RAN node name" : "eNB name"} the radio sent in its ${setup}.`,
-            value: radioName(radio) ?? NONE,
+            help: `The name the radio gave itself (${NAME_IE[radio.type]}, in its ${setup}).`,
+            value: <OneLine title={radio.name ?? NONE} />,
           },
           {
             label: "Type",
-            help: "eNB: a 4G radio, over S1. gNB: a 5G radio, over NG.",
-            value: RADIO_TYPES[radio.interface],
+            help: RADIO_TYPE_HELP,
+            value: RADIO_TYPES[radio.type],
           },
           {
             label: ng ? "Global gNB ID" : "Global eNB ID",
             help: ng
-              ? `The identity the radio sent in its ${setup}: PLMN, gNB ID and its length.`
-              : `The identity the radio sent in its ${setup}: PLMN, eNB ID type and eNB ID.`,
-            value: formatRadioID(radio) ?? NONE,
+              ? `The identity the radio sent when it connected (${setup}): its PLMN, its gNB ID and the length of that ID.`
+              : `The identity the radio sent when it connected (${setup}): its PLMN, the type of its eNB ID and its eNB ID.`,
+            value: <OneLine title={formatRadioID(radio) ?? NONE} />,
           },
           {
             label: "Status",
-            help: ng
-              ? "Connected: SCTP association up, NG Setup not done yet. Up: NG Setup succeeded."
-              : "Connected: SCTP association up, S1 Setup not done yet. Up: S1 Setup succeeded.",
+            help: `Up: connected and ready. Connected: link up, setup not done yet (${setup}).`,
             value: <StateChip state={radio.state} />,
           },
           {
-            label: "Connected since",
-            help: "When the radio established its SCTP association.",
-            value: formatDateTime(radio.connected_since, { seconds: true }),
+            label: "Connected At",
+            help: "When the radio opened its link to Ella MOCN (SCTP association).",
+            value: formatDateTime(radio.connected_at, { seconds: true }),
           },
           {
             label: "Addresses",
-            help: "The SCTP addresses of the radio.",
+            help: "The addresses the radio connects from.",
             value: <OneLine title={radio.tnl_addresses.join(", ")} />,
           },
           {
             label: "Supported TAs",
-            help: "The tracking areas the radio serves, each with the PLMNs it broadcasts.",
+            help: ng
+              ? "The tracking areas the radio serves (TAC), each with the networks (PLMNs) it broadcasts and their slices (S-NSSAIs)."
+              : "The tracking areas the radio serves (TAC), each with the networks (PLMNs) it broadcasts.",
             value: radio.supported_tas.length ? (
               <OneLine title={formatSupportedTAs(radio.supported_tas)} />
             ) : (
@@ -135,8 +151,8 @@ function RadioSections({ radio }: { radio: Radio }) {
             ),
           },
           {
-            label: "Paging DRX",
-            help: "The default paging DRX cycle of the radio, in radio frames.",
+            label: "Default Paging DRX",
+            help: "How often phones in idle mode wake up to listen for pages, in radio frames (default paging DRX).",
             value:
               radio.default_paging_drx === undefined
                 ? NONE
@@ -147,8 +163,8 @@ function RadioSections({ radio }: { radio: Radio }) {
 
       <SectionHeader
         id="ue-connections-title"
-        title="UE connections by operator"
-        description="The UE connections Ella MOCN relays from this radio to each operator."
+        title="UE Connections by Operator"
+        description="The devices connected through this radio, for each operator."
       />
       <DataGrid<OperatorUEConnections>
         aria-labelledby="ue-connections-title"
@@ -181,7 +197,7 @@ export default function RadioDetail() {
     <Box component="section" aria-labelledby="radio-title">
       <PageHeader
         id="radio-title"
-        title={radio.data ? radioLabel(radio.data) : ref}
+        title={radio.data ? radioTitle(radio.data) : ref}
         parent={{ label: "Radios", to: "/radios" }}
       />
       <QueryAlert query={radio} subject="this radio" />

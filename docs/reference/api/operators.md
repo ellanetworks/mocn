@@ -8,7 +8,7 @@ An operator is a core network that shares the radios through Ella MOCN: its PLMN
 
 ## List Operators
 
-This path returns the operators, sorted by name, with the state of their MMEs.
+This path returns the operators, sorted by name, with the state of their MMEs and AMFs.
 
 | Method | Path                |
 | ------ | ------------------- |
@@ -21,14 +21,14 @@ This path returns the operators, sorted by name, with the state of their MMEs.
 | `name`                      | string  | Name. |
 | `pws_operator`              | boolean | Whether the operator's core connects the common CBC, whose warnings (PWS) are broadcast to every cell. |
 | `plmns`                     | array   | PLMNs, each with `mcc` and `mnc`. |
-| `global_enb_id`             | object  | Global eNB ID that Ella MOCN uses towards the operator's MMEs. `null` when unset. |
+| `global_enb_id`             | object  | Global eNB ID that Ella MOCN uses towards the operator's MMEs. Absent when unset. |
 | `global_enb_id.plmn`        | object  | PLMN, with `mcc` and `mnc`. |
 | `global_enb_id.enb_id_type` | string  | `macro`, `short_macro` or `long_macro`. |
 | `global_enb_id.enb_id`      | int     | eNB ID. |
-| `global_gnb_id`             | object  | Global gNB ID that Ella MOCN uses towards the operator's AMFs. `null` when unset. |
+| `global_gnb_id`             | object  | Global gNB ID that Ella MOCN uses towards the operator's AMFs. Absent when unset. |
 | `global_gnb_id.plmn`        | object  | PLMN, with `mcc` and `mnc`. |
 | `global_gnb_id.gnb_id`      | int     | gNB ID. |
-| `global_gnb_id.gnb_id_length` | int   | gNB ID length, in bits. |
+| `global_gnb_id.bit_length`  | int     | gNB ID length, in bits. |
 | `mmes`                      | array   | MMEs. Empty when none. |
 | `mmes[].tnl_addresses`      | array   | Addresses of the MME, reached over one SCTP association to port 36412. |
 | `mmes[].status`             | object  | State of the MME. See [MME Status](#mme-status). |
@@ -55,7 +55,7 @@ This path returns the operators, sorted by name, with the state of their MMEs.
                 "global_gnb_id": {
                     "plmn": {"mcc": "001", "mnc": "01"},
                     "gnb_id": 1,
-                    "gnb_id_length": 22
+                    "bit_length": 22
                 },
                 "mmes": [
                     {
@@ -100,7 +100,6 @@ This path returns the operators, sorted by name, with the state of their MMEs.
                     "enb_id_type": "macro",
                     "enb_id": 2
                 },
-                "global_gnb_id": null,
                 "mmes": [
                     {
                         "tnl_addresses": ["127.0.0.3"],
@@ -166,10 +165,11 @@ The state of an AMF, learned from its NG association and not stored.
 | `plmn_support[].snssais` | array | S-NSSAIs, each with `sst` (`0` to `255`) and `sd` (6 hex digits, absent when none). |
 | `relative_amf_capacity` | int    | Relative AMF Capacity, `0` to `255`. Absent before the NG Setup. |
 | `unavailable_guamis`    | array  | GUAMIs that an AMF STATUS INDICATION marked unavailable, in the format of `served_guamis`. Absent when none. Cleared by NG Setup and by an AMF CONFIGURATION UPDATE with a Served GUAMI List. |
-| `overload`              | object | The ongoing overload action, from the last OVERLOAD START. Absent when none. Cleared by OVERLOAD STOP, NG Setup and the loss of the NG association. |
-| `overload.overload_action` | string | AMF Overload Action: `reject_non_emergency_mo_dt`, `reject_rrc_cr_signalling`, `permit_emergency_sessions_and_mobile_terminated_services_only` or `permit_high_priority_sessions_and_mobile_terminated_services_only`. Absent when the AMF did not include it. |
-| `overload.traffic_load_reduction_indication` | int | AMF Traffic Load Reduction Indication, `1` to `99`. Absent when the AMF did not include it. |
-| `overload.slices`       | array  | Overload Start NSSAI List: each with `snssais`, and `overload_action` and `traffic_load_reduction_indication` when the AMF included them. Absent when none. |
+| `overload`              | array  | The ongoing overload actions of the AMF, from OVERLOAD START and OVERLOAD STOP. A GUAMI is in at most one item: a later OVERLOAD START replaces the earlier one for its GUAMIs. Absent when none. Cleared by NG Setup and the loss of the NG association. |
+| `overload[].guamis`     | array  | GUAMI List of the OVERLOAD START, in the format of `served_guamis`. The served GUAMIs of the operator's PLMNs when the OVERLOAD START has no GUAMI List. |
+| `overload[].overload_action` | string | Overload Action of the AMF Overload Response: `reject_non_emergency_mo_dt`, `reject_rrc_cr_signalling`, `permit_emergency_sessions_and_mobile_terminated_services_only` or `permit_high_priority_sessions_and_mobile_terminated_services_only`. Absent when the AMF did not include it. |
+| `overload[].traffic_load_reduction_indication` | int | AMF Traffic Load Reduction Indication: the percentage of the traffic to reject, `1` to `99`. Absent when the AMF did not include it. |
+| `overload[].slices`     | array  | Overload Start NSSAI List: each with `snssais`, and `overload_action` (Slice Overload Response) and `traffic_load_reduction_indication` (Slice Traffic Load Reduction Indication) when the AMF included them. Absent when none. |
 | `ue_connections`        | int    | UE-associated logical NG-connections relayed to the AMF. |
 
 ## Get an Operator
@@ -193,8 +193,11 @@ The fields of [List Operators](#list-operators), plus:
 | Field                                      | Type   | Description |
 | ------------------------------------------ | ------ | ----------- |
 | `ue_connections_by_radio`                  | array  | UE-associated logical S1-connections and NG-connections of the operator, by radio. Lists every radio that broadcasts one of the operator's PLMNs, and every other radio with UE connections of the operator, sorted by name, or by `ref` for a radio without a name. |
-| `ue_connections_by_radio[].radio`          | string | The radio's [`ref`](radios.md#list-radios). |
-| `ue_connections_by_radio[].name`           | string | The radio's eNB Name or RAN Node Name. Absent when the radio sent none. |
+| `ue_connections_by_radio[].ref`            | string | The radio's [`ref`](radios.md#list-radios). |
+| `ue_connections_by_radio[].type`           | string | The radio's `type`: `eNB` or `gNB`. |
+| `ue_connections_by_radio[].global_enb_id`  | object | The radio's `global_enb_id`. Absent when the radio has none. |
+| `ue_connections_by_radio[].global_gnb_id`  | object | The radio's `global_gnb_id`. Absent when the radio has none. |
+| `ue_connections_by_radio[].name`           | string | The radio's `name`. Absent when the radio sent none. |
 | `ue_connections_by_radio[].ue_connections` | int    | UE-associated logical S1-connections or NG-connections. |
 
 ### Response Codes
@@ -216,7 +219,6 @@ The fields of [List Operators](#list-operators), plus:
             "enb_id_type": "macro",
             "enb_id": 2
         },
-        "global_gnb_id": null,
         "mmes": [
             {
                 "tnl_addresses": ["127.0.0.3"],
@@ -240,8 +242,28 @@ The fields of [List Operators](#list-operators), plus:
         "amfs": [],
         "ue_connections": 2,
         "ue_connections_by_radio": [
-            {"radio": "001-01:macro:411", "name": "enb-north", "ue_connections": 1},
-            {"radio": "001-01:macro:412", "name": "enb-south", "ue_connections": 1}
+            {
+                "ref": "eNB:001-01:MacroeNB-0019b",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 411
+                },
+                "name": "enb-north",
+                "ue_connections": 1
+            },
+            {
+                "ref": "eNB:001-01:MacroeNB-0019c",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 412
+                },
+                "name": "enb-south",
+                "ue_connections": 1
+            }
         ]
     }
 }
@@ -249,7 +271,7 @@ The fields of [List Operators](#list-operators), plus:
 
 ## Create an Operator
 
-This path returns the operator, without `mmes[].status`, `amfs[].status`, `ue_connections` and `ue_connections_by_radio`.
+This path returns the operator as [Get an Operator](#get-an-operator) returns it.
 
 | Method | Path                |
 | ------ | ------------------- |
@@ -264,14 +286,14 @@ This path returns the operator, without `mmes[].status`, `amfs[].status`, `ue_co
 | `plmns`                       | array   | Yes      | 1 to 12 PLMNs, each listed once, and owned by no other operator. Operators with MMEs have at most 32 PLMNs in total, and operators with AMFs at most 12. |
 | `plmns[].mcc`                 | string  | Yes      | 3 digits. |
 | `plmns[].mnc`                 | string  | Yes      | 2 or 3 digits. |
-| `global_enb_id`               | object  | No       | `null` or absent for none. Required with `mmes`. |
+| `global_enb_id`               | object  | No       | Absent for none. Required with `mmes`. |
 | `global_enb_id.plmn`          | object  | Yes      | One of `plmns`. |
 | `global_enb_id.enb_id_type`   | string  | Yes      | `macro`, `short_macro` or `long_macro`. |
 | `global_enb_id.enb_id`        | int     | Yes      | `0` to `1048575` for `macro`, `262143` for `short_macro`, `2097151` for `long_macro`. |
-| `global_gnb_id`               | object  | No       | `null` or absent for none. Required with `amfs`. |
+| `global_gnb_id`               | object  | No       | Absent for none. Required with `amfs`. |
 | `global_gnb_id.plmn`          | object  | Yes      | One of `plmns`. |
-| `global_gnb_id.gnb_id`        | int     | Yes      | `0` to 2^`gnb_id_length` - 1. |
-| `global_gnb_id.gnb_id_length` | int     | Yes      | `22` to `32`. |
+| `global_gnb_id.gnb_id`        | int     | Yes      | `0` to 2^`bit_length` - 1. |
+| `global_gnb_id.bit_length`    | int     | Yes      | `22` to `32`. |
 | `mmes`                        | array   | No       | MMEs. |
 | `mmes[].tnl_addresses`        | array   | Yes      | At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's MMEs. Returned in canonical form. |
 | `amfs`                        | array   | No       | AMFs. |
@@ -295,7 +317,7 @@ The read-only fields of the responses, `mmes[].status`, `amfs[].status`, `ue_con
     "pws_operator": true,
     "plmns": [{"mcc": "001", "mnc": "01"}],
     "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "macro", "enb_id": 1},
-    "global_gnb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "gnb_id": 1, "gnb_id_length": 22},
+    "global_gnb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "gnb_id": 1, "bit_length": 22},
     "mmes": [{"tnl_addresses": ["127.0.0.2"]}],
     "amfs": [{"tnl_addresses": ["10.0.1.5"]}]
 }
@@ -317,10 +339,64 @@ The read-only fields of the responses, `mmes[].status`, `amfs[].status`, `ue_con
         "global_gnb_id": {
             "plmn": {"mcc": "001", "mnc": "01"},
             "gnb_id": 1,
-            "gnb_id_length": 22
+            "bit_length": 22
         },
-        "mmes": [{"tnl_addresses": ["127.0.0.2"]}],
-        "amfs": [{"tnl_addresses": ["10.0.1.5"]}]
+        "mmes": [
+            {
+                "tnl_addresses": ["127.0.0.2"],
+                "status": {
+                    "state": "disconnected",
+                    "since": "2026-11-13T16:31:55.645317884Z",
+                    "ue_connections": 0
+                }
+            }
+        ],
+        "amfs": [
+            {
+                "tnl_addresses": ["10.0.1.5"],
+                "status": {
+                    "state": "disconnected",
+                    "since": "2026-11-13T16:31:55.645320112Z",
+                    "ue_connections": 0
+                }
+            }
+        ],
+        "ue_connections": 0,
+        "ue_connections_by_radio": [
+            {
+                "ref": "eNB:001-01:MacroeNB-0019b",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 411
+                },
+                "name": "enb-north",
+                "ue_connections": 0
+            },
+            {
+                "ref": "eNB:001-01:MacroeNB-0019c",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 412
+                },
+                "name": "enb-south",
+                "ue_connections": 0
+            },
+            {
+                "ref": "gNB:001-01:000001@22",
+                "type": "gNB",
+                "global_gnb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "gnb_id": 1,
+                    "bit_length": 22
+                },
+                "name": "gnb-east",
+                "ue_connections": 0
+            }
+        ]
     }
 }
 ```
@@ -358,10 +434,10 @@ This path replaces the whole operator. A different `name` renames it. It takes t
         "name": "Operator D",
         "pws_operator": false,
         "plmns": [{"mcc": "001", "mnc": "04"}],
-        "global_enb_id": null,
-        "global_gnb_id": null,
         "mmes": [],
-        "amfs": []
+        "amfs": [],
+        "ue_connections": 0,
+        "ue_connections_by_radio": []
     }
 }
 ```

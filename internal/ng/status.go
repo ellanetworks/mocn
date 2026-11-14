@@ -2,29 +2,26 @@ package ng
 
 import (
 	"context"
-	"errors"
 	"log/slog"
+	"maps"
 	"slices"
 
 	"github.com/ellanetworks/core/ngap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/tracing"
 )
 
-// TS 38.413 clause 9.3.1.105
-var overloadActions = map[ngap.OverloadAction]OverloadAction{
-	ngap.OverloadActionRejectNonEmergencyMODT:                      OverloadRejectNonEmergencyMODT,
-	ngap.OverloadActionRejectRRCCRSignalling:                       OverloadRejectRRCCRSignalling,
-	ngap.OverloadActionPermitEmergencySessionsAndMTServicesOnly:    OverloadPermitEmergencyAndMTOnly,
-	ngap.OverloadActionPermitHighPrioritySessionsAndMTServicesOnly: OverloadPermitHighPriorityAndMTOnly,
-}
-
 // TS 38.413 clause 8.7.6
+// TS 38.413 clause 9.2.6.10
 // TS 38.300 clause 4.10.2.3
 // TS 23.501 clause 5.21.2.2.1
-func (g *Gateway) amfStatusIndication(ctx context.Context, a *AMFAssociation, log *slog.Logger, value, msg []byte) {
+// TS 23.502 clause 4.2.7.3
+func (g *Gateway) amfStatusIndication(ctx context.Context, a *amfAssoc, log *slog.Logger, value []byte) {
 	ind, err := ngap.ParseAMFStatusIndication(value)
 
 	var unavailable []GUAMI
+
+	backups := map[GUAMI]amfName{}
 
 	if err == nil {
 		for _, item := range ind.UnavailableGUAMIList {
@@ -34,122 +31,93 @@ func (g *Gateway) amfStatusIndication(ctx context.Context, a *AMFAssociation, lo
 			}
 
 			unavailable = append(unavailable, v)
+
+			if b := backupNameFrom(item.BackupAMFName, item.ExtendedBackupAMFName); !b.empty() {
+				backups[v] = b
+			}
 		}
 	}
 
 	if err != nil {
-		tracing.SpanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
 		log.WarnContext(ctx, "rejected AMF Status Indication from AMF", slog.Any("error", err))
 
-		if ase, ok := errors.AsType[*ngap.AbstractSyntaxError](err); ok {
-			sendErrorIndication(ctx, a, log, ase.Cause, ase.ErrorIndicationDiagnostics())
+		if codecError(err) {
+			indicateParseError(ctx, a, log, ngap.ProcAMFStatusIndication, err)
 		}
 
 		return
 	}
 
-	g.mu.Lock()
+	var drained bool
 
-	c := a.client
-	if c.assoc != a {
-		g.mu.Unlock()
+	if !g.core.UpdateCore(ctx, a, func(c *amfClient) bool {
+		for _, v := range unavailable {
+			if !slices.Contains(c.Info.unavailable, v) {
+				c.Info.unavailable = append(c.Info.unavailable, v)
+			}
+		}
+
+		merged := maps.Clone(c.Info.backups)
+		if merged == nil {
+			merged = map[GUAMI]amfName{}
+		}
+
+		maps.Copy(merged, backups)
+		c.Info.backups = merged
+
+		drained = !(amfCandidate{served: c.Info.served, unavailable: c.Info.unavailable}).available()
+
+		return true
+	}) {
 		return
 	}
 
-	for _, v := range unavailable {
-		if !slices.Contains(c.status.UnavailableGUAMIs, v) {
-			c.status.UnavailableGUAMIs = append(c.status.UnavailableGUAMIs, v)
+	log.InfoContext(ctx, "AMF Status Indication from AMF", slog.Int("guamis", len(unavailable)))
+	g.relay.unbind(ctx, a, unavailable, drained)
+}
+
+// TS 38.413 clause 8.7.6
+// TS 38.300 clause 4.10.2.3
+func (p protocol) RadioNotifyLocked(ctx context.Context, n *ranAssoc, acked, want amfConfig) amfConfig {
+	var newly []GUAMI
+
+	for _, g := range want.unavailable {
+		if !slices.Contains(acked.unavailable, g) {
+			newly = append(newly, g)
 		}
 	}
 
-	radios := g.operatorRadiosLocked(c.operatorID)
-	g.mu.Unlock()
-
-	log.InfoContext(ctx, "AMF Status Indication from AMF relayed to radios", slog.Int("guamis", len(unavailable)),
-		slog.Int("radios", len(radios)))
-	sendRadios(ctx, radios, c.operator(), log, "AMF Status Indication", msg)
-}
-
-func overloadResponseFrom(r *ngap.OverloadResponse) *OverloadAction {
-	if r == nil {
-		return nil
+	if len(newly) == 0 {
+		return acked
 	}
 
-	if a, ok := overloadActions[r.OverloadAction]; ok {
-		return &a
+	list := make(ngap.UnavailableGUAMIList, 0, len(newly))
+
+	for _, g := range newly {
+		v, err := guamiTo(g)
+		if err != nil {
+			p.log.ErrorContext(ctx, "failed to encode an unavailable GUAMI", slog.Any("error", err))
+			return acked
+		}
+
+		list = append(list, ngap.UnavailableGUAMIItem{GUAMI: v})
 	}
 
-	return nil
-}
-
-func loadReduction(t *ngap.TrafficLoadReductionIndication) *uint8 {
-	if t == nil {
-		return nil
-	}
-
-	return new(uint8(*t))
-}
-
-// TS 38.413 clause 8.7.7
-// TS 38.413 clause 9.2.6.14
-func (g *Gateway) overloadStart(ctx context.Context, a *AMFAssociation, log *slog.Logger, value []byte) {
-	start, err := ngap.ParseOverloadStart(value)
+	out, err := (&ngap.AMFStatusIndication{UnavailableGUAMIList: list}).Marshal()
 	if err != nil {
-		tracing.SpanFailed(ctx, errTypeInvalid)
-		log.WarnContext(ctx, "rejected Overload Start from AMF", slog.Any("error", err))
-
-		if ase, ok := errors.AsType[*ngap.AbstractSyntaxError](err); ok {
-			sendErrorIndication(ctx, a, log, ase.Cause, ase.ErrorIndicationDiagnostics())
-		}
-
-		return
+		p.log.ErrorContext(ctx, "failed to marshal AMF Status Indication", slog.Any("error", err))
+		return acked
 	}
 
-	o := &Overload{
-		Action:                         overloadResponseFrom(start.AMFOverloadResponse),
-		TrafficLoadReductionIndication: loadReduction(start.AMFTrafficLoadReductionIndication),
+	if err := n.Send(ctx, out, assoc.NonUEStream); err != nil {
+		n.Logger(p.log).WarnContext(ctx, "failed to send AMF Status Indication to radio", slog.Any("error", err))
+		return acked
 	}
 
-	for _, item := range start.OverloadStartNSSAIList {
-		s := SliceOverload{
-			Action:                         overloadResponseFrom(item.SliceOverloadResponse),
-			TrafficLoadReductionIndication: loadReduction(item.SliceTrafficLoadReductionIndication),
-		}
+	n.Logger(p.log).InfoContext(ctx, "AMF Status Indication sent to radio", slog.Int("guamis", len(newly)))
 
-		for _, sl := range item.SliceOverloadList {
-			s.SNSSAIs = append(s.SNSSAIs, snssaiFrom(sl.SNSSAI))
-		}
+	acked.unavailable = append(slices.Clone(acked.unavailable), newly...)
 
-		o.Slices = append(o.Slices, s)
-	}
-
-	g.mu.Lock()
-
-	if a.client.assoc == a {
-		a.client.status.Overload = o
-	}
-
-	g.mu.Unlock()
-
-	log.InfoContext(ctx, "Overload Start from AMF recorded", slog.Any("overload_action", o.Action),
-		slog.Int("slices", len(o.Slices)))
-}
-
-// TS 38.413 clause 8.7.8
-func (g *Gateway) overloadStop(ctx context.Context, a *AMFAssociation, log *slog.Logger) {
-	g.mu.Lock()
-
-	ongoing := a.client.assoc == a && a.client.status.Overload != nil
-	if ongoing {
-		a.client.status.Overload = nil
-	}
-
-	g.mu.Unlock()
-
-	if !ongoing {
-		log.InfoContext(ctx, "Overload Stop from AMF ignored: no ongoing overload action")
-		return
-	}
-
-	log.InfoContext(ctx, "Overload Stop from AMF recorded")
+	return acked
 }

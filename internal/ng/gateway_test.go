@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ellanetworks/core/ngap"
-	"github.com/ellanetworks/core/per"
 	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/prometheus/client_golang/prometheus"
@@ -60,60 +59,16 @@ func guamis(t *testing.T, list ngap.ServedGUAMIList) []ngap.GUAMI {
 	return out
 }
 
-func amfConfigurationUpdateWithPLMNSupport(t *testing.T, upd *ngap.AMFConfigurationUpdate, support ngap.PLMNSupportList) []byte {
-	t.Helper()
-
-	b, err := upd.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p, err := ngap.ParseRawPDU(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	value, err := per.Marshal(support, per.Aligned)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := p.Insert(p.Len(), ngap.RawIE{ID: ngap.IDPLMNSupportList, Criticality: ngap.CriticalityReject, Value: value}); err != nil {
-		t.Fatal(err)
-	}
-
-	out, err := p.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return out
-}
-
-func plmnSupportOf(t *testing.T, raw []byte) ngap.PLMNSupportList {
-	t.Helper()
-
-	p, err := ngap.ParseRawPDU(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var support ngap.PLMNSupportList
-	if ok, err := p.Get(ngap.IDPLMNSupportList, &support); err != nil || !ok {
-		t.Fatalf("PLMN Support List = %v, %v", ok, err)
-	}
-
-	return support
-}
-
 func TestNGSetupBothWays(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.2")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.2"))
-	amf := amfs.accept(t)
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.2"))
+	amf := amfs.Accept(t)
 
-	amf.quiet(t, 300*time.Millisecond)
+	amf.Quiet(t, 300*time.Millisecond)
 
 	h.eventually(t, "AMF connected", func() bool {
 		st, ok := h.gw.AMFStatus(1, []string{"127.0.1.2"})
@@ -121,7 +76,7 @@ func TestNGSetupBothWays(t *testing.T) {
 	})
 
 	gnb := h.connectGNB(t)
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101", "00199")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101", "00199")))
 
 	req := expect(t, amf, "initiating", ngap.ProcNGSetup, ngap.ParseNGSetupRequest)
 
@@ -139,7 +94,7 @@ func TestNGSetupBothWays(t *testing.T) {
 	assertNodeName(t, req.RANNodeName)
 
 	g1 := guami(t, "00101", 2, 1, 0)
-	amf.send(t, setupResponse(t, "amf1", 10, "00101", g1, guami(t, "00199", 3, 1, 0)))
+	amf.Send(t, setupResponse(t, "amf1", 10, "00101", g1, guami(t, "00199", 3, 1, 0)))
 
 	resp := expect(t, gnb, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
 	assertNodeName(t, &resp.AMFName)
@@ -173,7 +128,7 @@ func TestNGSetupBothWays(t *testing.T) {
 	}
 
 	gnb2 := h.connectGNB(t)
-	gnb2.send(t, setupRequest(t, 2, "gnb2", ngap.PagingDRXv256, ta(t, 0x123456, "00101")))
+	gnb2.Send(t, setupRequest(t, 2, "gnb2", ngap.PagingDRXv256, ta(t, 0x123456, "00101")))
 	expect(t, gnb2, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
 
 	upd := expect(t, amf, "initiating", ngap.ProcRANConfigurationUpdate, ngap.ParseRANConfigurationUpdate)
@@ -185,9 +140,9 @@ func TestNGSetupBothWays(t *testing.T) {
 
 	assertNodeName(t, upd.RANNodeName)
 
-	amf.send(t, &ngap.RANConfigurationUpdateAcknowledge{})
+	amf.Send(t, &ngap.RANConfigurationUpdateAcknowledge{})
 
-	gnb2.send(t, &ngap.RANConfigurationUpdate{SupportedTAList: ngap.SupportedTAList{ta(t, 3, "00101")}})
+	gnb2.Send(t, &ngap.RANConfigurationUpdate{SupportedTAList: ngap.SupportedTAList{ta(t, 3, "00101")}})
 	expect(t, gnb2, "successful", ngap.ProcRANConfigurationUpdate, ngap.ParseRANConfigurationUpdateAcknowledge)
 
 	upd = expect(t, amf, "initiating", ngap.ProcRANConfigurationUpdate, ngap.ParseRANConfigurationUpdate)
@@ -197,58 +152,37 @@ func TestNGSetupBothWays(t *testing.T) {
 		t.Fatalf("Default Paging DRX = %v, want absent", *upd.DefaultPagingDRX)
 	}
 
-	amf.send(t, &ngap.RANConfigurationUpdateAcknowledge{})
+	amf.Send(t, &ngap.RANConfigurationUpdateAcknowledge{})
 
-	_ = gnb2.conn.Abort()
+	_ = gnb2.Conn.Abort()
 
 	upd = expect(t, amf, "initiating", ngap.ProcRANConfigurationUpdate, ngap.ParseRANConfigurationUpdate)
 	assertTAs(t, upd.SupportedTAList, ngap.SupportedTAList{ta(t, 1, "00101")})
 
-	amf.send(t, &ngap.RANConfigurationUpdateAcknowledge{})
+	amf.Send(t, &ngap.RANConfigurationUpdateAcknowledge{})
 
 	g2 := guami(t, "00101", 2, 1, 1)
 	sst2 := ngap.SliceSupportItem{SNSSAI: ngap.SNSSAI{SST: 2}}
-	amf.sendRaw(t, amfConfigurationUpdateWithPLMNSupport(t,
-		&ngap.AMFConfigurationUpdate{
-			AMFName: ngap.Ptr("amf1b"), RelativeAMFCapacity: ngap.Ptr(uint8(20)),
-			ServedGUAMIList: ngap.ServedGUAMIList{{GUAMI: g1}, {GUAMI: g2}},
-		},
-		ngap.PLMNSupportList{{PLMNIdentity: plmnID(t, "001", "01"), SliceSupportList: ngap.SliceSupportList{slice, sst2}}}))
+	amf.Send(t, &ngap.AMFConfigurationUpdate{
+		AMFName: ngap.Ptr("amf1b"), RelativeAMFCapacity: ngap.Ptr(uint8(20)),
+		ServedGUAMIList: ngap.ServedGUAMIList{{GUAMI: g1}, {GUAMI: g2}},
+		PLMNSupportList: ngap.PLMNSupportList{{PLMNIdentity: plmnID(t, "001", "01"), SliceSupportList: ngap.SliceSupportList{slice, sst2}}},
+	})
 	expect(t, amf, "successful", ngap.ProcAMFConfigurationUpdate, ngap.ParseAMFConfigurationUpdateAcknowledge)
 
-	f := gnb.nextFrame(t)
+	acu := expect(t, gnb, "initiating", ngap.ProcAMFConfigurationUpdate, ngap.ParseAMFConfigurationUpdate)
 
-	m, ok := f.pdu.(*ngap.InitiatingMessage)
-	if !ok || m.ProcedureCode != ngap.ProcAMFConfigurationUpdate {
-		t.Fatalf("got %s, want AMF Configuration Update", procedureName(f.pdu))
+	assertNodeName(t, acu.AMFName)
+
+	if len(acu.PLMNSupportList) != 1 || !reflect.DeepEqual(acu.PLMNSupportList[0].SliceSupportList, ngap.SliceSupportList{slice, sst2}) {
+		t.Fatalf("PLMN Support List = %+v", acu.PLMNSupportList)
 	}
 
-	var name ngap.Name
-	if p, err := ngap.ParseRawPDU(f.raw); err != nil {
-		t.Fatal(err)
-	} else if ok, err := p.Get(ngap.IDAMFName, &name); err != nil || !ok {
-		t.Fatalf("AMF Name = %v, %v", ok, err)
+	if !reflect.DeepEqual(guamis(t, acu.ServedGUAMIList), []ngap.GUAMI{g1, g2}) {
+		t.Fatalf("Served GUAMI List = %+v", acu.ServedGUAMIList)
 	}
 
-	assertNodeName(t, ngap.Ptr(string(name)))
-
-	support := plmnSupportOf(t, f.raw)
-	if len(support) != 1 || !reflect.DeepEqual(support[0].SliceSupportList, ngap.SliceSupportList{slice, sst2}) {
-		t.Fatalf("PLMN Support List = %+v", support)
-	}
-
-	acu, err := ngap.ParseRawPDU(f.raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var served ngap.ServedGUAMIList
-	if ok, err := acu.Get(ngap.IDServedGUAMIList, &served); err != nil || !ok ||
-		!reflect.DeepEqual(guamis(t, served), []ngap.GUAMI{g1, g2}) {
-		t.Fatalf("Served GUAMI List = %+v, %v", served, err)
-	}
-
-	gnb.send(t, &ngap.AMFConfigurationUpdateAcknowledge{})
+	gnb.Send(t, &ngap.AMFConfigurationUpdateAcknowledge{})
 
 	st, _ = h.gw.AMFStatus(1, []string{"127.0.1.2"})
 	if st.AMFName != "amf1b" || *st.RelativeAMFCapacity != 20 || len(st.ServedGUAMIs) != 2 ||
@@ -256,10 +190,10 @@ func TestNGSetupBothWays(t *testing.T) {
 		t.Fatalf("AMF status after update = %+v", st)
 	}
 
-	gnb.quiet(t, 300*time.Millisecond)
+	gnb.Quiet(t, 300*time.Millisecond)
 
 	registry := prometheus.NewPedanticRegistry()
-	registry.MustRegister(h.gw.Collectors()...)
+	registry.MustRegister(h.metrics.Collectors(h.gw)...)
 
 	metrics := `
 # HELP ellamocn_core_associations Core (MME, AMF) associations of the configured MMEs and AMFs, by interface (s1, ng), operator and state (disconnected: no SCTP association; connected: SCTP association up, S1 or NG Setup not done; up: S1 or NG Setup succeeded; setup_failed: the MME or AMF rejected the setup).
@@ -293,49 +227,105 @@ ellamocn_ue_connections{interface="ng",operator="A"} 0
 		t.Fatal(err)
 	}
 
-	for _, c := range h.gw.Collectors() {
+	for _, c := range h.metrics.Collectors(h.gw) {
 		if problems, err := testutil.CollectAndLint(c); err != nil || len(problems) > 0 {
 			t.Fatalf("lint: %v %v", problems, err)
 		}
 	}
 }
 
+func TestAMFConfigurationUpdateTNLAssociationsToAddFailToSetUp(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	amfs := listenAMF(t, "127.0.1.84")
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.84"))
+	gnb, amf := upAndRunning(t, h, amfs)
+
+	amf.Send(t, &ngap.AMFConfigurationUpdate{RelativeAMFCapacity: ngap.Ptr(uint8(255))})
+
+	ack := expect(t, amf, "successful", ngap.ProcAMFConfigurationUpdate, ngap.ParseAMFConfigurationUpdateAcknowledge)
+	if ack.AMFTNLAssociationSetupList != nil || ack.AMFTNLAssociationFailedToSetupList != nil {
+		t.Fatalf("AMF Configuration Update Acknowledge = %+v, want no TNL association lists", ack)
+	}
+
+	add := ngap.AMFTNLAssociationToAddList{
+		{
+			AMFTNLAssociationAddress: ngap.CPTransportLayerInformation{EndpointIPAddress: ngap.TransportLayerAddress{127, 0, 1, 85}},
+			TNLAddressWeightFactor:   1,
+		},
+		{
+			AMFTNLAssociationAddress: ngap.CPTransportLayerInformation{EndpointIPAddressAndPort: &ngap.EndpointIPAddressAndPort{
+				EndpointIPAddress: ngap.TransportLayerAddress{127, 0, 1, 86}, PortNumber: 38413,
+			}},
+			TNLAssociationUsage:    ngap.Ptr(ngap.TNLAssociationUsageUE),
+			TNLAddressWeightFactor: 2,
+		},
+	}
+
+	amf.Send(t, &ngap.AMFConfigurationUpdate{AMFTNLAssociationToAddList: add})
+
+	ack = expect(t, amf, "successful", ngap.ProcAMFConfigurationUpdate, ngap.ParseAMFConfigurationUpdateAcknowledge)
+	if ack.AMFTNLAssociationSetupList != nil {
+		t.Fatalf("AMF TNL Association Setup List = %+v, want absent", ack.AMFTNLAssociationSetupList)
+	}
+
+	if len(ack.AMFTNLAssociationFailedToSetupList) != len(add) {
+		t.Fatalf("AMF TNL Association Failed to Setup List = %+v, want %d items", ack.AMFTNLAssociationFailedToSetupList, len(add))
+	}
+
+	for i, item := range ack.AMFTNLAssociationFailedToSetupList {
+		if !reflect.DeepEqual(item.TNLAssociationAddress, add[i].AMFTNLAssociationAddress) {
+			t.Fatalf("TNL Association Address %d = %+v, want %+v", i, item.TNLAssociationAddress, add[i].AMFTNLAssociationAddress)
+		}
+
+		if item.Cause.Group != ngap.CauseGroupTransport || item.Cause.Value != ngap.CauseTransportUnspecified {
+			t.Fatalf("Cause %d = %v, want transport unspecified", i, item.Cause)
+		}
+	}
+
+	gnb.Quiet(t, 300*time.Millisecond)
+}
+
 func TestNGSetupFailures(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.3")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.3"), operatorB("127.0.1.4"))
-	amf := amfs.accept(t)
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.3"), operatorB("127.0.1.4"))
+	amf := amfs.Accept(t)
 
 	gnb := h.connectGNB(t)
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "00301")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "00301")))
 
 	fail := expect(t, gnb, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
 	if fail.Cause == nil || fail.Cause.Group != ngap.CauseGroupMisc || fail.Cause.Value != ngap.CauseMiscUnknownPLMNOrSNPN {
 		t.Fatalf("cause = %v, want unknown PLMN", fail.Cause)
 	}
 
-	amf.quiet(t, 200*time.Millisecond)
+	amf.Quiet(t, 200*time.Millisecond)
 
 	enb := setupRequest(t, 1, "ng-enb", ngap.PagingDRXv64, ta(t, 1, "00101"))
 	enb.GlobalRANNodeID = ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDMacroNgENB, PLMNIdentity: plmnID(t, "001", "01"), Value: 1, Bits: 20}
-	gnb.send(t, enb)
+	gnb.Send(t, enb)
 
 	fail = expect(t, gnb, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
 	if fail.Cause == nil || fail.Cause.Group != ngap.CauseGroupProtocol || fail.Cause.Value != ngap.CauseProtocolSemanticError {
 		t.Fatalf("cause = %v, want semantic error", fail.Cause)
 	}
 
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "002002")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "002002")))
 
 	fail = expect(t, gnb, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
 	if fail.Cause == nil || fail.Cause.Group != ngap.CauseGroupTransport || fail.TimeToWait == nil || *fail.TimeToWait != ngap.TimeToWaitV5s {
 		t.Fatalf("NG Setup Failure = %+v, want transport resource unavailable and 5 s", fail)
 	}
 
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "00101")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "00101")))
 	expect(t, amf, "initiating", ngap.ProcNGSetup, ngap.ParseNGSetupRequest)
-	amf.send(t, &ngap.NGSetupFailure{
+	amf.Send(t, &ngap.NGSetupFailure{
 		Cause:      &ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscUnknownPLMNOrSNPN},
 		TimeToWait: ngap.Ptr(ngap.TimeToWaitV10s),
 	})
@@ -353,14 +343,16 @@ func TestNGSetupFailures(t *testing.T) {
 }
 
 func TestNGSetupTimeout(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.5")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.5"))
-	amf := amfs.accept(t)
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.5"))
+	amf := amfs.Accept(t)
 
 	gnb := h.connectGNB(t)
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "00101")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "00101")))
 
 	expect(t, amf, "initiating", ngap.ProcNGSetup, ngap.ParseNGSetupRequest)
 	expect(t, gnb, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
@@ -371,7 +363,7 @@ func TestNGSetupTimeout(t *testing.T) {
 	})
 
 	registry := prometheus.NewPedanticRegistry()
-	registry.MustRegister(h.gw.Collectors()...)
+	registry.MustRegister(h.metrics.Collectors(h.gw)...)
 
 	h.eventually(t, "setup attempts", func() bool {
 		return testutil.ToFloat64(counter(t, registry, "radio", "no_amf")) == 1 &&

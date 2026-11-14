@@ -62,6 +62,8 @@ func onlyChild(t *testing.T, rec *tracetest.SpanRecorder, parent trace.Span) sdk
 }
 
 func TestMethodSpans(t *testing.T) {
+	t.Parallel()
+
 	d, rec, tracer := openTracedDB(t)
 
 	ctx, write := tracer.Start(t.Context(), "write")
@@ -122,6 +124,8 @@ func TestMethodSpans(t *testing.T) {
 }
 
 func TestFailedMethodSpan(t *testing.T) {
+	t.Parallel()
+
 	d, rec, tracer := openTracedDB(t)
 
 	if _, err := d.writer.ExecContext(t.Context(), `DROP TABLE api_tokens`); err != nil {
@@ -144,6 +148,8 @@ func TestFailedMethodSpan(t *testing.T) {
 }
 
 func TestNoSpanOutsideATrace(t *testing.T) {
+	t.Parallel()
+
 	d, rec, _ := openTracedDB(t)
 
 	if _, err := d.CountUsers(t.Context()); err != nil {
@@ -156,12 +162,16 @@ func TestNoSpanOutsideATrace(t *testing.T) {
 }
 
 func TestNoSpanWithoutTracerProvider(t *testing.T) {
+	t.Parallel()
+
 	if _, ok := openTestDB(t).tracer.(noop.Tracer); !ok {
 		t.Fatal("a tracer without a tracer provider")
 	}
 }
 
 func TestDurationExemplar(t *testing.T) {
+	t.Parallel()
+
 	d, _, tracer := openTracedDB(t)
 
 	ctx, span := tracer.Start(t.Context(), "count")

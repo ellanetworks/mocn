@@ -32,16 +32,16 @@ type CreateUserParams struct {
 	RolePinned bool    `json:"role_pinned"`
 }
 
-type UpdateUserParams struct {
+type updateUserParams struct {
 	RoleID     db.Role `json:"role_id"`
 	RolePinned *bool   `json:"role_pinned"`
 }
 
-type UpdateUserPasswordParams struct {
+type updateUserPasswordParams struct {
 	Password string `json:"password"`
 }
 
-type UpdateMyPasswordParams struct {
+type updateMyPasswordParams struct {
 	CurrentPassword string `json:"current_password"`
 	Password        string `json:"password"`
 }
@@ -61,7 +61,7 @@ type APIToken struct {
 	LastUsedAt string `json:"last_used_at,omitempty"`
 }
 
-type CreateAPITokenParams struct {
+type createAPITokenParams struct {
 	Name      string `json:"name"`
 	ExpiresAt string `json:"expires_at"`
 }
@@ -77,9 +77,9 @@ type ListAPITokensResponse struct {
 	TotalCount int        `json:"total_count"`
 }
 
-func GetMyUser(a *auth) http.Handler {
+func getMyUser(a *auth) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 
 		u, err := a.cfg.Auth.GetUserByID(r.Context(), p.UserID)
 		if err != nil {
@@ -91,16 +91,16 @@ func GetMyUser(a *auth) http.Handler {
 	})
 }
 
-func UpdateMyPassword(a *auth) http.Handler {
+func updateMyPassword(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var params UpdateMyPasswordParams
+		var params updateMyPasswordParams
 		if !decodeBody(w, r, &params, cfg) {
 			return
 		}
 
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 
 		u, err := cfg.Auth.GetUserByID(r.Context(), p.UserID)
 		if err != nil {
@@ -137,7 +137,7 @@ func UpdateMyPassword(a *auth) http.Handler {
 			return
 		}
 
-		writeResponse(r.Context(), w, SuccessResponse{Message: "Password updated successfully"}, http.StatusOK, cfg.Logger)
+		writeResponse(r.Context(), w, successResponse{Message: "Password updated successfully"}, http.StatusOK, cfg.Logger)
 	})
 }
 
@@ -164,13 +164,13 @@ func (a *auth) setPassword(w http.ResponseWriter, r *http.Request, u db.User, pa
 		return false
 	}
 
-	p, _ := PrincipalFrom(r.Context())
+	p, _ := principalFrom(r.Context())
 	a.audit(r, "update_user_password", p.Email, "Password of "+u.Email+" updated")
 
 	return true
 }
 
-func ListUsers(a *auth) http.Handler {
+func listUsers(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +194,7 @@ func ListUsers(a *auth) http.Handler {
 	})
 }
 
-func CreateUser(a *auth) http.Handler {
+func createUser(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -251,14 +251,14 @@ func CreateUser(a *auth) http.Handler {
 			return
 		}
 
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 		a.audit(r, "create_user", p.Email, fmt.Sprintf("User %s created with role %d, pinned %t", email, params.RoleID,
 			params.RolePinned))
-		writeResponse(r.Context(), w, SuccessResponse{Message: "User created successfully"}, http.StatusCreated, cfg.Logger)
+		writeResponse(r.Context(), w, successResponse{Message: "User created successfully"}, http.StatusCreated, cfg.Logger)
 	})
 }
 
-func GetUser(a *auth) http.Handler {
+func getUser(a *auth) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := lookupUser(w, r, a.cfg); ok {
 			writeResponse(r.Context(), w, userResponse(u), http.StatusOK, a.cfg.Logger)
@@ -266,11 +266,11 @@ func GetUser(a *auth) http.Handler {
 	})
 }
 
-func UpdateUser(a *auth) http.Handler {
+func updateUser(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var params UpdateUserParams
+		var params updateUserParams
 		if !decodeBody(w, r, &params, cfg) {
 			return
 		}
@@ -285,7 +285,7 @@ func UpdateUser(a *auth) http.Handler {
 			return
 		}
 
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 		if u.ID == p.UserID {
 			writeError(r.Context(), w, http.StatusForbidden, "Cannot modify your own account", nil, cfg.Logger)
 			return
@@ -313,13 +313,13 @@ func UpdateUser(a *auth) http.Handler {
 		}
 
 		a.audit(r, "update_user", p.Email, fmt.Sprintf("Role of %s set to %d, pinned %t", u.Email, params.RoleID, pinned))
-		writeResponse(r.Context(), w, SuccessResponse{Message: "User updated successfully"}, http.StatusOK, cfg.Logger)
+		writeResponse(r.Context(), w, successResponse{Message: "User updated successfully"}, http.StatusOK, cfg.Logger)
 	})
 }
 
-func UpdateUserPassword(a *auth) http.Handler {
+func updateUserPassword(a *auth) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var params UpdateUserPasswordParams
+		var params updateUserPasswordParams
 		if !decodeBody(w, r, &params, a.cfg) {
 			return
 		}
@@ -329,7 +329,7 @@ func UpdateUserPassword(a *auth) http.Handler {
 			return
 		}
 
-		if p, _ := PrincipalFrom(r.Context()); u.ID == p.UserID {
+		if p, _ := principalFrom(r.Context()); u.ID == p.UserID {
 			writeError(r.Context(), w, http.StatusForbidden, "Change your own password with PUT /api/v1/users/me/password", nil,
 				a.cfg.Logger)
 
@@ -340,11 +340,11 @@ func UpdateUserPassword(a *auth) http.Handler {
 			return
 		}
 
-		writeResponse(r.Context(), w, SuccessResponse{Message: "Password updated successfully"}, http.StatusOK, a.cfg.Logger)
+		writeResponse(r.Context(), w, successResponse{Message: "Password updated successfully"}, http.StatusOK, a.cfg.Logger)
 	})
 }
 
-func DeleteUser(a *auth) http.Handler {
+func deleteUser(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -353,7 +353,7 @@ func DeleteUser(a *auth) http.Handler {
 			return
 		}
 
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 		if u.ID == p.UserID {
 			writeError(r.Context(), w, http.StatusForbidden, "Cannot delete your own account", nil, cfg.Logger)
 			return
@@ -376,7 +376,7 @@ func DeleteUser(a *auth) http.Handler {
 		}
 
 		a.audit(r, "delete_user", p.Email, "User "+u.Email+" deleted")
-		writeResponse(r.Context(), w, SuccessResponse{Message: "User deleted successfully"}, http.StatusOK, cfg.Logger)
+		writeResponse(r.Context(), w, successResponse{Message: "User deleted successfully"}, http.StatusOK, cfg.Logger)
 	})
 }
 
@@ -389,7 +389,7 @@ func userResponse(u db.User) User {
 	}
 }
 
-func DeleteUserPassword(a *auth) http.Handler {
+func deleteUserPassword(a *auth) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -419,9 +419,9 @@ func DeleteUserPassword(a *auth) http.Handler {
 			return
 		}
 
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 		a.audit(r, "delete_user_password", p.Email, "Password of "+u.Email+" removed")
-		writeResponse(r.Context(), w, SuccessResponse{Message: "Password removed successfully"}, http.StatusOK, cfg.Logger)
+		writeResponse(r.Context(), w, successResponse{Message: "Password removed successfully"}, http.StatusOK, cfg.Logger)
 	})
 }
 
@@ -431,7 +431,7 @@ func otherUser(w http.ResponseWriter, r *http.Request, cfg Config) (db.User, boo
 		return db.User{}, false
 	}
 
-	if p, _ := PrincipalFrom(r.Context()); u.ID == p.UserID {
+	if p, _ := principalFrom(r.Context()); u.ID == p.UserID {
 		writeError(r.Context(), w, http.StatusForbidden, "Cannot modify your own account", nil, cfg.Logger)
 		return db.User{}, false
 	}
@@ -443,7 +443,7 @@ type tokenOwner func(w http.ResponseWriter, r *http.Request) (db.User, bool)
 
 func myself(cfg Config) tokenOwner {
 	return func(w http.ResponseWriter, r *http.Request) (db.User, bool) {
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 
 		u, err := cfg.Auth.GetUserByID(r.Context(), p.UserID)
 		if err != nil {
@@ -461,7 +461,7 @@ func userOfPath(cfg Config) tokenOwner {
 	}
 }
 
-func ListAPITokens(a *auth, owner tokenOwner) http.Handler {
+func listAPITokens(a *auth, owner tokenOwner) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -493,11 +493,11 @@ func ListAPITokens(a *auth, owner tokenOwner) http.Handler {
 	})
 }
 
-func CreateAPIToken(a *auth, owner tokenOwner) http.Handler {
+func createAPIToken(a *auth, owner tokenOwner) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var params CreateAPITokenParams
+		var params createAPITokenParams
 		if !decodeBody(w, r, &params, cfg) {
 			return
 		}
@@ -560,14 +560,14 @@ func CreateAPIToken(a *auth, owner tokenOwner) http.Handler {
 			return
 		}
 
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 		a.audit(r, "create_api_token", p.Email, fmt.Sprintf("API token %s (%s) created for %s", tokenID, params.Name,
 			u.Email))
 		writeResponse(r.Context(), w, CreateAPITokenResponse{Token: token}, http.StatusCreated, cfg.Logger)
 	})
 }
 
-func DeleteAPIToken(a *auth, owner tokenOwner) http.Handler {
+func deleteAPIToken(a *auth, owner tokenOwner) http.Handler {
 	cfg := a.cfg
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -589,9 +589,9 @@ func DeleteAPIToken(a *auth, owner tokenOwner) http.Handler {
 			return
 		}
 
-		p, _ := PrincipalFrom(r.Context())
+		p, _ := principalFrom(r.Context())
 		a.audit(r, "delete_api_token", p.Email, fmt.Sprintf("API token %s of %s deleted", tokenID, u.Email))
-		writeResponse(r.Context(), w, SuccessResponse{Message: "API token deleted successfully"}, http.StatusOK, cfg.Logger)
+		writeResponse(r.Context(), w, successResponse{Message: "API token deleted successfully"}, http.StatusOK, cfg.Logger)
 	})
 }
 
@@ -640,6 +640,21 @@ func pagination(w http.ResponseWriter, r *http.Request, cfg Config) (int, int, b
 	}
 
 	return page, perPage, true
+}
+
+func pageOf[T any](items []T, page, perPage int) []T {
+	if page-1 > len(items)/perPage {
+		return []T{}
+	}
+
+	start := (page - 1) * perPage
+	end := min(start+perPage, len(items))
+
+	if start >= end {
+		return []T{}
+	}
+
+	return items[start:end]
 }
 
 func atoiDefault(s string, def int) (int, bool) {

@@ -5,7 +5,8 @@ import {
   TextField,
   type TextFieldProps,
 } from "@mui/material";
-import { Visibility, VisibilityOff } from "@mui/icons-material";
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
 
 export default function PasswordField({ slotProps, ...props }: TextFieldProps) {
   const [shown, setShown] = useState(false);

@@ -2,358 +2,50 @@ package s1
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/netip"
 	"slices"
-	"sync/atomic"
 	"time"
 
 	"github.com/ellanetworks/core/s1ap"
-	"github.com/ellanetworks/core/sctp"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
-	"github.com/ellanetworks/mocn/internal/gw"
 	"github.com/ellanetworks/mocn/internal/tracing"
 )
 
-const dialTimeout = 10 * time.Second
-
-type mmeClient struct {
-	g          *Gateway
-	operatorID int64
-	opName     atomic.Pointer[string]
-	enbID      db.GlobalENBID
-	addrs      []string
-	cancel     context.CancelFunc
-	kicks      chan struct{}
-	done       chan struct{}
-
-	status         MMEStatus
-	lastCause      *s1ap.Cause
-	lastTimeToWait *s1ap.TimeToWait
-	assoc          *MMEAssociation
+type mmeInfo struct {
+	name     string
+	served   []ServedGUMMEIs
+	capacity *uint8
+	overload []Overload
+	cause    *s1ap.Cause
+	ttw      *s1ap.TimeToWait
 }
 
-type MMEAssociation struct {
-	client *mmeClient
-	conn   *sctp.SCTPConn
-	lost   bool
-}
-
-func (a *MMEAssociation) Send(ctx context.Context, msg []byte, stream uint16) error {
-	return a.client.g.send(ctx, sideCore, a.conn, a.client.operator(), msg, stream)
-}
-
-func (a *MMEAssociation) OperatorID() int64 {
-	return a.client.operatorID
-}
-
-func (a *MMEAssociation) TNLAddresses() []string {
-	return slices.Clone(a.client.addrs)
-}
-
-type procedure int
-
-const (
-	procNone procedure = iota
-	procSetup
-	procUpdate
-)
-
-type mmeSession struct {
-	assoc     *MMEAssociation
-	setupDone bool
-	acked     enbConfig
-	pending   procedure
-	sent      enbConfig
-	sentMsg   []byte
-	deadline  time.Time
-	retryAt   time.Time
-}
-
-func newMMEClient(g *Gateway, operatorID int64, operator string, enbID db.GlobalENBID, addrs []string) *mmeClient {
-	c := &mmeClient{
-		g: g, operatorID: operatorID, enbID: enbID, addrs: slices.Clone(addrs), kicks: make(chan struct{}, 1),
-		done:   make(chan struct{}),
-		status: MMEStatus{State: MMEDisconnected, Since: g.cfg.Now()},
-	}
-
-	c.setOperatorName(operator)
-
-	return c
-}
-
-func (c *mmeClient) setOperatorName(name string) {
-	c.opName.Store(&name)
-}
-
-func (c *mmeClient) operator() string {
-	if name := c.opName.Load(); name != nil {
-		return *name
-	}
-
-	return ""
-}
-
-func (c *mmeClient) kick() {
-	select {
-	case c.kicks <- struct{}{}:
-	default:
+func mmeStatusLocked(c *mmeClient) MMEStatus {
+	return MMEStatus{
+		State:               c.State,
+		Since:               c.Since,
+		PrimaryTNLAddress:   c.PrimaryAddressLocked(),
+		MMEName:             c.Info.name,
+		ServedGUMMEIs:       slices.Clone(c.Info.served),
+		RelativeMMECapacity: c.Info.capacity,
+		Overload:            slices.Clone(c.Info.overload),
 	}
 }
 
-func (c *mmeClient) snapshotLocked() MMEStatus {
-	s := c.status
-	s.ServedGUMMEIs = slices.Clone(s.ServedGUMMEIs)
-	s.Overload = slices.Clone(s.Overload)
-
-	if c.assoc != nil {
-		if addr, err := c.assoc.conn.PrimaryPeerAddr(); err == nil {
-			s.PrimaryTNLAddress = addr.String()
-		}
-	}
-
-	return s
+func (protocol) Overloaded(info mmeInfo) bool {
+	return len(info.overload) > 0
 }
 
-func (c *mmeClient) logger() *slog.Logger {
-	return c.g.log.With(slog.Int64("operator_id", c.operatorID), slog.Any("mme", c.addrs))
-}
+func (p protocol) CoreLostLocked(c *mmeClient, a *mmeAssoc) func(ctx context.Context) {
+	cleared := c.Info.overload
+	radios := p.core.ClientRadiosLocked(c)
 
-func (c *mmeClient) setState(state MMEState) {
-	if c.status.State != state {
-		c.status.State = state
-		c.status.Since = c.g.cfg.Now()
+	return func(ctx context.Context) {
+		p.overloadCleared(ctx, radios, c.Operator(), c.Logger(), cleared)
+		p.relay.mmeLost(ctx, a)
 	}
-}
-
-func (c *mmeClient) run(ctx context.Context) {
-	log := c.logger()
-	backoff := c.g.cfg.ReconnectMin
-
-	for {
-		conn, err := c.dial(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-
-			log.WarnContext(ctx, "MME association failed", slog.Any("error", err))
-
-			if !gw.Sleep(ctx, backoff) {
-				return
-			}
-
-			backoff = min(2*backoff, c.g.cfg.ReconnectMax)
-
-			continue
-		}
-
-		assoc := &MMEAssociation{client: c, conn: conn}
-
-		c.g.mu.Lock()
-		c.assoc = assoc
-		c.setState(MMEConnected)
-		c.g.mu.Unlock()
-
-		log.InfoContext(ctx, "MME association up")
-
-		start := c.g.cfg.Now()
-		err = c.session(ctx, assoc)
-
-		if ctx.Err() != nil {
-			_ = conn.Close()
-		} else {
-			_ = conn.Abort()
-		}
-
-		c.g.mu.Lock()
-
-		wasUp := c.status.State == MMEUp
-		cleared := c.status.Overload
-		radios := c.g.operatorRadiosLocked(c.operatorID)
-		c.assoc = nil
-		c.status = MMEStatus{State: MMEDisconnected, Since: c.g.cfg.Now()}
-
-		if wasUp {
-			c.g.mmeChangedLocked(ctx)
-		}
-
-		c.g.mu.Unlock()
-
-		lostCtx := context.WithoutCancel(ctx)
-		c.g.overloadCleared(lostCtx, radios, c.operator(), log, cleared)
-		c.g.cfg.Relay.MMELost(lostCtx, assoc)
-
-		if ctx.Err() != nil {
-			return
-		}
-
-		log.WarnContext(ctx, "MME association lost", slog.Any("error", err))
-
-		if c.g.cfg.Now().Sub(start) > c.g.cfg.ReconnectMax {
-			backoff = c.g.cfg.ReconnectMin
-		}
-
-		if !gw.Sleep(ctx, backoff) {
-			return
-		}
-
-		backoff = min(2*backoff, c.g.cfg.ReconnectMax)
-	}
-}
-
-// TS 36.412 clause 7
-func (c *mmeClient) dial(ctx context.Context) (*sctp.SCTPConn, error) {
-	raddr := &sctp.SCTPAddr{Port: c.g.cfg.MMEPort}
-
-	for _, a := range c.addrs {
-		ip, err := netip.ParseAddr(a)
-		if err != nil {
-			return nil, fmt.Errorf("invalid TNL address %q", a)
-		}
-
-		raddr.IPAddrs = append(raddr.IPAddrs, net.IPAddr{IP: ip.AsSlice()})
-	}
-
-	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
-	defer cancel()
-
-	d := sctp.Dialer{InitMsg: sctp.InitMsg{NumOstreams: mmeStreams, MaxInstreams: mmeStreams}, Logger: c.g.log}
-
-	return d.Dial(dialCtx, raddr)
-}
-
-func (c *mmeClient) session(ctx context.Context, assoc *MMEAssociation) error {
-	msgs := make(chan []byte)
-	readErr := make(chan error, 1)
-
-	readCtx, stopReading := context.WithCancel(ctx)
-	defer stopReading()
-
-	go func() {
-		buf := make([]byte, sctp.MaxMessageSize)
-
-		for {
-			n, info, err := assoc.conn.ReadMsg(buf)
-			if err != nil {
-				readErr <- err
-				return
-			}
-
-			if info == nil || sctp.PPIDWireOrder(info.PPID) != PPID {
-				continue
-			}
-
-			select {
-			case msgs <- slices.Clone(buf[:n]):
-			case <-readCtx.Done():
-				return
-			}
-		}
-	}()
-
-	s := &mmeSession{assoc: assoc}
-	timer := time.NewTimer(time.Hour)
-
-	defer timer.Stop()
-	defer func() {
-		if s.pending == procSetup {
-			c.endSetup(s, setupError)
-		}
-	}()
-
-	for {
-		if err := c.step(ctx, s); err != nil {
-			return err
-		}
-
-		timer.Reset(c.nextWake(s))
-
-		select {
-		case <-ctx.Done():
-			return nil
-		case err := <-readErr:
-			return fmt.Errorf("SCTP: %w", err)
-		case msg := <-msgs:
-			if err := c.handle(ctx, s, msg); err != nil {
-				return err
-			}
-		case <-c.kicks:
-		case <-timer.C:
-		}
-	}
-}
-
-func (c *mmeClient) nextWake(s *mmeSession) time.Duration {
-	now := c.g.cfg.Now()
-
-	switch {
-	case s.pending != procNone:
-		return max(s.deadline.Sub(now), time.Millisecond)
-	case now.Before(s.retryAt):
-		return s.retryAt.Sub(now)
-	default:
-		return time.Hour
-	}
-}
-
-func (c *mmeClient) step(ctx context.Context, s *mmeSession) error {
-	now := c.g.cfg.Now()
-
-	if s.pending != procNone {
-		if now.Before(s.deadline) {
-			return nil
-		}
-
-		if s.pending == procSetup {
-			c.endSetup(s, setupTimeout)
-			return errors.New("no response to S1 Setup Request")
-		}
-
-		return c.resendENBConfigurationUpdate(ctx, s)
-	}
-
-	if now.Before(s.retryAt) {
-		return nil
-	}
-
-	c.g.mu.Lock()
-	want, ok := c.g.enbConfigLocked(c.operatorID)
-	c.g.mu.Unlock()
-
-	if !ok || (s.setupDone && want.equal(s.acked)) {
-		return nil
-	}
-
-	if !s.setupDone {
-		return c.sendS1Setup(ctx, s, want)
-	}
-
-	return c.sendENBConfigurationUpdate(ctx, s, want)
-}
-
-// TS 36.413 clause 8.7.3
-func (c *mmeClient) sendS1Setup(ctx context.Context, s *mmeSession, want enbConfig) error {
-	out, err := s1SetupRequest(c.enbID, want)
-	if err != nil {
-		c.g.countSetup(sideCore, setupError)
-		return err
-	}
-
-	if err := s.assoc.Send(ctx, out, nonUEStream); err != nil {
-		c.g.countSetup(sideCore, setupError)
-		return fmt.Errorf("SCTP: %w", err)
-	}
-
-	c.logger().InfoContext(ctx, "S1 Setup Request sent to MME", slog.Int("supported_tas", len(want.tas)),
-		slog.Int("default_paging_drx", pagingDRXFrames(want.drx)))
-
-	s.pending, s.sent, s.deadline = procSetup, want, c.g.cfg.Now().Add(c.g.cfg.ResponseTimeout)
-
-	return nil
 }
 
 // TS 36.413 clause 9.1.8.4
@@ -369,7 +61,7 @@ func s1SetupRequest(enbID db.GlobalENBID, want enbConfig) ([]byte, error) {
 	}
 
 	out, err := (&s1ap.S1SetupRequest{
-		GlobalENBID: id, ENBName: s1ap.Ptr(gw.NodeName), SupportedTAs: tas, DefaultPagingDRX: s1ap.Ptr(want.drx),
+		GlobalENBID: id, ENBName: s1ap.Ptr(assoc.NodeName), SupportedTAs: tas, DefaultPagingDRX: s1ap.Ptr(want.drx),
 	}).Marshal()
 	if err != nil {
 		return nil, fmt.Errorf("marshal S1 Setup Request: %w", err)
@@ -378,216 +70,158 @@ func s1SetupRequest(enbID db.GlobalENBID, want enbConfig) ([]byte, error) {
 	return out, nil
 }
 
-func (c *mmeClient) endSetup(s *mmeSession, result string) {
-	s.pending = procNone
-
-	c.g.countSetup(sideCore, result)
-}
-
 // TS 36.413 clause 8.7.4
 // TS 36.413 clause 9.1.8.7
-func (c *mmeClient) sendENBConfigurationUpdate(ctx context.Context, s *mmeSession, want enbConfig) error {
-	upd := &s1ap.ENBConfigurationUpdate{ENBName: s1ap.Ptr(gw.NodeName)}
+func (protocol) ConfigurationUpdate(want, acked enbConfig) ([]byte, error) {
+	upd := &s1ap.ENBConfigurationUpdate{ENBName: s1ap.Ptr(assoc.NodeName)}
 
-	if !tasEqual(want.tas, s.acked.tas) {
+	if !tasEqual(want.tas, acked.tas) {
 		tas, err := tasTo(want.tas)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		upd.SupportedTAs = tas
 	}
 
-	if want.drx != s.acked.drx {
+	if want.drx != acked.drx {
 		upd.DefaultPagingDRX = s1ap.Ptr(want.drx)
 	}
 
 	out, err := upd.Marshal()
 	if err != nil {
-		return fmt.Errorf("marshal eNB Configuration Update: %w", err)
+		return nil, fmt.Errorf("marshal eNB Configuration Update: %w", err)
 	}
 
-	if err := s.assoc.Send(ctx, out, nonUEStream); err != nil {
-		return fmt.Errorf("SCTP: %w", err)
-	}
-
-	c.logger().InfoContext(ctx, "eNB Configuration Update sent to MME", slog.Int("supported_tas", len(want.tas)),
-		slog.Int("default_paging_drx", pagingDRXFrames(want.drx)))
-
-	s.pending, s.sent, s.sentMsg, s.deadline = procUpdate, want, out, c.g.cfg.Now().Add(c.g.cfg.ResponseTimeout)
-
-	return nil
+	return out, nil
 }
 
-// TS 36.413 clause 8.7.4.4
-func (c *mmeClient) resendENBConfigurationUpdate(ctx context.Context, s *mmeSession) error {
-	if err := s.assoc.Send(ctx, s.sentMsg, nonUEStream); err != nil {
-		return fmt.Errorf("SCTP: %w", err)
-	}
-
-	c.logger().WarnContext(ctx, "no response to eNB Configuration Update, sent it again")
-
-	s.deadline = c.g.cfg.Now().Add(c.g.cfg.ResponseTimeout)
-
-	return nil
-}
-
-func (c *mmeClient) handle(ctx context.Context, s *mmeSession, msg []byte) error {
+func (p protocol) HandleCore(ctx context.Context, s *mmeSession, msg []byte) error {
 	pdu, err := s1ap.Unmarshal(msg)
 
-	ctx, span := c.g.receiveFromMME(ctx, s.assoc, pdu, msg)
+	ctx, span := p.receiveFromMME(ctx, s.Core(), pdu, msg)
 	defer span.End()
 
-	if err != nil {
-		tracing.SpanFailed(ctx, errTypeInvalid)
-		c.logger().WarnContext(ctx, "undecodable S1AP message from MME", slog.Any("error", err))
+	log := s.Client().Logger()
 
+	if err != nil {
+		undecodable(ctx, s.Core(), sourceMME, log, nil, err)
 		return nil
 	}
 
-	switch p := pdu.(type) {
+	switch m := pdu.(type) {
 	case *s1ap.SuccessfulOutcome:
-		switch p.ProcedureCode {
+		switch m.ProcedureCode {
 		case s1ap.ProcS1Setup:
-			return c.handleS1SetupResponse(ctx, s, p.Value)
+			return p.handleS1SetupResponse(ctx, s, m.Value)
 		case s1ap.ProcENBConfigurationUpdate:
-			if s.pending == procUpdate {
-				s.pending, s.acked = procNone, s.sent
-			}
-
+			s.UpdateAcknowledged()
 			return nil
 		}
 	case *s1ap.UnsuccessfulOutcome:
-		switch p.ProcedureCode {
+		switch m.ProcedureCode {
 		case s1ap.ProcS1Setup:
-			return c.handleS1SetupFailure(ctx, s, p.Value)
+			return p.handleS1SetupFailure(ctx, s, m.Value)
 		case s1ap.ProcENBConfigurationUpdate:
-			c.handleENBConfigurationUpdateFailure(ctx, s, p.Value)
+			p.handleENBConfigurationUpdateFailure(ctx, s, m.Value)
 			return nil
 		}
 	case *s1ap.InitiatingMessage:
-		if s.setupDone && p.ProcedureCode == s1ap.ProcMMEConfigurationUpdate {
-			c.handleMMEConfigurationUpdate(ctx, s, p.Value)
+		if s.SetupDone() && m.ProcedureCode == s1ap.ProcMMEConfigurationUpdate {
+			p.handleMMEConfigurationUpdate(ctx, s, m.Value)
 			return nil
 		}
 	}
 
-	if !s.setupDone {
-		tracing.SpanFailed(ctx, errTypeNoSetup)
-		c.logger().DebugContext(ctx, "dropped S1AP message before S1 Setup",
-			slog.String("procedure", procedureOf(pdu).String()))
-
+	if !s.SetupDone() {
+		notCompatible(ctx, s.Core(), sourceMME, log, pdu, msg)
 		return nil
 	}
 
-	c.g.cfg.Relay.FromMME(ctx, s.assoc, pdu, msg)
+	p.relay.fromMME(ctx, s.Core(), pdu, msg)
 
 	return nil
 }
 
-func (c *mmeClient) handleS1SetupResponse(ctx context.Context, s *mmeSession, value []byte) error {
-	if s.pending != procSetup {
+func (protocol) handleS1SetupResponse(ctx context.Context, s *mmeSession, value []byte) error {
+	if !s.AwaitingSetup() {
 		return nil
 	}
 
 	resp, err := s1ap.ParseS1SetupResponse(value)
 	if err != nil {
-		tracing.SpanFailed(ctx, errTypeInvalid)
-		c.endSetup(s, setupFailure)
-
-		return fmt.Errorf("S1 Setup Response: %w", err)
+		return s.SetupInvalid(ctx, "S1 Setup Response", err)
 	}
 
 	served, err := gummeisFrom(resp.ServedGUMMEIs)
 	if err != nil {
-		tracing.SpanFailed(ctx, errTypeInvalid)
-		c.endSetup(s, setupFailure)
-
-		return fmt.Errorf("S1 Setup Response: %w", err)
+		return s.SetupInvalid(ctx, "S1 Setup Response", err)
 	}
 
-	s.pending, s.setupDone, s.acked = procNone, true, s.sent
-
-	c.g.mu.Lock()
-
-	c.status.MMEName = ""
+	var name string
 	if resp.MMEName != nil {
-		c.status.MMEName = *resp.MMEName
+		name = *resp.MMEName
 	}
 
-	c.status.ServedGUMMEIs = served
-	c.status.RelativeMMECapacity = resp.RelativeMMECapacity
-	c.lastCause, c.lastTimeToWait = nil, nil
-	c.setState(MMEUp)
-	c.g.mmeChangedLocked(ctx)
-	c.g.mu.Unlock()
+	s.SetupAccepted(ctx, func(info *mmeInfo) {
+		info.name, info.served, info.capacity = name, served, resp.RelativeMMECapacity
+		info.cause, info.ttw = nil, nil
+	})
 
-	c.g.countSetup(sideCore, setupSuccess)
-	c.logger().InfoContext(ctx, "MME S1 Setup succeeded", slog.String("mme_name", c.status.MMEName))
+	s.Client().Logger().InfoContext(ctx, "MME S1 Setup succeeded", slog.String("mme_name", name))
 
 	return nil
 }
 
-func (c *mmeClient) handleS1SetupFailure(ctx context.Context, s *mmeSession, value []byte) error {
-	if s.pending != procSetup {
+func (protocol) handleS1SetupFailure(ctx context.Context, s *mmeSession, value []byte) error {
+	if !s.AwaitingSetup() {
 		return nil
 	}
 
-	c.endSetup(s, setupFailure)
+	s.EndSetup(assoc.SetupFailure)
 
 	fail, err := s1ap.ParseS1SetupFailure(value)
 	if err != nil {
-		tracing.SpanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
 		return fmt.Errorf("S1 Setup Failure: %w", err)
 	}
 
-	retry := c.g.cfg.RetryInterval
-	if fail.TimeToWait != nil {
-		retry = timeToWait[*fail.TimeToWait]
-	}
+	retry := s.RetryAfter(waitOf(fail.TimeToWait))
 
-	s.retryAt = c.g.cfg.Now().Add(retry)
+	s.SetupRejected(ctx, func(info *mmeInfo) { info.cause, info.ttw = fail.Cause, fail.TimeToWait })
 
-	c.g.mu.Lock()
-
-	c.lastCause, c.lastTimeToWait = fail.Cause, fail.TimeToWait
-	c.status.State, c.status.Since = MMESetupFailed, c.g.cfg.Now()
-	c.g.mmeChangedLocked(ctx)
-	c.g.mu.Unlock()
-
-	c.logger().WarnContext(ctx, "MME rejected S1 Setup", slog.String("cause", causeText(fail.Cause)),
+	s.Client().Logger().WarnContext(ctx, "MME rejected S1 Setup", slog.String("cause", causeText(fail.Cause)),
 		slog.Duration("retry_in", retry))
 
 	return nil
 }
 
-func (c *mmeClient) handleENBConfigurationUpdateFailure(ctx context.Context, s *mmeSession, value []byte) {
-	if s.pending != procUpdate {
+func (protocol) handleENBConfigurationUpdateFailure(ctx context.Context, s *mmeSession, value []byte) {
+	if !s.AwaitingUpdate() {
 		return
 	}
 
-	s.pending = procNone
-	retry := c.g.cfg.RetryInterval
+	var wait *time.Duration
+
 	cause := "undecodable"
 
 	if fail, err := s1ap.ParseENBConfigurationUpdateFailure(value); err == nil {
-		cause = causeText(fail.Cause)
-
-		if fail.TimeToWait != nil {
-			retry = timeToWait[*fail.TimeToWait]
-		}
+		cause, wait = causeText(fail.Cause), waitOf(fail.TimeToWait)
 	} else {
-		tracing.SpanFailed(ctx, errTypeInvalid)
+		tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
 	}
 
-	s.retryAt = c.g.cfg.Now().Add(retry)
+	retry := s.UpdateRejected(wait)
 
-	c.logger().WarnContext(ctx, "MME rejected eNB Configuration Update", slog.String("cause", cause),
+	s.Client().Logger().WarnContext(ctx, "MME rejected eNB Configuration Update", slog.String("cause", cause),
 		slog.Duration("retry_in", retry))
 }
 
 // TS 36.413 clause 8.7.5
-func (c *mmeClient) handleMMEConfigurationUpdate(ctx context.Context, s *mmeSession, value []byte) {
+// TS 36.413 clause 8.7.7
+// TS 36.300 clause 4.6.2
+func (p protocol) handleMMEConfigurationUpdate(ctx context.Context, s *mmeSession, value []byte) {
+	log := s.Client().Logger()
 	upd, err := s1ap.ParseMMEConfigurationUpdate(value)
 
 	var served []ServedGUMMEIs
@@ -601,16 +235,21 @@ func (c *mmeClient) handleMMEConfigurationUpdate(ctx context.Context, s *mmeSess
 
 		var diag *s1ap.CriticalityDiagnostics
 
-		if ase, ok := errors.AsType[*s1ap.AbstractSyntaxError](err); ok {
-			cause = ase.Cause
-			diag = s1ap.Ptr(ase.OutcomeDiagnostics())
+		if codecError(err) {
+			cause, diag = failureCause(err)
 		}
 
-		tracing.SpanFailed(ctx, errTypeInvalid)
-		c.logger().WarnContext(ctx, "rejected MME Configuration Update", slog.Any("error", err))
+		tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
+		log.WarnContext(ctx, "rejected MME Configuration Update", slog.Any("error", err))
 
-		if out, err := (&s1ap.MMEConfigurationUpdateFailure{Cause: &cause, CriticalityDiagnostics: diag}).Marshal(); err == nil {
-			_ = s.assoc.Send(ctx, out, nonUEStream)
+		out, err := (&s1ap.MMEConfigurationUpdateFailure{Cause: &cause, CriticalityDiagnostics: diag}).Marshal()
+		if err != nil {
+			log.ErrorContext(ctx, "failed to marshal MME Configuration Update Failure", slog.Any("error", err))
+			return
+		}
+
+		if err := s.Core().Send(ctx, out, assoc.NonUEStream); err != nil {
+			log.WarnContext(ctx, "failed to send MME Configuration Update Failure", slog.Any("error", err))
 		}
 
 		return
@@ -620,30 +259,42 @@ func (c *mmeClient) handleMMEConfigurationUpdate(ctx context.Context, s *mmeSess
 		CriticalityDiagnostics: responseDiagnostics(s1ap.ProcMMEConfigurationUpdate, upd.Diagnostics()),
 	}).Marshal()
 	if err != nil {
-		c.logger().ErrorContext(ctx, "failed to marshal MME Configuration Update Acknowledge", slog.Any("error", err))
+		log.ErrorContext(ctx, "failed to marshal MME Configuration Update Acknowledge", slog.Any("error", err))
 		return
 	}
 
-	c.g.mu.Lock()
+	var (
+		ended  []GUMMEI
+		radios []*ranAssoc
+	)
 
-	if upd.MMEName != nil {
-		c.status.MMEName = *upd.MMEName
+	s.Update(ctx, func(c *mmeClient) {
+		if upd.MMEName != nil {
+			c.Info.name = *upd.MMEName
+		}
+
+		if served != nil {
+			c.Info.served = served
+			o, _ := p.core.OperatorLocked(c.OperatorID())
+			still := mmeGUMMEIs(served, o.PLMNs)
+			ended = endOverload(c, func(id GUMMEI) bool { return !slices.Contains(still, id) })
+			radios = p.core.OperatorRadiosLocked(c.OperatorID())
+		}
+
+		if upd.RelativeMMECapacity != nil {
+			c.Info.capacity = upd.RelativeMMECapacity
+		}
+	})
+
+	if err := s.Core().Send(ctx, out, assoc.NonUEStream); err != nil {
+		log.WarnContext(ctx, "failed to send MME Configuration Update Acknowledge", slog.Any("error", err))
 	}
 
-	if served != nil {
-		c.status.ServedGUMMEIs = served
+	log.InfoContext(ctx, "MME configuration updated")
+
+	if len(ended) > 0 && len(radios) > 0 {
+		log.InfoContext(ctx, "overload of GUMMEIs the MME no longer serves ended, Overload Stop sent to radios",
+			slog.Int("gummeis", len(ended)), slog.Int("radios", len(radios)))
+		p.sendOverloadStop(ctx, radios, s.Core().Operator(), log, ended)
 	}
-
-	if upd.RelativeMMECapacity != nil {
-		c.status.RelativeMMECapacity = upd.RelativeMMECapacity
-	}
-
-	c.g.mmeChangedLocked(ctx)
-	c.g.mu.Unlock()
-
-	if err := s.assoc.Send(ctx, out, nonUEStream); err != nil {
-		c.logger().WarnContext(ctx, "failed to send MME Configuration Update Acknowledge", slog.Any("error", err))
-	}
-
-	c.logger().InfoContext(ctx, "MME configuration updated")
 }

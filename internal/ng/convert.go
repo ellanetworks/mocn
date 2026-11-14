@@ -8,7 +8,7 @@ import (
 
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/mocn/internal/db"
-	"github.com/ellanetworks/mocn/internal/gw"
+	"github.com/ellanetworks/mocn/internal/plmnid"
 )
 
 const (
@@ -21,13 +21,72 @@ const (
 
 var errNotGNB = errors.New("the Global RAN Node ID is not a Global gNB ID")
 
+// TS 23.003 clause 28.4.2
+var noSD = ngap.SD{0xff, 0xff, 0xff}
+
+// TS 38.413 clause 9.3.3.21
+// TS 38.413 clause 9.3.3.51
+type amfName struct {
+	visible string
+	utf8    string
+}
+
+func (n amfName) String() string {
+	if n.utf8 != "" {
+		return n.utf8
+	}
+
+	return n.visible
+}
+
+func (n amfName) empty() bool {
+	return n.visible == "" && n.utf8 == ""
+}
+
+func (n amfName) matches(o amfName) bool {
+	return (n.visible != "" && n.visible == o.visible) || (n.utf8 != "" && n.utf8 == o.utf8)
+}
+
+// TS 38.413 clause 8.7.1.2
+// TS 38.413 clause 8.7.3.2
+// TS 38.413 clause 9.3.3.51
+func amfNameFrom(name *string, ext *ngap.ExtendedAMFName) amfName {
+	if ext != nil && (ext.AMFNameVisibleString != nil || ext.AMFNameUTF8String != nil) {
+		var n amfName
+
+		if ext.AMFNameVisibleString != nil {
+			n.visible = string(*ext.AMFNameVisibleString)
+		}
+
+		if ext.AMFNameUTF8String != nil {
+			n.utf8 = string(*ext.AMFNameUTF8String)
+		}
+
+		return n
+	}
+
+	if name == nil {
+		return amfName{}
+	}
+
+	return amfName{visible: *name}
+}
+
+func backupNameFrom(name *ngap.Name, ext *ngap.ExtendedAMFName) amfName {
+	if name == nil {
+		return amfNameFrom(nil, ext)
+	}
+
+	return amfNameFrom(new(string(*name)), ext)
+}
+
 // TS 38.413 clause 9.3.1.6
 func globalGNBIDFrom(id ngap.GlobalRANNodeID) (db.GlobalGNBID, error) {
 	if id.Kind != ngap.RANNodeIDGNB {
 		return db.GlobalGNBID{}, errNotGNB
 	}
 
-	plmn, err := gw.DecodePLMN(id.PLMNIdentity)
+	plmn, err := plmnid.Decode(id.PLMNIdentity)
 	if err != nil {
 		return db.GlobalGNBID{}, err
 	}
@@ -37,7 +96,7 @@ func globalGNBIDFrom(id ngap.GlobalRANNodeID) (db.GlobalGNBID, error) {
 
 // TS 38.413 clause 9.3.1.6
 func globalGNBIDTo(id db.GlobalGNBID) (ngap.GlobalRANNodeID, error) {
-	plmn, err := gw.EncodePLMN[ngap.PLMNIdentity](id.PLMN)
+	plmn, err := plmnid.Encode[ngap.PLMNIdentity](id.PLMN)
 	if err != nil {
 		return ngap.GlobalRANNodeID{}, err
 	}
@@ -46,9 +105,10 @@ func globalGNBIDTo(id db.GlobalGNBID) (ngap.GlobalRANNodeID, error) {
 }
 
 // TS 38.413 clause 9.3.1.24
+// TS 23.003 clause 28.4.2
 func snssaiFrom(s ngap.SNSSAI) SNSSAI {
 	out := SNSSAI{SST: uint8(s.SST)}
-	if s.SD != nil {
+	if s.SD != nil && *s.SD != noSD {
 		out.SD = hex.EncodeToString(s.SD[:])
 	}
 
@@ -103,7 +163,7 @@ func tasFrom(in ngap.SupportedTAList) ([]TA, error) {
 		item := TA{TAC: uint32(ta.TAC)}
 
 		for _, b := range ta.BroadcastPLMNList {
-			plmn, err := gw.DecodePLMN(b.PLMNIdentity)
+			plmn, err := plmnid.Decode(b.PLMNIdentity)
 			if err != nil {
 				return nil, err
 			}
@@ -125,7 +185,7 @@ func tasTo(in []TA) (ngap.SupportedTAList, error) {
 		item := ngap.SupportedTAItem{TAC: ngap.TAC(ta.TAC)}
 
 		for _, b := range ta.BroadcastPLMNs {
-			plmn, err := gw.EncodePLMN[ngap.PLMNIdentity](b.PLMN)
+			plmn, err := plmnid.Encode[ngap.PLMNIdentity](b.PLMN)
 			if err != nil {
 				return nil, err
 			}
@@ -146,7 +206,7 @@ func tasTo(in []TA) (ngap.SupportedTAList, error) {
 
 // TS 38.413 clause 9.3.3.3
 func guamiFrom(g ngap.GUAMI) (GUAMI, error) {
-	plmn, err := gw.DecodePLMN(g.PLMNIdentity)
+	plmn, err := plmnid.Decode(g.PLMNIdentity)
 	if err != nil {
 		return GUAMI{}, err
 	}
@@ -158,7 +218,7 @@ func guamiFrom(g ngap.GUAMI) (GUAMI, error) {
 
 // TS 38.413 clause 9.3.3.3
 func guamiTo(g GUAMI) (ngap.GUAMI, error) {
-	plmn, err := gw.EncodePLMN[ngap.PLMNIdentity](g.PLMN)
+	plmn, err := plmnid.Encode[ngap.PLMNIdentity](g.PLMN)
 	if err != nil {
 		return ngap.GUAMI{}, err
 	}
@@ -169,17 +229,34 @@ func guamiTo(g GUAMI) (ngap.GUAMI, error) {
 	}, nil
 }
 
+type servedGUAMIs struct {
+	guamis  []GUAMI
+	backups map[GUAMI]amfName
+	types   map[GUAMI]ngap.GUAMIType
+}
+
+// TS 38.413 clause 8.7.1.2
 // TS 38.413 clause 9.2.6.2
-func servedGUAMIsFrom(in ngap.ServedGUAMIList) ([]GUAMI, error) {
-	out := make([]GUAMI, 0, len(in))
+func servedGUAMIsFrom(in ngap.ServedGUAMIList) (servedGUAMIs, error) {
+	out := servedGUAMIs{
+		guamis: make([]GUAMI, 0, len(in)), backups: map[GUAMI]amfName{}, types: map[GUAMI]ngap.GUAMIType{},
+	}
 
 	for _, item := range in {
 		g, err := guamiFrom(item.GUAMI)
 		if err != nil {
-			return nil, err
+			return servedGUAMIs{}, err
 		}
 
-		out = append(out, g)
+		out.guamis = append(out.guamis, g)
+
+		if b := backupNameFrom(item.BackupAMFName, item.ExtendedBackupAMFName); !b.empty() {
+			out.backups[g] = b
+		}
+
+		if item.GUAMIType != nil {
+			out.types[g] = *item.GUAMIType
+		}
 	}
 
 	return out, nil
@@ -206,7 +283,7 @@ func plmnSupportFrom(in ngap.PLMNSupportList) ([]PLMNSupport, error) {
 	out := make([]PLMNSupport, 0, len(in))
 
 	for _, item := range in {
-		plmn, err := gw.DecodePLMN(item.PLMNIdentity)
+		plmn, err := plmnid.Decode(item.PLMNIdentity)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +299,7 @@ func plmnSupportTo(in []PLMNSupport) (ngap.PLMNSupportList, error) {
 	out := make(ngap.PLMNSupportList, 0, len(in))
 
 	for _, p := range in {
-		plmn, err := gw.EncodePLMN[ngap.PLMNIdentity](p.PLMN)
+		plmn, err := plmnid.Encode[ngap.PLMNIdentity](p.PLMN)
 		if err != nil {
 			return nil, err
 		}
@@ -259,4 +336,14 @@ func causeText(c *ngap.Cause) string {
 	}
 
 	return c.String()
+}
+
+func waitOf(t *ngap.TimeToWait) *time.Duration {
+	if t == nil {
+		return nil
+	}
+
+	d := timeToWait[*t]
+
+	return &d
 }

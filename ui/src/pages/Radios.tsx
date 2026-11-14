@@ -1,7 +1,13 @@
-import { Box, Link } from "@mui/material";
-import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import { useState } from "react";
+import { Box, Link, Skeleton, useMediaQuery } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import {
+  DataGrid,
+  type GridColDef,
+  type GridPaginationModel,
+} from "@mui/x-data-grid";
 import { useQuery } from "@tanstack/react-query";
-import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { Link as RouterLink } from "react-router-dom";
 import OneLine from "@/components/OneLine";
 import PageHeader from "@/components/PageHeader";
 import QueryAlert from "@/components/QueryAlert";
@@ -14,7 +20,7 @@ import {
 } from "@/queries/radios";
 import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
-import { formatRadioID, RADIO_TYPES } from "@/utils/radios";
+import { formatRadioID, RADIO_TYPE_HELP, RADIO_TYPES } from "@/utils/radios";
 
 export const RADIOS_REFRESH_MS = 5000;
 
@@ -22,7 +28,6 @@ const NONE = "—";
 
 const gridSx = {
   ...GRID_SX,
-  "& .MuiDataGrid-row.clickable": { cursor: "pointer" },
   "& .MuiDataGrid-cell": {
     ...GRID_SX["& .MuiDataGrid-cell"],
     display: "flex",
@@ -30,86 +35,103 @@ const gridSx = {
   },
 };
 
-interface Row extends Radio {
-  id: number;
-}
+const rowLabel = (radio: Radio) =>
+  radioLabel(radio, radio.ref ?? radio.tnl_addresses.join(", "));
 
-const columns: GridColDef<Row>[] = [
+const columns: GridColDef<Radio>[] = [
   {
-    field: "enb_name",
+    field: "name",
     headerName: "Name",
     description:
-      "The name the radio sent in its S1 Setup Request (eNB name) or NG Setup Request (RAN node name).",
+      "The name the radio gave itself (eNB Name or RAN Node Name). An unnamed radio shows its type and ID.",
     flex: 0.8,
     minWidth: 140,
-    renderCell: ({ row }) =>
-      row.ref ? (
-        <Link
-          component={RouterLink}
-          to={radioPath(row.ref)}
-          variant="body2"
-          sx={{ color: "link", textDecoration: "underline" }}
-        >
-          {radioLabel(row)}
-        </Link>
-      ) : (
-        radioLabel(row)
-      ),
+    renderCell: ({ row }) => (
+      <OneLine title={rowLabel(row)}>
+        {row.ref ? (
+          <Link
+            component={RouterLink}
+            to={radioPath(row.ref)}
+            variant="body2"
+            sx={{ color: "link", textDecoration: "underline" }}
+          >
+            {rowLabel(row)}
+          </Link>
+        ) : (
+          rowLabel(row)
+        )}
+      </OneLine>
+    ),
   },
   {
-    field: "interface",
+    field: "type",
     headerName: "Type",
-    description: "eNB: a 4G radio, over S1. gNB: a 5G radio, over NG.",
+    description: RADIO_TYPE_HELP,
     flex: 0.3,
     minWidth: 100,
-    valueGetter: (_value, row) => RADIO_TYPES[row.interface],
+    renderCell: ({ row }) => <OneLine title={RADIO_TYPES[row.type]} />,
   },
   {
     field: "global_id",
-    headerName: "Global ID",
+    headerName: "Global RAN Node ID",
     description:
-      "The identity the radio sent in its S1 or NG Setup Request: the Global eNB ID (PLMN, eNB ID type and eNB ID) or the Global gNB ID (PLMN, gNB ID and its length).",
+      "The identity the radio sent when it connected: its PLMN, the type of its ID and its ID (Global eNB ID or Global gNB ID).",
     flex: 1,
     minWidth: 200,
-    valueGetter: (_value, row) => formatRadioID(row) ?? NONE,
+    renderCell: ({ row }) => <OneLine title={formatRadioID(row) ?? NONE} />,
   },
   {
     field: "tnl_addresses",
     headerName: "Addresses",
-    description: "The SCTP addresses of the radio.",
+    description: "The addresses the radio connects from.",
     flex: 0.7,
     minWidth: 140,
     renderCell: ({ row }) => <OneLine title={row.tnl_addresses.join(", ")} />,
   },
   {
     field: "ue_connections",
-    headerName: "UE connections",
+    headerName: "UE Connections",
     description:
-      "The UE-associated logical S1-connections or NG-connections Ella MOCN relays from the radio, one per connected UE.",
+      "Devices connected through this radio: one per active phone, over 4G (S1) or 5G (NG).",
     flex: 0.5,
-    minWidth: 140,
+    minWidth: 145,
+    renderCell: ({ row }) => <OneLine title={String(row.ue_connections)} />,
   },
   {
     field: "state",
     headerName: "Status",
     description:
-      "Connected: SCTP association up, S1 or NG Setup not done yet. Up: S1 or NG Setup succeeded.",
+      "Up: connected and ready. Connected: link up, setup not done yet (S1 Setup or NG Setup).",
     flex: 0.4,
     minWidth: 120,
     renderCell: ({ row }) => (
       <StateChip
         state={row.state}
-        hint={`Since ${formatDateTime(row.connected_since, { seconds: true })}`}
+        hint={`Connected at ${formatDateTime(row.connected_at, { seconds: true })}`}
       />
     ),
   },
 ];
 
+const HIDDEN_ON_PHONE = {
+  type: false,
+  global_id: false,
+  tnl_addresses: false,
+  ue_connections: false,
+};
+
 export default function Radios() {
-  const navigate = useNavigate();
+  const theme = useTheme();
+  const phone = useMediaQuery(theme.breakpoints.down("sm"));
+  const [pagination, setPagination] = useState<GridPaginationModel>({
+    page: 0,
+    pageSize: 25,
+  });
   const radios = useQuery({
-    queryKey: ["radios"],
-    queryFn: listRadios,
+    queryKey: ["radios", pagination],
+    queryFn: () =>
+      listRadios({ page: pagination.page + 1, perPage: pagination.pageSize }),
+    placeholderData: (prev) => prev,
     refetchInterval: RADIOS_REFRESH_MS,
   });
 
@@ -118,27 +140,33 @@ export default function Radios() {
       <PageHeader
         id="radios-title"
         title="Radios"
-        count={radios.data?.length}
-        description="The eNodeBs and gNodeBs connected to Ella MOCN over S1 and NG."
+        count={radios.data?.total_count}
+        description="The 4G and 5G radios connected to Ella MOCN."
       />
       <QueryAlert query={radios} subject="radios" />
-      <DataGrid<Row>
-        aria-label="Radios"
-        rows={(radios.data ?? []).map((radio, id) => ({ ...radio, id }))}
-        columns={columns}
-        loading={radios.isPending}
-        onRowClick={({ row }) => row.ref && navigate(radioPath(row.ref))}
-        getRowClassName={({ row }) => (row.ref ? "clickable" : "")}
-        disableColumnSorting
-        disableColumnFilter
-        disableColumnMenu
-        disableRowSelectionOnClick
-        disableVirtualization
-        hideFooter
-        autoHeight
-        localeText={{ noRowsLabel: "No radios." }}
-        sx={gridSx}
-      />
+      {radios.isPending && <Skeleton variant="rounded" height={120} />}
+      {radios.data && (
+        <DataGrid<Radio>
+          aria-label="Radios"
+          rows={radios.data.items}
+          getRowId={(row) => row.ref ?? row.tnl_addresses.join(",")}
+          columns={columns}
+          columnVisibilityModel={phone ? HIDDEN_ON_PHONE : {}}
+          paginationMode="server"
+          rowCount={radios.data.total_count}
+          paginationModel={pagination}
+          onPaginationModelChange={setPagination}
+          pageSizeOptions={[25, 50]}
+          disableColumnSorting
+          disableColumnFilter
+          disableColumnMenu
+          disableRowSelectionOnClick
+          disableVirtualization
+          autoHeight
+          localeText={{ noRowsLabel: "No radios." }}
+          sx={gridSx}
+        />
+      )}
     </Box>
   );
 }

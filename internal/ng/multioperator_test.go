@@ -9,22 +9,24 @@ import (
 )
 
 func TestPagingFanOut(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfsA, amfsB := listenAMF(t, "127.0.1.20"), listenAMFAt(t, "127.0.1.21", 0)
-	h := startGateway(t, amfsA.port(), operatorA("127.0.1.20"))
+	h := startGateway(t, amfsA.Port(), operatorA("127.0.1.20"))
 
 	gnb1 := h.connectGNB(t)
-	gnb1.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101", "002002")))
+	gnb1.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101", "002002")))
 
 	amf, _ := setupAMF(t, amfsA, setupResponse(t, "amf1", 255, "00101", guami(t, "00101", 2, 1, 0)))
 	expect(t, gnb1, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
 
 	gnb2 := h.connectGNB(t)
-	gnb2.send(t, setupRequest(t, 2, "gnb2", ngap.PagingDRXv128, ta(t, 2, "00101")))
+	gnb2.Send(t, setupRequest(t, 2, "gnb2", ngap.PagingDRXv128, ta(t, 2, "00101")))
 	expect(t, gnb2, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
 	expect(t, amf, "initiating", ngap.ProcRANConfigurationUpdate, ngap.ParseRANConfigurationUpdate)
-	amf.send(t, &ngap.RANConfigurationUpdateAcknowledge{})
+	amf.Send(t, &ngap.RANConfigurationUpdateAcknowledge{})
 
 	_ = amfsB
 
@@ -35,30 +37,32 @@ func TestPagingFanOut(t *testing.T) {
 			{PLMNIdentity: plmnID(t, "002", "002"), TAC: 1},
 		},
 	}
-	amf.send(t, paging)
+	amf.Send(t, paging)
 
 	want, err := paging.Marshal()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	f := gnb2.nextFrame(t)
-	if string(f.raw) != string(want) || f.stream != 0 {
-		t.Fatalf("Paging relayed as %x on stream %d, want %x", f.raw, f.stream, want)
+	f := gnb2.NextFrame(t)
+	if string(f.Raw) != string(want) || f.Stream != 0 {
+		t.Fatalf("Paging relayed as %x on stream %d, want %x", f.Raw, f.Stream, want)
 	}
 
-	gnb1.quiet(t, 300*time.Millisecond)
+	gnb1.Quiet(t, 300*time.Millisecond)
 }
 
 func TestMultiOperatorSelectionAndScoping(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.22")
-	amfsB := listenAMFAt(t, "127.0.1.23", amfs.port())
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.22"), operatorB("127.0.1.23"))
+	amfsB := listenAMFAt(t, "127.0.1.23", amfs.Port())
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.22"), operatorB("127.0.1.23"))
 
 	gnb := h.connectGNB(t)
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101", "002002")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101", "002002")))
 
 	amfA, reqA := setupAMF(t, amfs, setupResponse(t, "amfA", 255, "00101", guami(t, "00101", 2, 1, 0)))
 	amfB, reqB := setupAMF(t, amfsB, setupResponse(t, "amfB", 255, "002002", guami(t, "002002", 4, 3, 0)))
@@ -81,7 +85,7 @@ func TestMultiOperatorSelectionAndScoping(t *testing.T) {
 			t.Fatalf("Served GUAMI List: %v %v", ok, err)
 		}
 
-		gnb.send(t, &ngap.AMFConfigurationUpdateAcknowledge{})
+		gnb.Send(t, &ngap.AMFConfigurationUpdateAcknowledge{})
 	}
 
 	if len(resp.ServedGUAMIList) != 2 {
@@ -104,7 +108,7 @@ func TestMultiOperatorSelectionAndScoping(t *testing.T) {
 		t.Fatalf("UEs by operator = %v", byOperator)
 	}
 
-	amfA.send(t, &ngap.NGReset{
+	amfA.Send(t, &ngap.NGReset{
 		Cause: &ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscOMIntervention}, ResetType: ngap.ResetType{All: true},
 	})
 	expect(t, amfA, "successful", ngap.ProcNGReset, ngap.ParseNGResetAcknowledge)
@@ -114,26 +118,28 @@ func TestMultiOperatorSelectionAndScoping(t *testing.T) {
 		t.Fatalf("NG Reset = %+v, want only operator A's UE", reset)
 	}
 
-	gnb.send(t, &ngap.NGResetAcknowledge{ConnectionList: reset.ResetType.Part})
+	gnb.Send(t, &ngap.NGResetAcknowledge{ConnectionList: reset.ResetType.Part})
 
 	h.eventually(t, "only operator B's UE", func() bool {
 		ues := h.gw.UEs()
 		return len(ues) == 1 && ues[0].OperatorName == "B"
 	})
 
-	amfB.quiet(t, 200*time.Millisecond)
+	amfB.Quiet(t, 200*time.Millisecond)
 }
 
 func TestSelectionWithinTheOperatorsAMFs(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs1 := listenAMF(t, "127.0.1.24")
-	amfs2 := listenAMFAt(t, "127.0.1.25", amfs1.port())
-	h := startGatewayWith(t, ng.Config{AMFPort: amfs1.port(), IntN: func(int) int { return 0 }},
+	amfs2 := listenAMFAt(t, "127.0.1.25", amfs1.Port())
+	h := startGatewayWith(t, ng.Config{CorePort: amfs1.Port(), IntN: func(int) int { return 0 }},
 		operatorA("127.0.1.24", "127.0.1.25"))
 
 	gnb := h.connectGNB(t)
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
 
 	amf1, _ := setupAMF(t, amfs1, setupResponse(t, "amf1", 0, "00101", guami(t, "00101", 2, 1, 1)))
 	amf2, _ := setupAMF(t, amfs2, setupResponse(t, "amf2", 50, "00101", guami(t, "00101", 2, 1, 2)))
@@ -148,7 +154,7 @@ func TestSelectionWithinTheOperatorsAMFs(t *testing.T) {
 	stmsi.FiveGSTMSI = &ngap.FiveGSTMSI{AMFSetID: 1, AMFPointer: 1, FiveGTMSI: 42}
 	attachWith(t, gnb, amf1, stmsi, 2)
 
-	amf1.send(t, &ngap.AMFStatusIndication{UnavailableGUAMIList: ngap.UnavailableGUAMIList{{GUAMI: guami(t, "00101", 2, 1, 1)}}})
+	amf1.Send(t, &ngap.AMFStatusIndication{UnavailableGUAMIList: ngap.UnavailableGUAMIList{{GUAMI: guami(t, "00101", 2, 1, 1)}}})
 
 	ind := expect(t, gnb, "initiating", ngap.ProcAMFStatusIndication, ngap.ParseAMFStatusIndication)
 	if len(ind.UnavailableGUAMIList) != 1 || ind.UnavailableGUAMIList[0].GUAMI != guami(t, "00101", 2, 1, 1) {
@@ -164,7 +170,7 @@ func TestSelectionWithinTheOperatorsAMFs(t *testing.T) {
 	stmsi.FiveGSTMSI = &ngap.FiveGSTMSI{AMFSetID: 1, AMFPointer: 1, FiveGTMSI: 43}
 	attachWith(t, gnb, amf2, stmsi, 3)
 
-	amf1.send(t, &ngap.OverloadStart{
+	amf1.Send(t, &ngap.OverloadStart{
 		AMFOverloadResponse:               &ngap.OverloadResponse{OverloadAction: ngap.OverloadActionRejectRRCCRSignalling},
 		AMFTrafficLoadReductionIndication: ngap.Ptr(ngap.TrafficLoadReductionIndication(40)),
 		OverloadStartNSSAIList: ngap.OverloadStartNSSAIList{{
@@ -172,35 +178,55 @@ func TestSelectionWithinTheOperatorsAMFs(t *testing.T) {
 		}},
 	})
 
+	start := expect(t, gnb, "initiating", ngap.ProcOverloadStart, ngap.ParseOverloadStart)
+	if len(start.GUAMIList) != 1 || start.GUAMIList[0].GUAMI != guami(t, "00101", 2, 1, 1) ||
+		start.AMFOverloadResponse == nil || start.AMFOverloadResponse.OverloadAction != ngap.OverloadActionRejectRRCCRSignalling ||
+		start.AMFTrafficLoadReductionIndication == nil || *start.AMFTrafficLoadReductionIndication != 40 ||
+		len(start.OverloadStartNSSAIList) != 1 {
+		t.Fatalf("Overload Start = %+v", start)
+	}
+
 	h.eventually(t, "overload recorded", func() bool {
 		st, _ := h.gw.AMFStatus(1, []string{"127.0.1.24"})
-		o := st.Overload
+		if len(st.Overload) != 1 {
+			return false
+		}
 
-		return o != nil && o.Action != nil && *o.Action == ng.OverloadRejectRRCCRSignalling &&
+		o := st.Overload[0]
+
+		return o.Action != nil && *o.Action == ng.OverloadRejectRRCCRSignalling &&
 			o.TrafficLoadReductionIndication != nil && *o.TrafficLoadReductionIndication == 40 &&
-			len(o.Slices) == 1 && o.Slices[0].SNSSAIs[0] == (ng.SNSSAI{SST: 1, SD: "010203"})
+			len(o.Slices) == 1 && o.Slices[0].SNSSAIs[0] == (ng.SNSSAI{SST: 1, SD: "010203"}) &&
+			len(o.GUAMIs) == 1 && o.GUAMIs[0] == (ng.GUAMI{PLMN: plmnA, AMFRegionID: 2, AMFSetID: 1, AMFPointer: 1})
 	})
 
-	gnb.quiet(t, 200*time.Millisecond)
+	gnb.Quiet(t, 200*time.Millisecond)
 
-	amf1.send(t, &ngap.OverloadStop{})
+	amf1.Send(t, &ngap.OverloadStop{})
+
+	stop := expect(t, gnb, "initiating", ngap.ProcOverloadStop, ngap.ParseOverloadStop)
+	if len(stop.GUAMIList) != 1 || stop.GUAMIList[0].GUAMI != guami(t, "00101", 2, 1, 1) {
+		t.Fatalf("Overload Stop = %+v", stop)
+	}
 
 	h.eventually(t, "overload cleared", func() bool {
 		st, _ := h.gw.AMFStatus(1, []string{"127.0.1.24"})
-		return st.Overload == nil
+		return len(st.Overload) == 0
 	})
 }
 
 func TestRerouteNASRequestWithinTheOperator(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs1 := listenAMF(t, "127.0.1.26")
-	amfs2 := listenAMFAt(t, "127.0.1.27", amfs1.port())
-	h := startGatewayWith(t, ng.Config{AMFPort: amfs1.port(), IntN: func(int) int { return 0 }},
+	amfs2 := listenAMFAt(t, "127.0.1.27", amfs1.Port())
+	h := startGatewayWith(t, ng.Config{CorePort: amfs1.Port(), IntN: func(int) int { return 0 }},
 		operatorA("127.0.1.26", "127.0.1.27"))
 
 	gnb := h.connectGNB(t)
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
 
 	amf1, _ := setupAMF(t, amfs1, setupResponse(t, "amf1", 255, "00101", guami(t, "00101", 2, 1, 0)))
 	amf2, _ := setupAMF(t, amfs2, setupResponse(t, "amf2", 255, "00101", guami(t, "00101", 2, 9, 0)))
@@ -209,13 +235,13 @@ func TestRerouteNASRequestWithinTheOperator(t *testing.T) {
 	settle(t, h, gnb, "127.0.1.26", "127.0.1.27")
 
 	init := initialUE(t, 5, "00101")
-	gnb.send(t, init)
+	gnb.Send(t, init)
 
 	f, raw := expectRaw(t, amf1, "initiating", ngap.ProcInitialUEMessage)
 	_, amfRANID := ueIDs(t, raw)
 
-	amf1.send(t, &ngap.RerouteNASRequest{
-		RANUENGAPID: amfRANID, NGAPMessage: ngap.NGAPMessage(f.raw), AMFSetID: 9,
+	amf1.Send(t, &ngap.RerouteNASRequest{
+		RANUENGAPID: amfRANID, NGAPMessage: ngap.NGAPMessage(f.Raw), AMFSetID: 9,
 		AllowedNSSAI: ngap.AllowedNSSAI{{SNSSAI: slice.SNSSAI}},
 	})
 
@@ -230,6 +256,15 @@ func TestRerouteNASRequestWithinTheOperator(t *testing.T) {
 		t.Fatalf("rerouted IEs = %+v", raw.IEs())
 	}
 
+	for _, want := range []struct {
+		id   ngap.ProtocolIEID
+		crit ngap.Criticality
+	}{{ngap.IDAMFSetID, ngap.CriticalityIgnore}, {ngap.IDAllowedNSSAI, ngap.CriticalityReject}} {
+		if ie, err := raw.IE(raw.Index(want.id)); err != nil || ie.Criticality != want.crit {
+			t.Fatalf("IE %d criticality = %v (%v), want %v", want.id, ie.Criticality, err, want.crit)
+		}
+	}
+
 	if _, ranID := ueIDs(t, raw); ranID != amfRANID {
 		t.Fatalf("RAN UE NGAP ID = %d, want %d", ranID, amfRANID)
 	}
@@ -240,7 +275,7 @@ func TestRerouteNASRequestWithinTheOperator(t *testing.T) {
 	}
 
 	dl := &ngap.DownlinkNASTransport{AMFUENGAPID: 500, RANUENGAPID: amfRANID, NASPDU: nas}
-	amf2.send(t, dl)
+	amf2.Send(t, dl)
 
 	_, raw = expectRaw(t, gnb, "initiating", ngap.ProcDownlinkNASTransport)
 	if _, ranID := ueIDs(t, raw); ranID != 5 {
@@ -252,19 +287,21 @@ func TestRerouteNASRequestWithinTheOperator(t *testing.T) {
 		t.Fatalf("UEs = %+v", ues)
 	}
 
-	amf1.quiet(t, 200*time.Millisecond)
+	amf1.Quiet(t, 200*time.Millisecond)
 }
 
 func TestDownlinkFromAnotherAMFOfTheOperator(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs1 := listenAMF(t, "127.0.1.28")
-	amfs2 := listenAMFAt(t, "127.0.1.29", amfs1.port())
-	h := startGatewayWith(t, ng.Config{AMFPort: amfs1.port(), IntN: func(int) int { return 0 }},
+	amfs2 := listenAMFAt(t, "127.0.1.29", amfs1.Port())
+	h := startGatewayWith(t, ng.Config{CorePort: amfs1.Port(), IntN: func(int) int { return 0 }},
 		operatorA("127.0.1.28", "127.0.1.29"))
 
 	gnb := h.connectGNB(t)
-	gnb.send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
 
 	amf1, _ := setupAMF(t, amfs1, setupResponse(t, "amf1", 255, "00101", guami(t, "00101", 2, 1, 0)))
 	amf2, _ := setupAMF(t, amfs2, setupResponse(t, "amf2", 0, "00101", guami(t, "00101", 2, 1, 1)))
@@ -274,21 +311,21 @@ func TestDownlinkFromAnotherAMFOfTheOperator(t *testing.T) {
 
 	ue := attach(t, gnb, amf1, 5, 1)
 
-	amf2.send(t, &ngap.DownlinkNASTransport{AMFUENGAPID: 2, RANUENGAPID: ue.amfRANID, NASPDU: nas})
+	amf2.Send(t, &ngap.DownlinkNASTransport{AMFUENGAPID: 2, RANUENGAPID: ue.amfRANID, NASPDU: nas})
 
 	_, raw := expectRaw(t, gnb, "initiating", ngap.ProcDownlinkNASTransport)
 	if a, r := ueIDs(t, raw); a != ue.ranAMFID || r != 5 {
 		t.Fatalf("IDs toward the radio = %d/%d", a, r)
 	}
 
-	gnb.send(t, &ngap.UplinkNASTransport{AMFUENGAPID: ue.ranAMFID, RANUENGAPID: 5, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
+	gnb.Send(t, &ngap.UplinkNASTransport{AMFUENGAPID: ue.ranAMFID, RANUENGAPID: 5, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
 
 	_, raw = expectRaw(t, amf2, "initiating", ngap.ProcUplinkNASTransport)
 	if a, _ := ueIDs(t, raw); a != 2 {
 		t.Fatalf("AMF UE NGAP ID = %d, want the new AMF's", a)
 	}
 
-	amf1.quiet(t, 200*time.Millisecond)
+	amf1.Quiet(t, 200*time.Millisecond)
 
 	ues := h.gw.UEs()
 	if len(ues) != 1 || ues[0].AMFTNLAddresses[0] != "127.0.1.29" {
@@ -311,13 +348,13 @@ func settle(t *testing.T, h *harness, gnb *peer, amfs ...string) {
 
 	for {
 		select {
-		case f := <-gnb.msgs:
-			m, ok := f.pdu.(*ngap.InitiatingMessage)
+		case f := <-gnb.Msgs:
+			m, ok := f.PDU.(*ngap.InitiatingMessage)
 			if !ok || m.ProcedureCode != ngap.ProcAMFConfigurationUpdate {
-				t.Fatalf("unexpected %s", procedureName(f.pdu))
+				t.Fatalf("unexpected %s", procedureName(f.PDU))
 			}
 
-			gnb.send(t, &ngap.AMFConfigurationUpdateAcknowledge{})
+			gnb.Send(t, &ngap.AMFConfigurationUpdateAcknowledge{})
 		case <-time.After(300 * time.Millisecond):
 			return
 		}

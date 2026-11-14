@@ -7,6 +7,8 @@ import (
 )
 
 func TestRateLimiterIsBounded(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
 	l := newRateLimiter(1, time.Minute, func() time.Time { return now })
 
@@ -38,6 +40,8 @@ func TestRateLimiterIsBounded(t *testing.T) {
 }
 
 func TestRateLimiterSweepsExpiredKeys(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
 	l := newRateLimiter(1, time.Minute, func() time.Time { return now })
 
@@ -63,6 +67,8 @@ func TestRateLimiterSweepsExpiredKeys(t *testing.T) {
 }
 
 func TestExceededDoesNotCreateState(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
 	l := newRateLimiter(2, time.Hour, func() time.Time { return now })
 
@@ -96,6 +102,8 @@ func TestExceededDoesNotCreateState(t *testing.T) {
 }
 
 func TestFullLimiterAdmitsNewKeys(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
 	l := newRateLimiter(100, time.Hour, func() time.Time { return now })
 

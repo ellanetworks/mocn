@@ -6,6 +6,8 @@
 
 **Ella MOCN** integrates your neutral host radio network with mobile operators. It is a Multi-Operator Core Network (MOCN) gateway: your radios connect to Ella MOCN, and Ella MOCN connects them to each operator's core.
 
+[Get Started Now!](https://docs.ellanetworks.com/mocn/tutorials/connect_your_first_radio/)
+
 ## Key Features
 
 - **One gateway for every operator**: radios connect once, to Ella MOCN, which appears to them as a single MME (4G) or AMF (5G), and to each operator as one eNB and one gNB with the IDs that operator assigned.
@@ -13,12 +15,12 @@
 - **MME and AMF selection**: each UE goes to the operator of the PLMN it selected, and to the MME or AMF that already knows it, or one weighted by capacity.
 - **Untouched signalling**: NAS and security keys pass through byte for byte, never decoded, logged or stored.
 - **Visibility**: the state of every radio, MME and AMF, and UE connections by radio and operator.
-- **Easy to operate**: a single binary with an embedded database, a web UI, an HTTP API, and Prometheus metrics. Install with Docker or from source.
+- **Easy to operate**: a single binary with an embedded database, a web UI, an HTTP API, and Prometheus metrics. Install with Docker, Kubernetes or from source.
 
 ## Quick Links
 
-- [Documentation](docs/index.md)
 - [Website](https://ellanetworks.com/)
+- [Documentation](https://docs.ellanetworks.com/mocn/)
 - [Ella Core](https://github.com/ellanetworks/core)
 - [Contributing](CONTRIBUTING.md)
 

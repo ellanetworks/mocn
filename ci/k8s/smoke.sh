@@ -7,8 +7,8 @@ PREVIOUS_IMAGE="${PREVIOUS_IMAGE:-}"
 
 CLUSTER=mocn-smoke
 NODE="${CLUSTER}-control-plane"
-NETWORK=mocn-s1
-NET="${S1_NET:-192.168.252}"
+NETWORK=mocn-ran
+NET="${RAN_NET:-192.168.252}"
 SUBNET="${NET}.0/24"
 IP_RANGE="${NET}.128/25"
 GATEWAY="${NET}.1"
@@ -149,7 +149,7 @@ endstep
 step "Create the cluster"
 if [ "${MODE}" = multus ]; then
   if ip -4 route show to match "${GATEWAY}" | grep -qv '^default'; then
-    fail "${SUBNET} is already routed on this host; set S1_NET to a free /24"
+    fail "${SUBNET} is already routed on this host; set RAN_NET to a free /24"
   fi
   docker network create "${NETWORK}" --subnet "${SUBNET}" --ip-range "${IP_RANGE}" --gateway "${GATEWAY}" >/dev/null
 fi

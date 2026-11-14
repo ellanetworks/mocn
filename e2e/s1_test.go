@@ -32,6 +32,7 @@ type lab struct {
 	mme      string
 	amf      string
 	core     string
+	enb      string
 	radio    string
 	srsue    string
 	imsi     string
@@ -42,13 +43,13 @@ type lab struct {
 var labs = []lab{
 	{
 		operator: "open5gs", plmn: plmn{MCC: "001", MNC: "01"}, enbID: 1, gnbID: 1, mme: "10.90.0.10", amf: "10.90.0.12",
-		core:  "open5gs",
-		radio: "001-01:macro:411", srsue: "srsue", imsi: "001010000000001", ueNet: "10.45.",
+		core: "open5gs", enb: "srsenb",
+		radio: "eNB:001-01:MacroeNB-0019b", srsue: "srsue", imsi: "001010000000001", ueNet: "10.45.",
 	},
 	{
 		operator: "open5gs-b", plmn: plmn{MCC: "001", MNC: "02"}, enbID: 2, gnbID: 2, mme: "10.90.0.11", amf: "10.90.0.13",
-		core:  "open5gs-b",
-		radio: "001-02:macro:412", srsue: "srsue-b", imsi: "001020000000002", ueNet: "10.46.", pagedUE: true,
+		core: "open5gs-b", enb: "srsenb-b",
+		radio: "eNB:001-02:MacroeNB-0019c", srsue: "srsue-b", imsi: "001020000000002", ueNet: "10.46.", pagedUE: true,
 	},
 }
 
@@ -146,7 +147,7 @@ func eventually(ctx context.Context, t *testing.T, what string, timeout time.Dur
 		select {
 		case <-ctx.Done():
 			t.Fatalf("stopped waiting for %s: %v (last error: %v)", what, ctx.Err(), err)
-		case <-time.After(2 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }
@@ -174,9 +175,9 @@ type coreNode struct {
 }
 
 type globalGNBID struct {
-	PLMN        plmn `json:"plmn"`
-	GNBID       int  `json:"gnb_id"`
-	GNBIDLength int  `json:"gnb_id_length"`
+	PLMN      plmn `json:"plmn"`
+	GNBID     int  `json:"gnb_id"`
+	BitLength int  `json:"bit_length"`
 }
 
 type operator struct {
@@ -210,7 +211,7 @@ type ueConnection struct {
 	Operator string `json:"operator"`
 	PLMN     plmn   `json:"plmn"`
 	TAI      *struct {
-		TAC int `json:"tac"`
+		TAC string `json:"tac"`
 	} `json:"tai"`
 	NRCGI *struct {
 		CellID int `json:"cell_id"`
@@ -219,9 +220,9 @@ type ueConnection struct {
 
 type radio struct {
 	Ref           string       `json:"ref"`
-	Interface     string       `json:"interface"`
+	Type          string       `json:"type"`
 	GlobalENBID   *globalENBID `json:"global_enb_id"`
-	ENBName       string       `json:"enb_name"`
+	Name          string       `json:"name"`
 	State         string       `json:"state"`
 	TNLAddresses  []string     `json:"tnl_addresses"`
 	UEConnections int          `json:"ue_connections"`
@@ -296,7 +297,7 @@ func setUp(ctx context.Context, t *testing.T) *client {
 			Name:        l.operator,
 			PLMNs:       []plmn{l.plmn},
 			GlobalENBID: &globalENBID{PLMN: l.plmn, ENBIDType: "macro", ENBID: l.enbID},
-			GlobalGNBID: &globalGNBID{PLMN: l.plmn, GNBID: l.gnbID, GNBIDLength: 22},
+			GlobalGNBID: &globalGNBID{PLMN: l.plmn, GNBID: l.gnbID, BitLength: 22},
 			MMEs:        []coreNode{{TNLAddresses: []string{l.mme}}},
 			AMFs:        []coreNode{{TNLAddresses: []string{l.amf}}},
 		}
@@ -330,7 +331,7 @@ func TestS1Setup(t *testing.T) {
 		var enbs []radio
 
 		for _, n := range nodes.Items {
-			if n.Interface == "s1" {
+			if n.Type == "eNB" {
 				enbs = append(enbs, n)
 			}
 		}
@@ -421,22 +422,46 @@ func TestS1Setup(t *testing.T) {
 }
 
 func compose(ctx context.Context, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, "docker", append([]string{"compose"}, args...)...).CombinedOutput()
+	var stderr bytes.Buffer
+
+	cmd := exec.CommandContext(ctx, "docker", append([]string{"compose"}, args...)...)
+	cmd.Stderr = &stderr
+
+	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("docker compose %s: %w: %s", strings.Join(args, " "), err, out)
+		return "", fmt.Errorf("docker compose %s: %w: %s%s", strings.Join(args, " "), err, out, stderr.Bytes())
 	}
 
 	return string(out), nil
 }
 
+func logMark(ctx context.Context, t *testing.T, args ...string) int {
+	t.Helper()
+
+	out, err := compose(ctx, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return len(out)
+}
+
 func logContains(ctx context.Context, what string, args ...string) func() error {
+	return logContainsAfter(ctx, what, 0, args...)
+}
+
+func logContainsAfter(ctx context.Context, what string, mark int, args ...string) func() error {
 	return func() error {
 		out, err := compose(ctx, args...)
 		if err != nil {
 			return err
 		}
 
-		if !strings.Contains(out, what) {
+		if len(out) < mark {
+			return fmt.Errorf("log shrank from %d to %d bytes", mark, len(out))
+		}
+
+		if !strings.Contains(out[mark:], what) {
 			return fmt.Errorf("%q not logged yet", what)
 		}
 
@@ -444,8 +469,33 @@ func logContains(ctx context.Context, what string, args ...string) func() error 
 	}
 }
 
+func relayedToCore(ctx context.Context, msg, ref, procedure string) func() error {
+	return func() error {
+		out, err := compose(ctx, "logs", "--no-color", "mocn")
+		if err != nil {
+			return err
+		}
+
+		for line := range strings.SplitSeq(out, "\n") {
+			if strings.Contains(line, `"msg":"`+msg+`","radio":"`+ref+`"`) && strings.Contains(line, `"procedure":"`+procedure+`"`) {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("%s from %s not relayed to the core yet", procedure, ref)
+	}
+}
+
+func mmeLogFile(core string) []string {
+	return []string{"exec", "-T", core, "cat", "/var/log/open5gs/mme.log"}
+}
+
 func mmeLog(ctx context.Context, core, what string) func() error {
-	return logContains(ctx, what, "exec", "-T", core, "cat", "/var/log/open5gs/mme.log")
+	return logContains(ctx, what, mmeLogFile(core)...)
+}
+
+func mmeLogAfter(ctx context.Context, core, what string, mark int) func() error {
+	return logContainsAfter(ctx, what, mark, mmeLogFile(core)...)
 }
 
 func ueConnections(ctx context.Context, c *client) ([]ueConnection, error) {
@@ -459,7 +509,7 @@ func ueConnections(ctx context.Context, c *client) ([]ueConnection, error) {
 }
 
 func ping(ctx context.Context, l lab) error {
-	_, err := compose(ctx, "exec", "-T", l.srsue, "ping", "-c", "3", "-W", "5", "-I", "tun_srsue", l.ueNet+"0.1")
+	_, err := compose(ctx, "exec", "-T", l.srsue, "ping", "-c", "1", "-w", "15", "-I", "tun_srsue", l.ueNet+"0.1")
 	return err
 }
 
@@ -539,7 +589,13 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 	eventually(ctx, t, l.srsue+" attached with an IP", 180*time.Second,
 		logContains(ctx, "Network attach successful. IP: "+l.ueNet, "logs", "--no-color", l.srsue))
 	eventually(ctx, t, l.core+" MME attach complete", 30*time.Second, mmeLog(ctx, l.core, "["+l.imsi+"] Attach complete"))
+	eventually(ctx, t, l.enb+" Initial Context Setup complete", 30*time.Second,
+		logContains(ctx, "Tx S1AP SDU, InitialContextSetupResponse", "logs", "--no-color", l.enb))
+	eventually(ctx, t, "Ella MOCN relayed the Initial Context Setup outcome from "+l.radio, 10*time.Second,
+		relayedToCore(ctx, "relayed S1AP message to MME", l.radio, "InitialContextSetup (9)"))
 	eventually(ctx, t, l.operator+" user plane up", 30*time.Second, func() error { return ping(ctx, l) })
+
+	connected := logMark(ctx, t, mmeLogFile(l.core)...)
 
 	eventually(ctx, t, l.operator+" UE connection in /api/v1/ue-connections", 10*time.Second, func() error {
 		items, err := operatorUEs(ctx, c, l)
@@ -553,7 +609,7 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 
 		u := items[0]
 		if u.PLMN != l.plmn || u.Radio.Ref != l.radio || len(u.MME.TNLAddresses) != 1 || u.MME.TNLAddresses[0] != l.mme ||
-			u.MME.MMEUES1APID == nil || u.TAI == nil || u.TAI.TAC != 1 {
+			u.MME.MMEUES1APID == nil || u.TAI == nil || u.TAI.TAC != "000001" {
 			return fmt.Errorf("UE connection = %+v", u)
 		}
 
@@ -579,8 +635,10 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 			return fmt.Errorf("%d UE connections left", len(items))
 		}
 
-		return mmeLog(ctx, l.core, "Number of eNB-UEs is now 0")()
+		return mmeLogAfter(ctx, l.core, "Number of eNB-UEs is now 0", connected)()
 	})
+
+	idle := logMark(ctx, t, mmeLogFile(l.core)...)
 
 	if l.pagedUE {
 		addr, err := ueAddress(ctx, l)
@@ -588,24 +646,26 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 			t.Fatal(err)
 		}
 
-		if _, err := compose(ctx, "exec", "-T", l.core, "ping", "-c", "5", "-W", "5", addr); err != nil {
+		if _, err := compose(ctx, "exec", "-T", l.core, "ping", "-c", "1", "-w", "15", addr); err != nil {
 			t.Fatalf("downlink ping to the idle UE: %v", err)
 		}
 	} else if err := ping(ctx, l); err != nil {
 		t.Fatalf("ping after release: %v", err)
 	}
 
-	eventually(ctx, t, l.core+" MME service request", 30*time.Second, mmeLog(ctx, l.core, "["+l.imsi+"] Service request"))
+	eventually(ctx, t, l.core+" MME service request", 30*time.Second, mmeLogAfter(ctx, l.core, "["+l.imsi+"] Service request", idle))
 
 	if items, err := operatorUEs(ctx, c, l); err != nil || len(items) != 1 {
 		t.Fatalf("UE connections after service request = %+v, %v", items, err)
 	}
 
+	attached := logMark(ctx, t, mmeLogFile(l.core)...)
+
 	if _, err := compose(ctx, "exec", "-T", l.srsue, "pkill", "-INT", "srsue"); err != nil {
 		t.Fatal(err)
 	}
 
-	eventually(ctx, t, l.core+" MME detach", 30*time.Second, mmeLog(ctx, l.core, "Detach request"))
+	eventually(ctx, t, l.core+" MME detach", 30*time.Second, mmeLogAfter(ctx, l.core, "Detach request", attached))
 
 	eventually(ctx, t, l.operator+" UE context released after detach", 30*time.Second, func() error {
 		items, err := operatorUEs(ctx, c, l)

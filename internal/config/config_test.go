@@ -1,6 +1,7 @@
 package config
 
 import (
+	"go/build"
 	"log/slog"
 	"net/netip"
 	"os"
@@ -181,5 +182,18 @@ func TestLoadMissingFile(t *testing.T) {
 func TestExampleConfig(t *testing.T) {
 	if _, err := Load(filepath.Join("..", "..", "mocn.yaml")); err != nil {
 		t.Fatalf("Load mocn.yaml: %v", err)
+	}
+}
+
+func TestNoGatewayImports(t *testing.T) {
+	pkg, err := build.ImportDir(".", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, imp := range pkg.Imports {
+		if imp == "github.com/ellanetworks/mocn/internal/s1" || imp == "github.com/ellanetworks/mocn/internal/ng" {
+			t.Fatalf("config imports %s", imp)
+		}
 	}
 }

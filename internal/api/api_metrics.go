@@ -15,7 +15,7 @@ const (
 	metricsMaxRequestsInFlight = 32
 )
 
-func GetMetrics(cfg Config) http.Handler {
+func getMetrics(cfg Config) http.Handler {
 	g := cfg.Metrics
 	if g == nil {
 		g = prometheus.NewRegistry()

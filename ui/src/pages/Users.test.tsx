@@ -85,6 +85,37 @@ describe("Users", () => {
     expect(screen.getByText("Read Only")).toBeInTheDocument();
   });
 
+  it("shows no grid when the users fail to load", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => json(500, { error: "boom" })),
+    );
+
+    renderAt("/users");
+
+    expect(await screen.findByText("Failed to load users")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("grid", { name: "Users" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        stubApi({ "/api/v1/users": () => json(200, { result: page([]) }) }),
+      ),
+    );
+
+    renderAt("/users");
+
+    expect(
+      within(await screen.findByRole("grid", { name: "Users" })).getByText(
+        "No users.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("creates a user with a role", async () => {
     const calls = serve();
     renderAt("/users");

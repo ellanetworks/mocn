@@ -3,30 +3,25 @@ package s1
 import (
 	"time"
 
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
 )
 
-type MMEState string
+type MMEState = assoc.State
 
 const (
-	MMEDisconnected MMEState = "disconnected"
-	MMEConnected    MMEState = "connected"
-	MMEUp           MMEState = "up"
-	MMESetupFailed  MMEState = "setup_failed"
+	MMEDisconnected = assoc.Disconnected
+	MMEConnected    = assoc.Connected
+	MMEUp           = assoc.Up
+	MMESetupFailed  = assoc.SetupFailed
 )
 
-var MMEStates = []MMEState{MMEDisconnected, MMEConnected, MMEUp, MMESetupFailed}
-
-type RANNodeState string
+type RANNodeState = assoc.RadioState
 
 const (
-	RANNodeConnected RANNodeState = "connected"
-	RANNodeUp        RANNodeState = "up"
+	RANNodeConnected = assoc.RadioConnected
+	RANNodeUp        = assoc.RadioUp
 )
-
-var RANNodeStates = []RANNodeState{RANNodeConnected, RANNodeUp}
-
-const ENBIDHome db.ENBIDType = "home"
 
 // TS 36.413 clause 9.1.8.5
 type ServedGUMMEIs struct {

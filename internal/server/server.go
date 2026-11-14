@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -48,9 +49,20 @@ type Config struct {
 }
 
 func Run(ctx context.Context, cfg Config) (err error) {
+	owned := false
+
+	defer func() {
+		if !owned {
+			closeListeners(cfg)
+		}
+	}()
+
+	if c := cfg.BcryptCost; c != 0 && (c < bcrypt.MinCost || c > bcrypt.MaxCost) {
+		return fmt.Errorf("bcrypt cost %d is out of range [%d, %d]", c, bcrypt.MinCost, bcrypt.MaxCost)
+	}
+
 	tp, shutdownTracing, err := newTracerProvider(ctx, cfg)
 	if err != nil {
-		_ = cfg.Listener.Close()
 		return err
 	}
 
@@ -65,7 +77,6 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	database, err := db.Open(ctx, cfg.DBPath, db.WithTracerProvider(tp))
 	if err != nil {
-		_ = cfg.Listener.Close()
 		return err
 	}
 
@@ -77,7 +88,6 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	secret, err := database.JWTSecret(ctx)
 	if err != nil {
-		_ = cfg.Listener.Close()
 		return fmt.Errorf("read the JWT secret: %w", err)
 	}
 
@@ -98,8 +108,8 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	var gateways sync.WaitGroup
 
-	gateways.Go(func() { _ = s1Gateway.Run(gatewayCtx) })
-	gateways.Go(func() { _ = ngGateway.Run(gatewayCtx) })
+	gateways.Go(func() { s1Gateway.Run(gatewayCtx) })
+	gateways.Go(func() { ngGateway.Run(gatewayCtx) })
 
 	defer func() {
 		stopGateways()
@@ -138,6 +148,8 @@ func Run(ctx context.Context, cfg Config) (err error) {
 		served <- srv.Serve(cfg.Listener)
 	}()
 
+	owned = true
+
 	v := version.Get()
 
 	s1Address, ngAddress := "", ""
@@ -149,8 +161,9 @@ func Run(ctx context.Context, cfg Config) (err error) {
 		ngAddress = cfg.NGListener.Addr().String()
 	}
 
-	cfg.Logger.InfoContext(ctx, "mocn started", "version", v.Version, "revision", v.Revision,
-		"api", cfg.Listener.Addr().String(), "tls", cfg.TLS != nil, "s1", s1Address, "ng", ngAddress, "db", cfg.DBPath)
+	cfg.Logger.InfoContext(ctx, "mocn started", slog.String("version", v.Version), slog.String("revision", v.Revision),
+		slog.String("api", cfg.Listener.Addr().String()), slog.Bool("tls", cfg.TLS != nil), slog.String("s1", s1Address),
+		slog.String("ng", ngAddress), slog.String("db", cfg.DBPath))
 
 	var failed error
 
@@ -164,10 +177,10 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		cfg.Logger.ErrorContext(shutdownCtx, "api shutdown", "error", err)
+		cfg.Logger.ErrorContext(shutdownCtx, "api shutdown", slog.Any("error", err))
 
 		if err := srv.Close(); err != nil {
-			cfg.Logger.ErrorContext(shutdownCtx, "api close", "error", err)
+			cfg.Logger.ErrorContext(shutdownCtx, "api close", slog.Any("error", err))
 		}
 	}
 
@@ -178,6 +191,20 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	cfg.Logger.InfoContext(shutdownCtx, "mocn stopped")
 
 	return nil
+}
+
+func closeListeners(cfg Config) {
+	if cfg.Listener != nil {
+		_ = cfg.Listener.Close()
+	}
+
+	if cfg.S1Listener != nil {
+		_ = cfg.S1Listener.Close()
+	}
+
+	if cfg.NGListener != nil {
+		_ = cfg.NGListener.Close()
+	}
 }
 
 func newTracerProvider(ctx context.Context, cfg Config) (trace.TracerProvider, func(context.Context) error, error) {

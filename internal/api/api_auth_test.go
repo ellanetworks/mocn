@@ -65,6 +65,8 @@ func (a *testAPI) refresh(t *testing.T, cookie *http.Cookie) int {
 }
 
 func TestInitialize(t *testing.T) {
+	t.Parallel()
+
 	a := newUninitializedAPI(t)
 
 	initialized := func() bool {
@@ -123,6 +125,8 @@ func TestInitialize(t *testing.T) {
 }
 
 func TestInitializeOnce(t *testing.T) {
+	t.Parallel()
+
 	a := newUninitializedAPI(t)
 
 	const callers = 10
@@ -155,6 +159,8 @@ func TestInitializeOnce(t *testing.T) {
 }
 
 func TestLogin(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	rec := serve(a.handler, request(http.MethodPost, "/api/v1/auth/login",
@@ -190,6 +196,8 @@ func TestLogin(t *testing.T) {
 }
 
 func TestLoginWithoutAPasswordIsRefused(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	if _, err := a.store.CreateUser(t.Context(), db.NewUser{Email: "sso@example.com", Role: db.RoleAdmin}, api.MaxNumUsers); err != nil {
@@ -217,6 +225,8 @@ func (a *testAPI) loginFrom(addr, email, password string) int {
 }
 
 func TestLoginRateLimit(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	const client = "198.51.100.1:4242"
@@ -248,6 +258,8 @@ func TestLoginRateLimit(t *testing.T) {
 }
 
 func TestLoginsFromManyNetworksDoNotLockOutOthers(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	for i := range api.MaxRateKeys {
@@ -262,6 +274,8 @@ func TestLoginsFromManyNetworksDoNotLockOutOthers(t *testing.T) {
 }
 
 func TestLoginRateLimitPerIPv6Prefix(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	for i := range api.LoginRateLimit {
@@ -278,6 +292,8 @@ func TestLoginRateLimitPerIPv6Prefix(t *testing.T) {
 }
 
 func TestAccountFailureLimit(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	for i := range api.AccountFailureLimit - 1 {
@@ -312,6 +328,8 @@ func TestAccountFailureLimit(t *testing.T) {
 }
 
 func TestInitAfterInitialization(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	body := `{"email": "other@example.com", "password": "correct horse"}`
 
@@ -327,6 +345,8 @@ func TestInitAfterInitialization(t *testing.T) {
 }
 
 func TestEndedSessionEndsAccessTokens(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	a.createUser(t, "nm@example.com", db.RoleNetworkManager)
 
@@ -352,6 +372,8 @@ func TestEndedSessionEndsAccessTokens(t *testing.T) {
 }
 
 func TestRefresh(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	_, cookie := a.login(t, testAdmin, testPassword)
 
@@ -406,6 +428,8 @@ func TestRefresh(t *testing.T) {
 }
 
 func TestLogout(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	_, cookie := a.login(t, testAdmin, testPassword)
 
@@ -431,6 +455,8 @@ func TestLogout(t *testing.T) {
 }
 
 func TestSessionLimitPerUser(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	var cookies []*http.Cookie
@@ -452,6 +478,8 @@ func TestSessionLimitPerUser(t *testing.T) {
 }
 
 func TestAccessTokens(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	sign := func(method jwt.SigningMethod, key any, claims jwt.MapClaims) string {

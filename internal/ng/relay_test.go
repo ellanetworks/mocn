@@ -62,7 +62,7 @@ type attached struct {
 func attachWith(t *testing.T, gnb, amf *peer, init *ngap.InitialUEMessage, amfID ngap.AMFUENGAPID) attached {
 	t.Helper()
 
-	gnb.send(t, init)
+	gnb.Send(t, init)
 
 	f, raw := expectRaw(t, amf, "initiating", ngap.ProcInitialUEMessage)
 	assertRelayed(t, init, f)
@@ -70,7 +70,7 @@ func attachWith(t *testing.T, gnb, amf *peer, init *ngap.InitialUEMessage, amfID
 	_, amfRANID := ueIDs(t, raw)
 
 	dl := &ngap.DownlinkNASTransport{AMFUENGAPID: amfID, RANUENGAPID: amfRANID, NASPDU: nas}
-	amf.send(t, dl)
+	amf.Send(t, dl)
 
 	f, raw = expectRaw(t, gnb, "initiating", ngap.ProcDownlinkNASTransport)
 	assertRelayed(t, dl, f)
@@ -112,13 +112,15 @@ func contextSetup(t *testing.T, ue attached) *ngap.InitialContextSetupRequest {
 }
 
 func TestUELifecycleThroughRelay(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	logs := &syncBuffer{}
 	logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	amfs := listenAMF(t, "127.0.1.10")
-	h := startGatewayWith(t, ng.Config{AMFPort: amfs.port(), Logger: logger}, operatorA("127.0.1.10"))
+	h := startGatewayWith(t, ng.Config{CorePort: amfs.Port(), Logger: logger}, operatorA("127.0.1.10"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	ue := attach(t, gnb, amf, 7, 1<<39+5)
@@ -138,7 +140,7 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	}
 
 	ul := &ngap.UplinkNASTransport{AMFUENGAPID: ue.ranAMFID, RANUENGAPID: 7, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 0x19b02))}
-	gnb.send(t, ul)
+	gnb.Send(t, ul)
 
 	f, raw := expectRaw(t, amf, "initiating", ngap.ProcUplinkNASTransport)
 	assertRelayed(t, ul, f)
@@ -152,23 +154,23 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	}
 
 	ics := contextSetup(t, ue)
-	amf.send(t, ics)
+	amf.Send(t, ics)
 
 	f, raw = expectRaw(t, gnb, "initiating", ngap.ProcInitialContextSetup)
-	assertRelayed(t, ics, f)
+	assertRelayed(t, ics, withAMFUENGAPID2(t, f, ue.amfID))
 
 	if a, r := ueIDs(t, raw); a != ue.ranAMFID || r != 7 {
 		t.Fatalf("Initial Context Setup Request IDs = %d/%d", a, r)
 	}
 
-	gnb.send(t, &ngap.InitialContextSetupResponse{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: new(ngap.RANUENGAPID(7))})
+	gnb.Send(t, &ngap.InitialContextSetupResponse{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: new(ngap.RANUENGAPID(7))})
 	expectRaw(t, amf, "successful", ngap.ProcInitialContextSetup)
 
 	cmd := &ngap.UEContextReleaseCommand{
 		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: ue.amfID, RANUENGAPID: ue.amfRANID, Pair: true},
 		Cause:     &ngap.Cause{Group: ngap.CauseGroupNAS, Value: 0},
 	}
-	amf.send(t, cmd)
+	amf.Send(t, cmd)
 
 	f, raw = expectRaw(t, gnb, "initiating", ngap.ProcUEContextRelease)
 	assertRelayed(t, cmd, f)
@@ -179,7 +181,7 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	}
 
 	complete := &ngap.UEContextReleaseComplete{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: new(ngap.RANUENGAPID(7))}
-	gnb.send(t, complete)
+	gnb.Send(t, complete)
 
 	f, _ = expectRaw(t, amf, "successful", ngap.ProcUEContextRelease)
 	assertRelayed(t, complete, f)
@@ -195,15 +197,17 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 }
 
 func TestReleaseCommandWithAMFUEIDOnly(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.11")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.11"))
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.11"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	ue := attach(t, gnb, amf, 9, 77)
 
-	amf.send(t, &ngap.UEContextReleaseCommand{
+	amf.Send(t, &ngap.UEContextReleaseCommand{
 		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: 77},
 		Cause:     &ngap.Cause{Group: ngap.CauseGroupNAS, Value: 0},
 	})
@@ -217,20 +221,22 @@ func TestReleaseCommandWithAMFUEIDOnly(t *testing.T) {
 }
 
 func TestUnknownUEIDs(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.12")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.12"))
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.12"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
-	gnb.send(t, &ngap.UplinkNASTransport{AMFUENGAPID: 999, RANUENGAPID: 1, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
+	gnb.Send(t, &ngap.UplinkNASTransport{AMFUENGAPID: 999, RANUENGAPID: 1, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
 
 	ind := expect(t, gnb, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
 	if ind.Cause == nil || ind.Cause.Value != ngap.CauseRadioNetworkUnknownLocalUENGAPID {
 		t.Fatalf("cause = %v", ind.Cause)
 	}
 
-	amf.send(t, &ngap.DownlinkNASTransport{AMFUENGAPID: 5, RANUENGAPID: 12345, NASPDU: nas})
+	amf.Send(t, &ngap.DownlinkNASTransport{AMFUENGAPID: 5, RANUENGAPID: 12345, NASPDU: nas})
 
 	ind = expect(t, amf, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
 	if ind.Cause == nil || ind.Cause.Value != ngap.CauseRadioNetworkUnknownLocalUENGAPID {
@@ -239,7 +245,7 @@ func TestUnknownUEIDs(t *testing.T) {
 
 	ue := attach(t, gnb, amf, 3, 30)
 
-	gnb.send(t, &ngap.UplinkNASTransport{AMFUENGAPID: ue.ranAMFID, RANUENGAPID: 4, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
+	gnb.Send(t, &ngap.UplinkNASTransport{AMFUENGAPID: ue.ranAMFID, RANUENGAPID: 4, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
 
 	ind = expect(t, gnb, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
 	if ind.Cause == nil || ind.Cause.Value != ngap.CauseRadioNetworkInconsistentRemoteUEID {
@@ -255,23 +261,25 @@ func TestUnknownUEIDs(t *testing.T) {
 }
 
 func TestErrorIndicationRelayed(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.13")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.13"))
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.13"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	ue := attach(t, gnb, amf, 1, 10)
 
 	cause := ngap.Cause{Group: ngap.CauseGroupProtocol, Value: ngap.CauseProtocolSemanticError}
-	gnb.send(t, &ngap.ErrorIndication{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: &ue.ranID, Cause: &cause})
+	gnb.Send(t, &ngap.ErrorIndication{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: &ue.ranID, Cause: &cause})
 
 	ind := expect(t, amf, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
 	if *ind.AMFUENGAPID != ue.amfID || *ind.RANUENGAPID != ue.amfRANID || ind.Cause.Value != cause.Value {
 		t.Fatalf("Error Indication = %+v", ind)
 	}
 
-	amf.send(t, &ngap.ErrorIndication{AMFUENGAPID: &ue.amfID, RANUENGAPID: &ue.amfRANID, Cause: &causeUnknownLocal})
+	amf.Send(t, &ngap.ErrorIndication{AMFUENGAPID: &ue.amfID, RANUENGAPID: &ue.amfRANID, Cause: &causeUnknownLocal})
 
 	ind = expect(t, gnb, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
 	if *ind.AMFUENGAPID != ue.ranAMFID || *ind.RANUENGAPID != ue.ranID {
@@ -284,15 +292,17 @@ func TestErrorIndicationRelayed(t *testing.T) {
 var causeUnknownLocal = ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkUnknownLocalUENGAPID}
 
 func TestRadioLossResetsItsUEsTowardTheAMF(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.14")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.14"))
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.14"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	ue := attach(t, gnb, amf, 1, 10)
 
-	_ = gnb.conn.Abort()
+	_ = gnb.Conn.Abort()
 
 	reset := expect(t, amf, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
 	if reset.ResetType.All || len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].AMFUENGAPID != ue.amfID ||
@@ -303,38 +313,49 @@ func TestRadioLossResetsItsUEsTowardTheAMF(t *testing.T) {
 	h.eventually(t, "no UE", func() bool { return len(h.gw.UEs()) == 0 })
 }
 
-func TestAMFLossResetsItsUEsTowardTheRadios(t *testing.T) {
+func TestAMFLossKeepsTheUEsUntilTheirNextMessage(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.15")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.15"))
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.15"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	ue := attach(t, gnb, amf, 1, 10)
 
-	_ = amf.conn.Abort()
+	gnb.Send(t, initialUE(t, 2, "00101"))
+	expectRaw(t, amf, "initiating", ngap.ProcInitialUEMessage)
 
-	reset := expect(t, gnb, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
-	if reset.ResetType.All || len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].AMFUENGAPID != ue.ranAMFID ||
-		*reset.ResetType.Part[0].RANUENGAPID != ue.ranID {
-		t.Fatalf("NG Reset = %+v", reset)
+	_ = amf.Conn.Abort()
+
+	expectReset(t, gnb, connection(nil, 2))
+	gnb.Quiet(t, 200*time.Millisecond)
+
+	if ues := h.gw.UEs(); len(ues) != 1 || ues[0].RadioRANUENGAPID != 1 {
+		t.Fatalf("UEs = %+v, want the connected one", ues)
 	}
+
+	gnb.Send(t, uplinkNAS(t, ue.ranAMFID, ue.ranID))
+	expectReset(t, gnb, connection(&ue.ranAMFID, ue.ranID))
 
 	h.eventually(t, "no UE", func() bool { return len(h.gw.UEs()) == 0 })
 }
 
 func TestResetTranslation(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.16")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.16"))
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.16"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	ue1 := attach(t, gnb, amf, 1, 10)
 	ue2 := attach(t, gnb, amf, 2, 20)
 
 	cause := ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscOMIntervention}
-	amf.send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{Part: ngap.UEAssociatedLogicalNGConnectionList{
+	amf.Send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{Part: ngap.UEAssociatedLogicalNGConnectionList{
 		{AMFUENGAPID: &ue1.amfID}, {RANUENGAPID: ngap.Ptr(ngap.RANUENGAPID(4242))},
 	}}})
 
@@ -349,9 +370,9 @@ func TestResetTranslation(t *testing.T) {
 		t.Fatalf("NG Reset = %+v", reset)
 	}
 
-	gnb.send(t, &ngap.NGResetAcknowledge{ConnectionList: reset.ResetType.Part})
+	gnb.Send(t, &ngap.NGResetAcknowledge{ConnectionList: reset.ResetType.Part})
 
-	gnb.send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{All: true}})
+	gnb.Send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{All: true}})
 	expect(t, gnb, "successful", ngap.ProcNGReset, ngap.ParseNGResetAcknowledge)
 
 	reset = expect(t, amf, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
@@ -364,30 +385,34 @@ func TestResetTranslation(t *testing.T) {
 }
 
 func TestInitialUEMessageForAnUnknownPLMN(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.17")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.17"))
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.17"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
-	gnb.send(t, initialUE(t, 5, "00199"))
+	gnb.Send(t, initialUE(t, 5, "00199"))
 
 	cmd := expect(t, gnb, "initiating", ngap.ProcUEContextRelease, ngap.ParseUEContextReleaseCommand)
 	if !cmd.UENGAPIDs.Pair || cmd.UENGAPIDs.RANUENGAPID != 5 || cmd.Cause.Value != ngap.CauseMiscUnknownPLMNOrSNPN {
 		t.Fatalf("UE Context Release Command = %+v", cmd)
 	}
 
-	gnb.send(t, &ngap.UEContextReleaseComplete{AMFUENGAPID: &cmd.UENGAPIDs.AMFUENGAPID, RANUENGAPID: new(ngap.RANUENGAPID(5))})
+	gnb.Send(t, &ngap.UEContextReleaseComplete{AMFUENGAPID: &cmd.UENGAPIDs.AMFUENGAPID, RANUENGAPID: new(ngap.RANUENGAPID(5))})
 
-	amf.quiet(t, 300*time.Millisecond)
-	gnb.quiet(t, 100*time.Millisecond)
+	amf.Quiet(t, 300*time.Millisecond)
+	gnb.Quiet(t, 100*time.Millisecond)
 }
 
 func TestNewAMFUENGAPID(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	amfs := listenAMF(t, "127.0.1.18")
-	h := startGateway(t, amfs.port(), operatorA("127.0.1.18"))
+	h := startGateway(t, amfs.Port(), operatorA("127.0.1.18"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	ue := attach(t, gnb, amf, 1, 10)
@@ -415,21 +440,21 @@ func TestNewAMFUENGAPID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	amf.sendRaw(t, b)
+	amf.SendRaw(t, b)
 
 	_, raw := expectRaw(t, gnb, "initiating", ngap.ProcUEContextModification)
 	if id, _, err := raw.NewAMFUENGAPID(); err != nil || id != ue.ranAMFID {
 		t.Fatalf("New AMF UE NGAP ID toward the radio = %d, %v, want %d", id, err, ue.ranAMFID)
 	}
 
-	gnb.send(t, &ngap.UplinkNASTransport{AMFUENGAPID: ue.ranAMFID, RANUENGAPID: 1, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
+	gnb.Send(t, &ngap.UplinkNASTransport{AMFUENGAPID: ue.ranAMFID, RANUENGAPID: 1, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
 
 	_, raw = expectRaw(t, amf, "initiating", ngap.ProcUplinkNASTransport)
 	if a, _ := ueIDs(t, raw); a != 11 {
 		t.Fatalf("AMF UE NGAP ID = %d, want the new one", a)
 	}
 
-	amf.send(t, &ngap.DownlinkNASTransport{AMFUENGAPID: 11, RANUENGAPID: ue.amfRANID, NASPDU: nas})
+	amf.Send(t, &ngap.DownlinkNASTransport{AMFUENGAPID: 11, RANUENGAPID: ue.amfRANID, NASPDU: nas})
 	expectRaw(t, gnb, "initiating", ngap.ProcDownlinkNASTransport)
 
 	if got := h.gw.UEs(); len(got) != 1 || *got[0].AMFUENGAPID != 11 {

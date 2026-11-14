@@ -7,6 +7,7 @@ import (
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/core/per"
 	"github.com/ellanetworks/mocn/internal/ng"
+	"github.com/ellanetworks/mocn/internal/sctptest"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -24,7 +25,7 @@ func attr(s sdktrace.ReadOnlySpan, key string) attribute.Value {
 func waitSpan(t *testing.T, rec *tracetest.SpanRecorder, name, side, messageType string) sdktrace.ReadOnlySpan {
 	t.Helper()
 
-	deadline := time.Now().Add(waitFor)
+	deadline := time.Now().Add(sctptest.WaitFor)
 
 	for {
 		for _, s := range rec.Ended() {
@@ -43,13 +44,15 @@ func waitSpan(t *testing.T, rec *tracetest.SpanRecorder, name, side, messageType
 }
 
 func TestNGAPSpans(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	rec := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec), sdktrace.WithIDGenerator(tracing.IDGenerator()))
 
 	amfs := listenAMF(t, "127.0.1.40")
-	h := startGatewayWith(t, ng.Config{AMFPort: amfs.port(), TracerProvider: tp}, operatorA("127.0.1.40"))
+	h := startGatewayWith(t, ng.Config{CorePort: amfs.Port(), TracerProvider: tp}, operatorA("127.0.1.40"))
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	for _, s := range []struct {
@@ -111,10 +114,10 @@ func TestNGAPSpans(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	amf.sendRaw(t, b)
+	amf.SendRaw(t, b)
 	expectRaw(t, gnb, "initiating", ngap.ProcInitialContextSetup)
 
-	gnb.send(t, &ngap.InitialContextSetupResponse{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: new(ngap.RANUENGAPID(7))})
+	gnb.Send(t, &ngap.InitialContextSetupResponse{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: new(ngap.RANUENGAPID(7))})
 	expectRaw(t, amf, "successful", ngap.ProcInitialContextSetup)
 
 	resp := waitSpan(t, rec, "ngap/receive", "radio", "InitialContextSetupResponse")

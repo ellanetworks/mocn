@@ -1,9 +1,11 @@
 package ng
 
 import (
+	"log/slog"
 	"slices"
 
 	"github.com/ellanetworks/core/ngap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
 )
 
@@ -16,16 +18,11 @@ type ranSetup struct {
 	drx         ngap.PagingDRX
 }
 
-type operatorView struct {
-	id    int64
-	name  string
-	plmns []db.PLMN
-}
-
 type amfPool struct {
-	plmns   []db.PLMN
-	served  []GUAMI
-	support []PLMNSupport
+	plmns       []db.PLMN
+	served      []GUAMI
+	unavailable []GUAMI
+	support     []PLMNSupport
 }
 
 type gnbConfig struct {
@@ -34,21 +31,31 @@ type gnbConfig struct {
 }
 
 type amfConfig struct {
-	served  []GUAMI
-	support []PLMNSupport
+	served      []GUAMI
+	support     []PLMNSupport
+	unavailable []GUAMI
 }
 
-func (c gnbConfig) equal(o gnbConfig) bool {
+func (c gnbConfig) Equal(o gnbConfig) bool {
 	return c.drx == o.drx && tasEqual(c.tas, o.tas)
 }
 
-func (c amfConfig) equal(o amfConfig) bool {
+func (c amfConfig) Equal(o amfConfig) bool {
 	return slices.Equal(c.served, o.served) && slices.EqualFunc(c.support, o.support, func(x, y PLMNSupport) bool {
 		return x.PLMN == y.PLMN && slices.Equal(x.Slices, y.Slices)
-	})
+	}) && len(c.unavailable) == len(o.unavailable) &&
+		!slices.ContainsFunc(c.unavailable, func(g GUAMI) bool { return !slices.Contains(o.unavailable, g) })
 }
 
-func (c amfConfig) empty() bool {
+// TS 38.413 clause 8.7.1.1
+// TS 38.413 clause 8.7.3.2
+func (c amfConfig) Pushed() amfConfig {
+	c.unavailable = nil
+
+	return c
+}
+
+func (c amfConfig) Empty() bool {
 	return len(c.served) == 0 || len(c.support) == 0
 }
 
@@ -60,8 +67,9 @@ func tasEqual(a, b []TA) bool {
 	})
 }
 
-func broadcasts(tas []TA, plmns []db.PLMN) bool {
-	for _, ta := range tas {
+// TS 38.300 clause 4.10.2.3
+func (s ranSetup) Broadcasts(plmns []db.PLMN) bool {
+	for _, ta := range s.tas {
 		for _, b := range ta.BroadcastPLMNs {
 			if slices.Contains(plmns, b.PLMN) {
 				return true
@@ -72,17 +80,43 @@ func broadcasts(tas []TA, plmns []db.PLMN) bool {
 	return false
 }
 
-// TS 38.300 clause 4.10.2.3
-func servingOperators(tas []TA, ops []operatorView) []int64 {
-	var ids []int64
-
-	for _, o := range ops {
-		if broadcasts(tas, o.plmns) {
-			ids = append(ids, o.id)
+// TS 38.413 clause 8.5.1
+func (s ranSetup) Serves(tai assoc.TAI) bool {
+	for _, ta := range s.tas {
+		if ta.TAC == tai.TAC && slices.ContainsFunc(ta.BroadcastPLMNs, func(b BroadcastPLMN) bool { return b.PLMN == tai.PLMN }) {
+			return true
 		}
 	}
 
-	return ids
+	return false
+}
+
+func (protocol) CoreConfig(plmns []db.PLMN, setups []ranSetup) (gnbConfig, bool) {
+	return gnbConfigFor(plmns, setups)
+}
+
+func (protocol) ConfigAttrs(cfg gnbConfig) []slog.Attr {
+	return []slog.Attr{
+		slog.Int("supported_tas", len(cfg.tas)), slog.Int("default_paging_drx", pagingDRXFrames(cfg.drx)),
+	}
+}
+
+func (p protocol) RadioConfigLocked() amfConfig {
+	pools := []amfPool{}
+
+	for c := range p.core.ClientsLocked() {
+		if c.State != assoc.Up {
+			continue
+		}
+
+		if o, ok := p.core.OperatorLocked(c.OperatorID()); ok {
+			pools = append(pools, amfPool{
+				plmns: o.PLMNs, served: c.Info.served, unavailable: c.Info.unavailable, support: c.Info.support,
+			})
+		}
+	}
+
+	return mergeAMFConfig(pools)
 }
 
 func addSlices(dst []SNSSAI, src []SNSSAI) []SNSSAI {
@@ -189,5 +223,17 @@ func mergeAMFConfig(pools []amfPool) amfConfig {
 		}
 	}
 
+	for _, g := range cfg.served {
+		if !slices.ContainsFunc(pools, func(pool amfPool) bool {
+			return slices.Contains(pool.plmns, g.PLMN) && slices.Contains(pool.served, g) && !slices.Contains(pool.unavailable, g)
+		}) {
+			cfg.unavailable = append(cfg.unavailable, g)
+		}
+	}
+
 	return cfg
+}
+
+func (s ranSetup) Ref() string {
+	return s.globalGNBID.Ref()
 }

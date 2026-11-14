@@ -25,11 +25,10 @@ test.describe("AMF status", () => {
         name: OPERATOR,
         pws_operator: false,
         plmns: [{ mcc: "901", mnc: "76" }],
-        global_enb_id: null,
         global_gnb_id: {
           plmn: { mcc: "901", mnc: "76" },
           gnb_id: 1,
-          gnb_id_length: 22,
+          bit_length: 22,
         },
         mmes: [],
         amfs: [{ tnl_addresses: [UNREACHABLE_AMF] }],
@@ -47,7 +46,7 @@ test.describe("AMF status", () => {
   }) => {
     await page.goto(`/operators/${encodeURIComponent(OPERATOR)}`);
 
-    const nodes = page.getByRole("grid", { name: /^Core network nodes/ });
+    const nodes = page.getByRole("grid", { name: /^Core Network Nodes/ });
     const row = nodes.getByRole("row").filter({
       has: page.getByRole("gridcell", { name: UNREACHABLE_AMF, exact: true }),
     });
@@ -59,9 +58,17 @@ test.describe("AMF status", () => {
     await expect(
       row.getByRole("gridcell", { name: "AMF (5G)", exact: true }),
     ).toBeVisible();
+    await row
+      .getByRole("button", { name: `View AMF ${UNREACHABLE_AMF}` })
+      .click();
+    const details = page.getByRole("dialog", {
+      name: `AMF ${UNREACHABLE_AMF}`,
+    });
     await expect(
-      row.getByRole("gridcell", { name: "None", exact: true }),
-    ).toBeVisible();
+      details.getByRole("row").filter({ hasText: "Overload" }),
+    ).toContainText("None");
+    await details.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await assertNoA11yViolations(page, "Operator AMF status");
 
     const token = await adminToken(request);

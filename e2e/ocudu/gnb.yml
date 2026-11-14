@@ -4,23 +4,23 @@ ran_node_name: ${GNB_NAME}
 
 cu_cp:
   amf:
-    addr: ${AMF_ADDR}
+    addrs: ${AMF_ADDR}
     port: 38412
-    bind_addr: ${GNB_ADDR}
+    bind_addrs: ${GNB_ADDR}
     supported_tracking_areas:
       - tac: 1
         plmn_list:
           - plmn: "${PLMN}"
             tai_slice_support_list:
               - sst: 1
-  inactivity_timer: 30
+  inactivity_timer: ${INACTIVITY_TIMER}
 
 ru_sdr:
   device_driver: zmq
   device_args: tx_port=tcp://${ZMQ_ADDR}:2000,rx_port=tcp://${UE_ADDR}:2001,base_srate=23.04e6
   srate: 23.04
-  tx_gain: 75
-  rx_gain: 75
+  tx_gain: 0
+  rx_gain: 0
 
 cell_cfg:
   dl_arfcn: 368500
@@ -39,6 +39,10 @@ cell_cfg:
       dci_format_0_1_and_1_1: false
   prach:
     prach_config_index: 1
+  pdsch:
+    mcs_table: qam64
+  pusch:
+    mcs_table: qam64
 
 log:
   filename: stdout

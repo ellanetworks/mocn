@@ -47,20 +47,26 @@ func newNGTestAPI(t *testing.T, s1View api.S1View, ngView api.NGView) *testAPI {
 }
 
 func TestOperatorAMFStatus(t *testing.T) {
+	t.Parallel()
+
 	since := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 	capacity, reduction := uint8(10), uint8(40)
 	plmn := db.PLMN{MCC: "001", MNC: "002"}
 	action := ng.OverloadRejectRRCCRSignalling
 	g1 := ng.GUAMI{PLMN: plmn, AMFRegionID: 2, AMFSetID: 1, AMFPointer: 3}
+	g2 := ng.GUAMI{PLMN: plmn, AMFRegionID: 2, AMFSetID: 1, AMFPointer: 4}
 
 	a := newNGTestAPI(t, nil, fakeNG{amfs: map[string]ng.AMFStatus{
 		"2001:db8::1": {
 			State: ng.AMFUp, Since: since, PrimaryTNLAddress: "2001:db8::1", AMFName: "amf1",
 			ServedGUAMIs: []ng.GUAMI{g1}, UnavailableGUAMIs: []ng.GUAMI{g1}, RelativeAMFCapacity: &capacity,
 			PLMNSupport: []ng.PLMNSupport{{PLMN: plmn, Slices: []ng.SNSSAI{{SST: 1}, {SST: 2, SD: "0a0b0c"}}}},
-			Overload: &ng.Overload{
-				Action: &action, TrafficLoadReductionIndication: &reduction,
-				Slices: []ng.SliceOverload{{SNSSAIs: []ng.SNSSAI{{SST: 1}}}},
+			Overload: []ng.Overload{
+				{
+					GUAMIs: []ng.GUAMI{g1}, Action: &action, TrafficLoadReductionIndication: &reduction,
+					Slices: []ng.SliceOverload{{SNSSAIs: []ng.SNSSAI{{SST: 1}}}},
+				},
+				{GUAMIs: []ng.GUAMI{g2}},
 			},
 		},
 	}, ues: []ng.UE{
@@ -77,9 +83,12 @@ func TestOperatorAMFStatus(t *testing.T) {
 		State: ng.AMFUp, Since: since, PrimaryTNLAddress: "2001:db8::1", AMFName: "amf1",
 		ServedGUAMIs: []api.GUAMI{guami}, UnavailableGUAMIs: []api.GUAMI{guami}, RelativeAMFCapacity: &capacity,
 		PLMNSupport: []api.PLMNSupport{{PLMN: api.PLMN{MCC: "001", MNC: "002"}, SNSSAIs: []api.SNSSAI{{SST: 1}, {SST: 2, SD: "0a0b0c"}}}},
-		Overload: &api.AMFOverload{
-			OverloadAction: &action, TrafficLoadReductionIndication: &reduction,
-			Slices: []api.SliceOverload{{SNSSAIs: []api.SNSSAI{{SST: 1}}}},
+		Overload: []api.AMFOverload{
+			{
+				GUAMIs: []api.GUAMI{guami}, OverloadAction: &action, TrafficLoadReductionIndication: &reduction,
+				Slices: []api.SliceOverload{{SNSSAIs: []api.SNSSAI{{SST: 1}}}},
+			},
+			{GUAMIs: []api.GUAMI{{PLMN: api.PLMN{MCC: "001", MNC: "002"}, AMFRegionID: 2, AMFSetID: 1, AMFPointer: 4}}},
 		},
 		UEConnections: 1,
 	}}}
@@ -91,14 +100,16 @@ func TestOperatorAMFStatus(t *testing.T) {
 		t.Fatalf("GET = %d %s", code, result)
 	}
 
-	if !reflect.DeepEqual(got.UEConnectionsByRadio, []api.RadioUEConnections{{Radio: "001-002:gnb22:1", UEConnections: 2}}) {
+	if !reflect.DeepEqual(got.UEConnectionsByRadio, []api.RadioUEConnections{{Ref: "gNB:001-002:000001@22", Type: "gNB", UEConnections: 2}}) {
 		t.Fatalf("ue_connections_by_radio = %+v", got.UEConnectionsByRadio)
 	}
 
 	for _, field := range []string{
 		`"served_guamis":[{"plmn":{"mcc":"001","mnc":"002"},"amf_region_id":2,"amf_set_id":1,"amf_pointer":3}]`,
 		`"plmn_support":[{"plmn":{"mcc":"001","mnc":"002"},"snssais":[{"sst":1},{"sst":2,"sd":"0a0b0c"}]}]`,
-		`"overload":{"overload_action":"reject_rrc_cr_signalling","traffic_load_reduction_indication":40,"slices":[{"snssais":[{"sst":1}]}]}`,
+		`"overload":[{"guamis":[{"plmn":{"mcc":"001","mnc":"002"},"amf_region_id":2,"amf_set_id":1,"amf_pointer":3}],` +
+			`"overload_action":"reject_rrc_cr_signalling","traffic_load_reduction_indication":40,"slices":[{"snssais":[{"sst":1}]}]},` +
+			`{"guamis":[{"plmn":{"mcc":"001","mnc":"002"},"amf_region_id":2,"amf_set_id":1,"amf_pointer":4}]}]`,
 	} {
 		if !strings.Contains(string(result), field) {
 			t.Errorf("%s missing from %s", field, result)
@@ -107,6 +118,8 @@ func TestOperatorAMFStatus(t *testing.T) {
 }
 
 func TestRadiosAndUEConnectionsOverBothInterfaces(t *testing.T) {
+	t.Parallel()
+
 	enbSince := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 	gnbSince := enbSince.Add(time.Minute)
 	plmn := db.PLMN{MCC: "001", MNC: "01"}
@@ -142,33 +155,40 @@ func TestRadiosAndUEConnectionsOverBothInterfaces(t *testing.T) {
 	}
 
 	want := api.Radio{
-		Ref: "001-01:gnb24:412", Interface: "ng",
-		GlobalGNBID: &api.GlobalGNBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, ID: 412, Length: 24},
-		RANNodeName: "gnb1", DefaultPagingDRX: 128, State: "up", ConnectedSince: gnbSince,
-		SupportedTAs: []api.TA{{TAC: 0x10203, BroadcastPLMNs: []api.PLMN{{MCC: "001", MNC: "01"}}}},
+		Ref: "gNB:001-01:00019c@24", Type: "gNB",
+		GlobalGNBID: &api.GlobalGNBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, ID: 412, BitLength: 24},
+		Name:        "gnb1", DefaultPagingDRX: 128, State: "up", ConnectedAt: gnbSince,
+		SupportedTAs: []api.SupportedTA{{TAC: "010203", BroadcastPLMNs: []api.BroadcastPLMN{
+			{PLMN: api.PLMN{MCC: "001", MNC: "01"}, SNSSAIs: []api.SNSSAI{{SST: 1}}},
+		}}},
 		TNLAddresses: []string{"10.0.0.6"}, UEConnections: 1,
 	}
 
-	if got.Items[0].Interface != "s1" || !reflect.DeepEqual(got.Items[1], want) {
+	if got.Items[0].Type != "eNB" || got.Items[0].Ref != "eNB:001-01:MacroeNB-0019b" ||
+		!reflect.DeepEqual(got.Items[1], want) {
 		t.Fatalf("radios = %+v", got.Items)
 	}
 
 	want.UEConnectionsByOperator = []api.OperatorUEConnections{{Operator: "Operator A", UEConnections: 1}}
 
-	code, result, _ = a.do(t, http.MethodGet, "/api/v1/radios/001-01:gnb24:412", "")
+	code, result, _ = a.do(t, http.MethodGet, "/api/v1/radios/gNB:001-01:00019c@24", "")
 	if one := decode[api.Radio](t, result); code != http.StatusOK || !reflect.DeepEqual(one, want) {
 		t.Fatalf("GET one = %d %s", code, result)
 	}
 
-	code, result, _ = a.do(t, http.MethodGet, "/api/v1/ue-connections?radio=001-01:gnb24:412", "")
+	if !strings.Contains(string(result), `"broadcast_plmns":[{"plmn":{"mcc":"001","mnc":"01"},"snssais":[{"sst":1}]}]`) {
+		t.Fatalf("GET one = %s, want the slices of each broadcast PLMN", result)
+	}
+
+	code, result, _ = a.do(t, http.MethodGet, "/api/v1/ue-connections?radio=gNB:001-01:00019c@24", "")
 
 	conns := decode[api.ListUEConnectionsResponse](t, result)
 	wantConn := api.UEConnection{
 		Interface: "ng",
-		Radio:     api.UEConnectionRadio{Ref: "001-01:gnb24:412", RANUENGAPID: new(uint32(7)), AMFUENGAPID: new(uint64(9))},
+		Radio:     api.UEConnectionRadio{Ref: "gNB:001-01:00019c@24", RANUENGAPID: new(uint32(7)), AMFUENGAPID: new(uint64(9))},
 		AMF:       &api.UEConnectionAMF{TNLAddresses: []string{"10.0.1.1"}, RANUENGAPID: 3, AMFUENGAPID: &amfID},
 		Operator:  "Operator A", PLMN: api.PLMN{MCC: "001", MNC: "01"}, Since: gnbSince,
-		TAI:   &api.TAI{PLMN: api.PLMN{MCC: "001", MNC: "01"}, TAC: 0x10203},
+		TAI:   &api.TAI{PLMN: api.PLMN{MCC: "001", MNC: "01"}, TAC: "010203"},
 		NRCGI: &api.NRCGI{PLMN: api.PLMN{MCC: "001", MNC: "01"}, CellID: 0x123456789},
 	}
 

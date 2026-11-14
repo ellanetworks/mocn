@@ -13,6 +13,8 @@ import (
 )
 
 func TestRoles(t *testing.T) {
+	t.Parallel()
+
 	const (
 		admin = 1 << iota
 		readOnly

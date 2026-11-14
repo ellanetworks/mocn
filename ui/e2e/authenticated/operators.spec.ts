@@ -13,6 +13,9 @@ const operatorPath = (name: string) =>
 const detailPath = (name: string) =>
   new RegExp(`/operators/${encodeURIComponent(name)}$`);
 
+const LTE = "4G Gateway Identity (Global eNB ID)";
+const NR = "5G Gateway Identity (Global gNB ID)";
+
 const heading = (name: string) => new RegExp(`^Operators\\s*/\\s*${name}$`);
 
 const removeOperator = async (
@@ -46,7 +49,7 @@ test.describe("Admin", () => {
       await expect(page.getByText(message)).toBeVisible();
       await expect(page.getByRole("dialog")).toHaveCount(0);
     };
-    const nodes = page.getByRole("grid", { name: /^Core network nodes/ });
+    const nodes = page.getByRole("grid", { name: /^Core Network Nodes/ });
     const overview = page.getByRole("table", { name: "Overview" });
 
     await page.goto("/operators");
@@ -66,68 +69,75 @@ test.describe("Admin", () => {
     await expect(
       page.getByRole("button", { name: "Edit", exact: true }),
     ).toHaveCount(0);
-    const add = page.getByRole("button", { name: "Add", exact: true });
+    const add = page.getByRole("button", {
+      name: "Add Core Node",
+      exact: true,
+    });
     await expect(add).toBeDisabled();
     await expect(nodes).toContainText("No core network nodes.");
-
-    await overview.getByText("Gateway identity", { exact: true }).hover();
+    await page.keyboard.press("Tab");
+    await add.locator("..").focus();
     await expect(
       page.getByRole("tooltip", {
-        name: "Assigned by the operator. Ella MOCN uses it to identify itself to this operator's core: the Global eNB ID to its MMEs (4G) and the Global gNB ID to its AMFs (5G).",
+        name: "Set the 4G or 5G gateway identity first. MMEs need the Global eNB ID, AMFs the Global gNB ID.",
+      }),
+    ).toBeVisible();
+
+    await overview.getByText(LTE, { exact: true }).hover();
+    await expect(
+      page.getByRole("tooltip", {
+        name: "How Ella MOCN introduces itself to this operator's MMEs, as the eNB it stands for. Assigned by the operator.",
       }),
     ).toBeVisible();
     await expect(overview.getByText("Not set")).toHaveCount(2);
 
-    const editIdentity = async () => {
-      await overview
-        .getByRole("button", { name: "Edit Gateway identity" })
-        .click();
-      const identity = page.getByRole("dialog", {
-        name: "Edit Gateway Identity",
-      });
-      return {
-        identity,
-        lte: identity.getByRole("group", { name: "4G (Global eNB ID)" }),
-        nr: identity.getByRole("group", { name: "5G (Global gNB ID)" }),
-      };
+    const editIdentity = async (label: string, title: string) => {
+      await overview.getByRole("button", { name: `Edit ${label}` }).click();
+      return page.getByRole("dialog", { name: title });
     };
 
-    let { identity, lte, nr } = await editIdentity();
-    await lte.getByRole("switch", { name: "Set" }).click();
-    await lte.getByRole("textbox", { name: "eNB ID" }).fill("1048576");
-    await lte.getByRole("textbox", { name: "eNB ID" }).blur();
-    await expect(lte.getByText("0 to 1048575")).toBeVisible();
-    await expect(identity.getByRole("button", { name: "Save" })).toBeDisabled();
-    await lte.getByRole("textbox", { name: "eNB ID" }).fill("703710");
-    await nr.getByRole("switch", { name: "Set" }).click();
-    await nr
+    dialog = await editIdentity(LTE, "Edit 4G Gateway Identity");
+    await dialog.getByRole("switch", { name: "Set a Global eNB ID" }).click();
+    await dialog.getByRole("textbox", { name: "eNB ID" }).fill("1048576");
+    await dialog.getByRole("textbox", { name: "eNB ID" }).blur();
+    await expect(dialog.getByText("0 to 1048575")).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+    await dialog.getByRole("textbox", { name: "eNB ID" }).fill("703710");
+    await assertNoA11yViolations(page, "Edit 4G Gateway Identity dialog");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await saved("4G gateway identity saved successfully.");
+
+    dialog = await editIdentity(NR, "Edit 5G Gateway Identity");
+    await dialog.getByRole("switch", { name: "Set a Global gNB ID" }).click();
+    await dialog
       .getByRole("textbox", { name: "gNB ID", exact: true })
       .fill("74565");
-    await assertNoA11yViolations(page, "Edit Gateway Identity dialog");
-    await identity.getByRole("button", { name: "Save" }).click();
-    await saved("Gateway identity saved successfully.");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await saved("5G gateway identity saved successfully.");
     await expect(
-      overview.getByText("901/71 · Macro (20 bits) · 703710"),
+      overview.getByText("901-71 · Macro (20 bits) · 703710"),
     ).toBeVisible();
-    await expect(overview.getByText("901/71 · 74565 (22 bits)")).toBeVisible();
+    await expect(overview.getByText("901-71 · 74565 (22 bits)")).toBeVisible();
 
     await add.click();
-    dialog = page.getByRole("dialog", { name: "Add Core Network Node" });
-    await expect(dialog.getByRole("radio", { name: "MME" })).toBeChecked();
+    dialog = page.getByRole("dialog", { name: "Add Core Node" });
+    await expect(dialog.getByRole("radio", { name: "MME (4G)" })).toBeChecked();
     await dialog.getByRole("textbox", { name: "Address 1" }).fill("10.0.0.1");
     await dialog.getByRole("button", { name: "Add address" }).click();
-    await dialog.getByRole("textbox", { name: "Address 2" }).fill("10.0.0.1");
+    await dialog
+      .getByRole("textbox", { name: "Address 2" })
+      .fill("::ffff:10.0.0.1");
     await dialog.getByRole("textbox", { name: "Address 2" }).blur();
     await expect(dialog.getByText("Duplicate address")).toBeVisible();
     await expect(
       dialog.getByRole("button", { name: "Add", exact: true }),
     ).toBeDisabled();
     await dialog.getByRole("textbox", { name: "Address 2" }).fill("10.0.0.2");
-    await assertNoA11yViolations(page, "Add Core Network Node dialog");
+    await assertNoA11yViolations(page, "Add Core Node dialog");
     await dialog.getByRole("button", { name: "Add", exact: true }).click();
     await saved("MME added successfully.");
     await expect(
-      page.getByRole("heading", { level: 2, name: "Core network nodes (1)" }),
+      page.getByRole("heading", { level: 2, name: "Core Network Nodes (1)" }),
     ).toBeVisible();
     await expect(
       nodes.getByRole("gridcell", { name: "10.0.0.1, 10.0.0.2", exact: true }),
@@ -135,20 +145,45 @@ test.describe("Admin", () => {
     await expect(
       nodes.getByRole("gridcell", { name: "MME (4G)", exact: true }),
     ).toBeVisible();
-    ({ identity, lte, nr } = await editIdentity());
-    await expect(lte.getByRole("switch", { name: "Set" })).toBeDisabled();
-    await expect(lte.getByText("Delete the MMEs first")).toBeVisible();
-    await nr.getByRole("switch", { name: "Set" }).click();
-    await identity.getByRole("button", { name: "Save" }).click();
-    await saved("Gateway identity saved successfully.");
-    await expect(overview.getByText("Not set")).toHaveCount(1);
-    await add.click();
-    dialog = page.getByRole("dialog", { name: "Add Core Network Node" });
-    await expect(dialog.getByRole("radio", { name: "AMF" })).toBeDisabled();
-    await dialog.getByText("AMF", { exact: true }).hover();
+
+    await nodes
+      .getByRole("button", { name: "View MME 10.0.0.1, 10.0.0.2" })
+      .click();
+    dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("table")).toContainText("10.0.0.1, 10.0.0.2");
+    await assertNoA11yViolations(page, "Core node details dialog");
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    dialog = await editIdentity(LTE, "Edit 4G Gateway Identity");
+    const enbSwitch = dialog.getByRole("switch", {
+      name: "Set a Global eNB ID",
+    });
+    await expect(enbSwitch).toBeDisabled();
+    await page.keyboard.press("Tab");
+    await enbSwitch.locator("xpath=ancestor::*[@tabindex='0'][1]").focus();
     await expect(
       page.getByRole("tooltip", {
-        name: "Set the 5G gateway identity (Global gNB ID) first",
+        name: "Delete this operator's MMEs before you remove this identity.",
+      }),
+    ).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    dialog = await editIdentity(NR, "Edit 5G Gateway Identity");
+    await dialog.getByRole("switch", { name: "Set a Global gNB ID" }).click();
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await saved("5G gateway identity saved successfully.");
+    await expect(overview.getByText("Not set")).toHaveCount(1);
+    await add.click();
+    dialog = page.getByRole("dialog", { name: "Add Core Node" });
+    await expect(
+      dialog.getByRole("radio", { name: "AMF (5G)" }),
+    ).toBeDisabled();
+    await dialog.getByText("AMF (5G)", { exact: true }).hover();
+    await expect(
+      page.getByRole("tooltip", {
+        name: "Set the 5G gateway identity (Global gNB ID) first.",
       }),
     ).toBeVisible();
     await dialog.getByRole("button", { name: "Cancel" }).click();
@@ -162,18 +197,18 @@ test.describe("Admin", () => {
     await saved("MME deleted successfully.");
     await expect(nodes).toContainText("No core network nodes.");
 
-    ({ identity, nr } = await editIdentity());
-    await nr.getByRole("switch", { name: "Set" }).click();
-    await nr
+    dialog = await editIdentity(NR, "Edit 5G Gateway Identity");
+    await dialog.getByRole("switch", { name: "Set a Global gNB ID" }).click();
+    await dialog
       .getByRole("textbox", { name: "gNB ID", exact: true })
       .fill("74565");
-    await identity.getByRole("button", { name: "Save" }).click();
-    await saved("Gateway identity saved successfully.");
-    await expect(overview.getByText("901/71 · 74565 (22 bits)")).toBeVisible();
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await saved("5G gateway identity saved successfully.");
+    await expect(overview.getByText("901-71 · 74565 (22 bits)")).toBeVisible();
 
     await add.click();
-    dialog = page.getByRole("dialog", { name: "Add Core Network Node" });
-    await dialog.getByRole("radio", { name: "AMF" }).check();
+    dialog = page.getByRole("dialog", { name: "Add Core Node" });
+    await dialog.getByRole("radio", { name: "AMF (5G)" }).check();
     await dialog.getByRole("textbox", { name: "Address 1" }).fill("10.0.1.1");
     await dialog.getByRole("button", { name: "Add", exact: true }).click();
     await saved("AMF added successfully.");
@@ -183,10 +218,10 @@ test.describe("Admin", () => {
 
     const pwsRow = overview
       .getByRole("row")
-      .filter({ hasText: "PWS operator" });
+      .filter({ hasText: "PWS Operator" });
     await expect(pwsRow).toContainText("No");
     await expect(page.getByRole("switch")).toHaveCount(0);
-    await overview.getByRole("button", { name: "Edit PWS operator" }).click();
+    await overview.getByRole("button", { name: "Edit PWS Operator" }).click();
     dialog = page.getByRole("dialog", { name: "Edit PWS Operator" });
     await assertNoA11yViolations(page, "Edit PWS Operator dialog");
     const pws = dialog.getByRole("switch", { name: "PWS operator" });
@@ -210,7 +245,7 @@ test.describe("Admin", () => {
       global_gnb_id: {
         plmn: { mcc: "901", mnc: "71" },
         gnb_id: 74565,
-        gnb_id_length: 22,
+        bit_length: 22,
       },
       mmes: [],
       amfs: [{ tnl_addresses: ["10.0.1.1"] }],
@@ -276,7 +311,8 @@ test.describe("Read Only", () => {
     await page.goto("/operators");
 
     const row = page.getByRole("row").filter({ hasText: READ_ONLY_NAME });
-    await expect(row).toContainText("901/72");
+    await expect(row).toContainText("901-72");
+    await expect(row).toContainText("None");
     await expect(
       page.getByRole("button", { name: "Create", exact: true }),
     ).toHaveCount(0);
@@ -288,9 +324,9 @@ test.describe("Read Only", () => {
     ).toBeVisible();
     await expect(page.getByText("Not set")).toHaveCount(2);
     await expect(page.getByRole("main").getByRole("button")).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Edit Gateway identity" }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: `Edit ${LTE}` })).toHaveCount(
+      0,
+    );
     await expect(page.getByRole("switch")).toHaveCount(0);
   });
 });

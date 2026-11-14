@@ -20,6 +20,8 @@ func openTestDB(t *testing.T) *DB {
 }
 
 func TestOpenReachesLatestVersion(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 
 	var version int
@@ -33,6 +35,8 @@ func TestOpenReachesLatestVersion(t *testing.T) {
 }
 
 func TestOpenIsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "mocn.db")
 
 	for range 2 {
@@ -48,6 +52,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 }
 
 func TestOpenRejectsNewerSchema(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "mocn.db")
 
@@ -70,6 +76,8 @@ func TestOpenRejectsNewerSchema(t *testing.T) {
 }
 
 func TestReadersDoNotWrite(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 
 	createTestUser(t, d, "a@example.com", RoleAdmin)
@@ -80,6 +88,8 @@ func TestReadersDoNotWrite(t *testing.T) {
 }
 
 func TestDatabaseIsPrivate(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mocn.db")
 

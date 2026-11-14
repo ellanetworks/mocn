@@ -2,17 +2,16 @@ package ng
 
 import (
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/mocn/internal/db"
-	"github.com/ellanetworks/mocn/internal/tracing"
+	"github.com/ellanetworks/mocn/internal/uetable"
 )
 
 const (
-	maxAMFUENGAPID = 1<<40 - 1
-	maxRANUENGAPID = 1<<32 - 1
+	maxAMFUENGAPID ngap.AMFUENGAPID = 1<<40 - 1
+	maxRANUENGAPID ngap.RANUENGAPID = 1<<32 - 1
 )
 
 var errNoUEID = errors.New("no free UE NGAP ID")
@@ -44,217 +43,51 @@ type UE struct {
 	NRCGI            *NRCGI
 }
 
-type ueContext struct {
-	ran        *RANAssociation
-	ranID      ngap.RANUENGAPID
-	ranAMFID   ngap.AMFUENGAPID
-	amf        *AMFAssociation
-	amfRANID   ngap.RANUENGAPID
-	amfID      ngap.AMFUENGAPID
-	amfIDKnown bool
-	told       bool
-	operatorID int64
-	plmn       db.PLMN
-	radio      db.GlobalGNBID
-	since      time.Time
-	tai        *TAI
-	nrcgi      *NRCGI
-	release    *time.Timer
-	traceID    tracing.RANTraceID
+type ueInfo struct {
+	radio   db.GlobalGNBID
+	tai     *TAI
+	nrcgi   *NRCGI
+	told    bool
+	guami   *GUAMI
+	sets    []amfSet
+	unbound bool
+	backup  amfName
 }
 
-type ranUEKey struct {
-	ran *RANAssociation
-	id  ngap.RANUENGAPID
+type (
+	ueContext = uetable.UE[*ranAssoc, *amfAssoc, ngap.RANUENGAPID, ngap.AMFUENGAPID, ueInfo]
+	ueTable   = uetable.Table[*ranAssoc, *amfAssoc, ngap.RANUENGAPID, ngap.AMFUENGAPID, ueInfo]
+)
+
+func newUETable() *ueTable {
+	return uetable.New[*ranAssoc, *amfAssoc, ngap.RANUENGAPID, ngap.AMFUENGAPID, ueInfo](
+		maxRANUENGAPID, maxAMFUENGAPID, errNoUEID)
 }
 
-type amfUEKey struct {
-	amf *AMFAssociation
-	id  ngap.AMFUENGAPID
-}
-
-type ueTable struct {
-	byRANAMFID map[ngap.AMFUENGAPID]*ueContext
-	byRANID    map[ranUEKey]*ueContext
-	byAMFRANID map[ngap.RANUENGAPID]*ueContext
-	byAMFID    map[amfUEKey]*ueContext
-	nextAMFID  ngap.AMFUENGAPID
-	nextRANID  ngap.RANUENGAPID
-}
-
-func newUETable() ueTable {
-	return ueTable{
-		byRANAMFID: map[ngap.AMFUENGAPID]*ueContext{},
-		byRANID:    map[ranUEKey]*ueContext{},
-		byAMFRANID: map[ngap.RANUENGAPID]*ueContext{},
-		byAMFID:    map[amfUEKey]*ueContext{},
-	}
-}
-
-func (t *ueTable) add(u *ueContext) error {
-	if u.amf != nil && len(t.byAMFRANID) > maxRANUENGAPID {
-		return errNoUEID
-	}
-
-	for {
-		t.nextAMFID = (t.nextAMFID + 1) & maxAMFUENGAPID
-		if _, used := t.byRANAMFID[t.nextAMFID]; !used {
-			break
-		}
-	}
-
-	u.ranAMFID = t.nextAMFID
-	t.byRANAMFID[u.ranAMFID] = u
-	t.byRANID[ranUEKey{u.ran, u.ranID}] = u
-
-	if u.amf == nil {
-		return nil
-	}
-
-	for {
-		t.nextRANID++
-		if _, used := t.byAMFRANID[t.nextRANID]; !used {
-			break
-		}
-	}
-
-	u.amfRANID = t.nextRANID
-	t.byAMFRANID[u.amfRANID] = u
-
-	return nil
-}
-
-func (t *ueTable) setAMFID(u *ueContext, id ngap.AMFUENGAPID) {
-	if u.amfIDKnown {
-		delete(t.byAMFID, amfUEKey{u.amf, u.amfID})
-	}
-
-	u.amfID, u.amfIDKnown = id, true
-	t.byAMFID[amfUEKey{u.amf, id}] = u
-}
-
-func (t *ueTable) rebind(u *ueContext, a *AMFAssociation) {
-	if u.amfIDKnown {
-		delete(t.byAMFID, amfUEKey{u.amf, u.amfID})
-	}
-
-	u.amf, u.amfIDKnown = a, false
-}
-
-func (t *ueTable) remove(us ...*ueContext) []*ueContext {
-	var out []*ueContext
-
-	for _, u := range us {
-		if u == nil || t.byRANAMFID[u.ranAMFID] != u || slices.Contains(out, u) {
-			continue
-		}
-
-		delete(t.byRANAMFID, u.ranAMFID)
-		delete(t.byRANID, ranUEKey{u.ran, u.ranID})
-
-		if u.amf != nil {
-			delete(t.byAMFRANID, u.amfRANID)
-		}
-
-		if u.release != nil {
-			u.release.Stop()
-		}
-
-		u.traceID = tracing.RANTraceID{}
-
-		if u.amfIDKnown {
-			delete(t.byAMFID, amfUEKey{u.amf, u.amfID})
-		}
-
-		out = append(out, u)
-	}
-
-	return out
-}
-
-func (t *ueTable) where(keep func(*ueContext) bool) []*ueContext {
-	var out []*ueContext
-
-	for _, u := range t.byRANAMFID {
-		if keep(u) {
-			out = append(out, u)
-		}
-	}
-
-	slices.SortFunc(out, func(a, b *ueContext) int {
-		switch {
-		case a.ranAMFID < b.ranAMFID:
-			return -1
-		case a.ranAMFID > b.ranAMFID:
-			return 1
-		default:
-			return 0
-		}
-	})
-
-	return out
-}
-
-func (t *ueTable) onRAN(n *RANAssociation, amfID *ngap.AMFUENGAPID, ranID *ngap.RANUENGAPID) []*ueContext {
-	var out []*ueContext
-
-	if amfID != nil {
-		if u := t.byRANAMFID[*amfID]; u != nil && u.ran == n {
-			out = append(out, u)
-		}
-	}
-
-	if ranID != nil {
-		if u := t.byRANID[ranUEKey{n, *ranID}]; u != nil && !slices.Contains(out, u) {
-			out = append(out, u)
-		}
-	}
-
-	return out
-}
-
-func (t *ueTable) onAMF(a *AMFAssociation, amfID *ngap.AMFUENGAPID, ranID *ngap.RANUENGAPID) []*ueContext {
-	var out []*ueContext
-
-	if ranID != nil {
-		if u := t.byAMFRANID[*ranID]; u != nil && u.amf == a {
-			out = append(out, u)
-		}
-	}
-
-	if amfID != nil {
-		if u := t.byAMFID[amfUEKey{a, *amfID}]; u != nil && !slices.Contains(out, u) {
-			out = append(out, u)
-		}
-	}
-
-	return out
-}
-
-func (u *ueContext) snapshot() UE {
+func snapshotUE(u *ueContext) UE {
 	s := UE{
-		RadioGlobalGNBID: u.radio,
-		RadioRANUENGAPID: uint32(u.ranID),
-		RadioAMFUENGAPID: uint64(u.ranAMFID),
-		AMFTNLAddresses:  u.amf.TNLAddresses(),
-		AMFRANUENGAPID:   uint32(u.amfRANID),
-		OperatorID:       u.operatorID,
-		PLMN:             u.plmn,
-		Since:            u.since,
+		RadioGlobalGNBID: u.Ext.radio,
+		RadioRANUENGAPID: uint32(u.RANID),
+		RadioAMFUENGAPID: uint64(u.RANCoreID),
+		AMFTNLAddresses:  u.Core.TNLAddresses(),
+		AMFRANUENGAPID:   uint32(u.CoreRANID),
+		OperatorID:       u.OperatorID,
+		PLMN:             u.PLMN,
+		Since:            u.Since,
 	}
 
-	if u.amfIDKnown {
-		id := uint64(u.amfID)
+	if u.CoreIDKnown {
+		id := uint64(u.CoreID)
 		s.AMFUENGAPID = &id
 	}
 
-	if u.tai != nil {
-		tai := *u.tai
+	if u.Ext.tai != nil {
+		tai := *u.Ext.tai
 		s.TAI = &tai
 	}
 
-	if u.nrcgi != nil {
-		cgi := *u.nrcgi
+	if u.Ext.nrcgi != nil {
+		cgi := *u.Ext.nrcgi
 		s.NRCGI = &cgi
 	}
 

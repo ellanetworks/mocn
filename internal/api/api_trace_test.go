@@ -15,6 +15,8 @@ import (
 )
 
 func TestAPISpans(t *testing.T) {
+	t.Parallel()
+
 	rec := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
 

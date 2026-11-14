@@ -66,10 +66,10 @@ func New() *Metrics {
 		}, []string{"interface", "result"}),
 		Overload: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "ellamocn_overload_messages_total",
-			Help: "OVERLOAD START and OVERLOAD STOP messages received from MMEs, by interface (s1), procedure " +
-				"(overload_start, overload_stop) and result (relayed: sent to the radios that broadcast one of the operator's PLMNs, including the replay of an ongoing OVERLOAD START to a radio after its S1 Setup; " +
-				"no_radio: no such radio is up; ignored: OVERLOAD STOP for GUMMEIs with no ongoing overload action; " +
-				"invalid: undecodable or with an invalid GUMMEI).",
+			Help: "OVERLOAD START and OVERLOAD STOP messages received from MMEs and AMFs, by interface (s1, ng), procedure " +
+				"(overload_start, overload_stop) and result (relayed: sent to the radios that broadcast one of the operator's PLMNs, including the replay of an ongoing OVERLOAD START to a radio after its S1 or NG Setup; " +
+				"no_radio: no such radio is up; ignored: OVERLOAD STOP for GUMMEIs or GUAMIs with no ongoing overload action; " +
+				"invalid: undecodable or with an invalid GUMMEI or GUAMI).",
 		}, []string{"interface", "procedure", "result"}),
 	}
 }

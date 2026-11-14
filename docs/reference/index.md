@@ -4,5 +4,6 @@ This section provides reference material for Ella MOCN, from configuration optio
 
 - [API](api/index.md)
 - [Configuration File](config_file.md)
+- [Connectivity](connectivity.md)
 - [Observability](observability.md)
 - [System Requirements](system_reqs.md)

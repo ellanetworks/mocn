@@ -41,4 +41,4 @@ telemetry:
 | `telemetry.enabled` | `false` | Export [traces](observability.md#traces). |
 | `telemetry.otlp_endpoint` | | The `host:port` of an OTLP/gRPC collector, over plain gRPC. Required when `telemetry.enabled` is `true`. |
 
-MMEs are reached on port 36412, with SCTP PPID 18. AMFs are reached on port 38412, with SCTP PPID 60.
+See [Connectivity](connectivity.md) for the ports Ella MOCN uses.

@@ -86,6 +86,8 @@ func TestPprofIndexLinks(t *testing.T) {
 }
 
 func TestPprofWithAPIToken(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	token := a.createToken(t, a.token, "/api/v1/users/me/api-tokens", `{"name": "pyroscope"}`)
 

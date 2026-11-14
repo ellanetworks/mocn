@@ -1,32 +1,39 @@
-import type { AnyENBIDType, GlobalGNBID, PLMN } from "@/queries/operators";
-import { apiFetch } from "@/queries/utils";
+import type {
+  GlobalENBID,
+  GlobalGNBID,
+  PLMN,
+  RANNodeType,
+  SNSSAI,
+} from "@/queries/operators";
+import {
+  apiFetch,
+  type Page,
+  type PageParams,
+  withQuery,
+} from "@/queries/utils";
 
 export type RadioState = "connected" | "up";
 
-export type RadioInterface = "s1" | "ng";
-
-export interface RadioGlobalENBID {
+export interface BroadcastPLMN {
   plmn: PLMN;
-  enb_id_type: AnyENBIDType;
-  enb_id: number;
+  snssais?: SNSSAI[];
 }
 
 export interface SupportedTA {
-  tac: number;
-  broadcast_plmns: PLMN[];
+  tac: string;
+  broadcast_plmns: BroadcastPLMN[];
 }
 
 export interface Radio {
   ref?: string;
-  interface: RadioInterface;
-  global_enb_id?: RadioGlobalENBID | null;
-  global_gnb_id?: GlobalGNBID | null;
-  enb_name?: string;
-  ran_node_name?: string;
+  type: RANNodeType;
+  global_enb_id?: GlobalENBID;
+  global_gnb_id?: GlobalGNBID;
+  name?: string;
   supported_tas: SupportedTA[];
   default_paging_drx?: number;
   state: RadioState;
-  connected_since: string;
+  connected_at: string;
   tnl_addresses: string[];
   ue_connections: number;
   ue_connections_by_operator?: OperatorUEConnections[];
@@ -37,18 +44,28 @@ export interface OperatorUEConnections {
   ue_connections: number;
 }
 
-export const listRadios = async (): Promise<Radio[]> => {
-  const { items } = await apiFetch<{ items: Radio[] }>("/api/v1/radios");
-  return items;
-};
+export interface RadioIdentity {
+  type: RANNodeType;
+  global_enb_id?: GlobalENBID;
+  global_gnb_id?: GlobalGNBID;
+  name?: string;
+}
+
+export const listRadios = ({ page = 1, perPage = 25 }: PageParams = {}) =>
+  apiFetch<Page<Radio>>(
+    withQuery("/api/v1/radios", { page, per_page: perPage }),
+  );
 
 export const radioPath = (ref: string) => `/radios/${encodeURIComponent(ref)}`;
 
 export const getRadio = (ref: string): Promise<Radio> =>
   apiFetch<Radio>(`/api/v1/radios/${encodeURIComponent(ref)}`);
 
-export const radioName = (radio: Radio) =>
-  radio.enb_name ?? radio.ran_node_name;
+export const radioID = (radio: RadioIdentity) =>
+  radio.global_enb_id?.enb_id ?? radio.global_gnb_id?.gnb_id;
 
-export const radioLabel = (radio: Radio) =>
-  radioName(radio) ?? radio.ref ?? radio.tnl_addresses.join(", ");
+export const radioLabel = (radio: RadioIdentity, fallback: string) => {
+  if (radio.name !== undefined) return radio.name;
+  const id = radioID(radio);
+  return id === undefined ? fallback : `${radio.type} ${id}`;
+};

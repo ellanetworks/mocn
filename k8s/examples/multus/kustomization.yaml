@@ -3,7 +3,7 @@ kind: Kustomization
 namespace: ella
 resources:
   - ../../base
-  - mocn-s1-nad.yaml
+  - mocn-ran-nad.yaml
 configMapGenerator:
   - name: mocn-config
     files:
@@ -25,5 +25,5 @@ patches:
             annotations:
               k8s.v1.cni.cncf.io/networks: |
                 [
-                  {"name": "mocn-s1", "interface": "s1"}
+                  {"name": "mocn-ran", "interface": "ran"}
                 ]
