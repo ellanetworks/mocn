@@ -3,6 +3,8 @@ package s1
 import (
 	"context"
 
+	"github.com/ellanetworks/core/s1ap"
+	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -25,4 +27,8 @@ func (g *Gateway) CloseMMESends() {
 		return g.core.Transport().Send(ctx, metrics.SideCore, nil, a.Operator(), msg, stream)
 	}
 	g.relay.mu.Unlock()
+}
+
+func OwnsCell(id db.GlobalENBID, broadcast []db.PLMN, c s1ap.EUTRANCGI) bool {
+	return ranSetup{globalENBID: id, tas: []TA{{TAC: 1, BroadcastPLMNs: broadcast}}}.ownsCell(c)
 }

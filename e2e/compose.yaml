@@ -19,39 +19,51 @@ services:
         condition: service_healthy
     volumes:
       - ./open5gs/provision.js:/provision.js:ro
-    entrypoint: ["mongosh", "--quiet", "mongodb://10.90.0.20/open5gs", "/provision.js"]
+    entrypoint: ["mongosh", "--quiet", "mongodb://10.90.0.20/open5gs_b", "/provision.js"]
     restart: "no"
     networks: [core]
 
-  open5gs:
-    image: gradiant/open5gs:2.7.6
-    init: true
-    user: root
+  ella-core:
+    image: ghcr.io/ellanetworks/ella-core:v1.22.0@sha256:4cba7826cf049d6318d794c0b6cd7460c11d926926905c1585848a3ac050e0a4
+    restart: unless-stopped
+    entrypoint: ["/bin/core", "--config", "/core.yaml"]
     privileged: true
-    depends_on:
-      provision:
-        condition: service_completed_successfully
-    entrypoint: ["/start.sh"]
-    environment:
-      DB_URI: mongodb://10.90.0.20/open5gs
-      S1_ADDR: 10.90.0.10
-      GTPU_ADDR: 10.90.1.10
-      MCC: "001"
-      MNC: "01"
-      MME_GID: "2"
-      MME_CODE: "1"
-      TAC: "1"
-      MME_NAME: open5gs-mme0
-      UE_NET: "10.45"
     volumes:
-      - ./open5gs/start.sh:/start.sh:ro
-      - ./open5gs/config/open5gs:/config:ro
-      - ./open5gs/config/freeDiameter:/etc/freeDiameter:ro
+      - ./ella-core/core.yaml:/core.yaml:ro
+    tmpfs:
+      - /data
+    ports:
+      - "127.0.0.1:${E2E_CORE_API_PORT:-5033}:5002"
     networks:
       core:
-        ipv4_address: 10.90.0.10
+        ipv4_address: 10.90.0.14
       ran:
-        ipv4_address: 10.90.1.10
+        driver_opts:
+          com.docker.network.endpoint.ifname: n3
+        ipv4_address: 10.90.1.14
+      n6:
+        driver_opts:
+          com.docker.network.endpoint.ifname: n6
+        ipv4_address: 10.90.3.2
+
+  router:
+    image: ghcr.io/ellanetworks/ubuntu-router:0.1@sha256:76f570197990e16d997c51bc2fa1cbef97a22d69ada6e08e9b48d8fe8150ed1c
+    command:
+      - exec
+      - /bin/bash
+      - -lc
+      - >
+        ip route add 10.45.0.0/22 dev n6 via 10.90.3.2;
+        ethtool -K n6 tx off;
+        trap : TERM INT;
+        sleep infinity & wait
+    restart: unless-stopped
+    privileged: true
+    networks:
+      n6:
+        driver_opts:
+          com.docker.network.endpoint.ifname: n6
+        ipv4_address: 10.90.3.3
 
   open5gs-b:
     image: gradiant/open5gs:2.7.6
@@ -82,35 +94,6 @@ services:
         ipv4_address: 10.90.0.11
       ran:
         ipv4_address: 10.90.1.11
-
-  open5gs-5g:
-    image: gradiant/open5gs:2.7.6
-    init: true
-    user: root
-    privileged: true
-    depends_on:
-      provision:
-        condition: service_completed_successfully
-    entrypoint: ["/start.sh"]
-    environment:
-      DB_URI: mongodb://10.90.0.20/open5gs
-      NGAP_ADDR: 10.90.0.12
-      GTPU_ADDR: 10.90.1.12
-      MCC: "001"
-      MNC: "01"
-      AMF_REGION: "2"
-      AMF_SET: "1"
-      TAC: "1"
-      AMF_NAME: open5gs-amf-a
-      UE_NET: "10.47"
-    volumes:
-      - ./open5gs/start-5gc.sh:/start.sh:ro
-      - ./open5gs/config/5gc:/config:ro
-    networks:
-      core:
-        ipv4_address: 10.90.0.12
-      ran:
-        ipv4_address: 10.90.1.12
 
   open5gs-5g-b:
     image: gradiant/open5gs:2.7.6
@@ -345,7 +328,7 @@ services:
     environment:
       GNB_ID: "3"
       GNB_NAME: gnb-c
-      PLMN: "00101"
+      PLMN: "00102"
       AMF_ADDR: 10.90.1.30
       GNB_ADDR: 10.90.1.25
       ZMQ_ADDR: 10.90.2.10
@@ -367,7 +350,7 @@ services:
     depends_on: [gnb-c]
     entrypoint: ["sh", "-c", "envsubst < /ue.tmpl > /tmp/ue.conf && exec srsue /tmp/ue.conf"]
     environment:
-      IMSI: "001010000000021"
+      IMSI: "001020000000022"
       ZMQ_ADDR: 10.90.2.11
       GNB_ADDR: 10.90.2.10
     volumes:
@@ -391,3 +374,7 @@ networks:
     ipam:
       config:
         - subnet: 10.90.2.0/24
+  n6:
+    ipam:
+      config:
+        - subnet: 10.90.3.0/24

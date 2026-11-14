@@ -94,6 +94,17 @@ func indicateTransferSyntax(ctx context.Context, peer assoc.Sender, log *slog.Lo
 	indicate(ctx, peer, log, ueIDs{}, causeTransferSyntax, diag)
 }
 
+// TS 38.413 clause 10.3.4.2
+// TS 38.413 clause 10.3.5
+func indicateNotify(ctx context.Context, peer assoc.Sender, log *slog.Logger, proc ngap.ProcedureCode,
+	trigger ngap.TriggeringMessage, d ngap.Diagnostics,
+) {
+	indicate(ctx, peer, log, ueIDs{}, causeAbstractNotify, &ngap.CriticalityDiagnostics{
+		ProcedureCode: &proc, TriggeringMessage: &trigger, ProcedureCriticality: ngap.Ptr(ngap.ProcedureCriticality(proc)),
+		IEsCriticalityDiagnostics: d.Report(),
+	})
+}
+
 func undecodable(ctx context.Context, peer assoc.Sender, from string, log *slog.Logger, pdu ngap.PDU, err error) {
 	tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
 	log.WarnContext(ctx, "undecodable NGAP message from "+from, slog.Any("error", err))

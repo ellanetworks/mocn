@@ -43,13 +43,15 @@ type Gateway[S Setup, R RadioConfig[R], I any, C Equaler[C]] struct {
 
 	reconcileMu sync.Mutex
 
-	mu        sync.Mutex
-	loop      *loop
-	operators []Operator
-	cores     map[string]*Client[I, C]
-	stopping  map[*Client[I, C]]struct{}
-	radios    map[*sctp.SCTPConn]*Radio[S, R]
-	changed   chan struct{}
+	mu            sync.Mutex
+	loop          *loop
+	operators     []Operator
+	cores         map[string]*Client[I, C]
+	stopping      map[*Client[I, C]]struct{}
+	radios        map[*sctp.SCTPConn]*Radio[S, R]
+	restarts      map[string][]restart
+	restartRadios []string
+	changed       chan struct{}
 }
 
 type loop struct {
@@ -81,6 +83,7 @@ func New[S Setup, R RadioConfig[R], I any, C Equaler[C]](cfg Config, names Names
 		cores:    map[string]*Client[I, C]{},
 		stopping: map[*Client[I, C]]struct{}{},
 		radios:   map[*sctp.SCTPConn]*Radio[S, R]{},
+		restarts: map[string][]restart{},
 		changed:  make(chan struct{}),
 	}
 
@@ -260,7 +263,10 @@ func (g *Gateway[S, R, I, C]) applyLocked(ops []db.Operator, start bool) []*Clie
 			continue
 		}
 
-		g.operators = append(g.operators, Operator{ID: o.ID, Name: o.Name, PLMNs: slices.Clone(o.PLMNs)})
+		g.operators = append(g.operators, Operator{
+			ID: o.ID, Name: o.Name, PLMNs: slices.Clone(o.PLMNs), PWS: o.PWSOperator, GlobalENBID: o.GlobalENBID,
+			GlobalGNBID: o.GlobalGNBID,
+		})
 
 		for _, node := range nodes {
 			wanted[node.Key] = true
@@ -422,6 +428,8 @@ func (g *Gateway[S, R, I, C]) changedLocked(ctx context.Context) {
 	for _, n := range g.radios {
 		g.syncRadioLocked(ctx, n)
 	}
+
+	g.sendRestartsLocked(ctx)
 }
 
 func (g *Gateway[S, R, I, C]) clientOfLocked(a *Core) (*Client[I, C], bool) {

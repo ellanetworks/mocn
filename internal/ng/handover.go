@@ -252,14 +252,13 @@ func servingCell(radios []*ranAssoc, plmn db.PLMN, nci uint64) *ranAssoc {
 	var serving, exact []*ranAssoc
 
 	for _, n := range radios {
-		id := n.Setup.globalGNBID
-		if id.Length <= 0 || id.Length > ngap.NRCellIdentityBits || nci>>(ngap.NRCellIdentityBits-id.Length) != uint64(id.ID) {
+		if !n.Setup.ownsCellID(nci) {
 			continue
 		}
 
 		serving = append(serving, n)
 
-		if id.PLMN == plmn {
+		if n.Setup.globalGNBID.PLMN == plmn {
 			exact = append(exact, n)
 		}
 	}

@@ -35,6 +35,7 @@ type Metrics struct {
 	Paging    *prometheus.CounterVec
 	Overload  *prometheus.CounterVec
 	Handover  *prometheus.CounterVec
+	PWS       *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -80,6 +81,18 @@ func New() *Metrics {
 				"no_mme, no_amf: no selectable MME or AMF of the source MME or AMF set is up; " +
 				"invalid: undecodable or missing an IE needed for routing; error: internal failure or failed send).",
 		}, []string{"interface", "procedure", "result"}),
+		PWS: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "ellamocn_pws_messages_total",
+			Help: "PWS messages: WRITE-REPLACE WARNING REQUEST, KILL REQUEST and PWS CANCEL REQUEST received from MMEs and AMFs, " +
+				"PWS RESTART INDICATION and PWS FAILURE INDICATION received from radios, by interface (s1, ng), procedure " +
+				"(write_replace_warning, kill, pws_cancel, pws_restart_indication, pws_failure_indication) and result " +
+				"(relayed: sent to the radios covering the warning area, or to every MME or AMF of the PWS operator that is up; " +
+				"not_pws_operator: from an operator that is not the PWS operator, answered with no broadcast area; " +
+				"no_radio: no radio that is up covers the warning area, answered with no broadcast area; " +
+				"timeout: a radio the request was sent to did not answer within 3 seconds, counted once per radio; " +
+				"no_pws_operator: no operator with MMEs or AMFs on the interface is the PWS operator, dropped; " +
+				"no_mme, no_amf: no MME or AMF of the PWS operator is up, a PWS RESTART INDICATION is kept and sent when one is up; invalid: undecodable).",
+		}, []string{"interface", "procedure", "result"}),
 	}
 }
 
@@ -98,7 +111,7 @@ type Source interface {
 }
 
 func (m *Metrics) Collectors(sources ...Source) []prometheus.Collector {
-	return []prometheus.Collector{m.Setups, m.Overload, m.InitialUE, m.Paging, m.Handover, stateCollector(sources)}
+	return []prometheus.Collector{m.Setups, m.Overload, m.InitialUE, m.Paging, m.Handover, m.PWS, stateCollector(sources)}
 }
 
 type stateCollector []Source

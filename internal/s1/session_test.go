@@ -81,6 +81,8 @@ func TestENBConfigurationUpdateRetriedAfterAFailure(t *testing.T) {
 	mme.Send(t, &s1ap.ENBConfigurationUpdateFailure{
 		Cause: &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified},
 	})
+	mme.Send(t, &s1ap.MMEConfigurationUpdate{})
+	expect(t, mme, "successful", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdateAcknowledge)
 
 	enb2 := h.connectENB(t)
 	setUpENB(t, enb2, setupRequest(t, 2, "enb2", s1ap.PagingDRXv128, ta(t, 2, "00101")))

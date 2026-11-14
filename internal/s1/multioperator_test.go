@@ -64,10 +64,17 @@ type twoOperators struct {
 func startTwoOperators(t *testing.T, ipA, ipB string) twoOperators {
 	t.Helper()
 
-	la := listenMME(t, ipA)
-	lb := listenMMEAt(t, ipB, la.Port())
+	return startTwoOperatorsWith(t, s1.Config{}, operatorA(ipA), operatorB(ipB))
+}
 
-	h := startGateway(t, la.Port(), operatorA(ipA), operatorB(ipB))
+func startTwoOperatorsWith(t *testing.T, cfg s1.Config, a, b db.Operator) twoOperators {
+	t.Helper()
+
+	la := listenMME(t, a.MMEs[0].TNLAddresses[0])
+	lb := listenMMEAt(t, b.MMEs[0].TNLAddresses[0], la.Port())
+
+	cfg.CorePort = la.Port()
+	h := startGatewayWith(t, cfg, a, b)
 	x := twoOperators{h: h, mmeA: la.Accept(t), mmeB: lb.Accept(t)}
 
 	x.enbA = h.connectENB(t)

@@ -32,6 +32,7 @@ var names = assoc.Names{
 	RadioUpdate: "AMF Configuration Update",
 	NoCore:      "no_amf",
 	CoreFailure: "amf_failure",
+	Kill:        "pws_cancel",
 }
 
 type (
@@ -45,10 +46,12 @@ type (
 type Config = assoc.Config
 
 type Gateway struct {
-	core  *gateway
-	cfg   assoc.Config
-	log   *slog.Logger
-	relay *relay
+	core    *gateway
+	cfg     assoc.Config
+	log     *slog.Logger
+	relay   *relay
+	writes  *writes
+	cancels *cancels
 }
 
 type protocol struct {
@@ -61,6 +64,8 @@ func New(cfg Config) *Gateway {
 	g.cfg = g.core.Config()
 	g.log = g.cfg.Logger
 	g.relay = newRelay(g)
+	g.writes = assoc.NewWarnings[warningKey, *ngap.BroadcastCompletedAreaList](g.cfg.WarningWait)
+	g.cancels = assoc.NewWarnings[warningKey, *ngap.BroadcastCancelledAreaList](g.cfg.WarningWait)
 
 	return g
 }

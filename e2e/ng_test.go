@@ -17,6 +17,9 @@ type lab5G struct {
 	plmn     plmn
 	amf      string
 	core     string
+	coreLog  coreLog
+	dn       string
+	dnHost   string
 	gnb      string
 	ue       string
 	radio    string
@@ -24,14 +27,26 @@ type lab5G struct {
 	ueNet    string
 }
 
+var ellaCoreAMFLog = coreLog{
+	args:     []string{"logs", "--no-color", "ella-core"},
+	accepted: []string{`"msg":"Radio setup complete"`, `"ran_addr":"10.90.0.30`, `"rat":"5g"`},
+	attached: []string{`"msg":"UE registration accepted"`, ellaSUPI, `"rat":"5g"`},
+}
+
+var open5gsAMFLog = coreLog{
+	args:     []string{"exec", "-T", "open5gs-5g-b", "cat", "/var/log/open5gs/amf.log"},
+	accepted: []string{"gNB-N2 accepted[10.90.0.30]"},
+	attached: []string{"[imsi-{imsi}] Registration complete"},
+}
+
 var labs5G = []lab5G{
 	{
-		operator: "open5gs", plmn: plmn{MCC: "001", MNC: "01"}, amf: "10.90.0.12", core: "open5gs-5g", gnb: "gnb",
-		ue: "srsue-5g", radio: "gNB:001-01:000001@22", imsi: "001010000000011", ueNet: "10.47.",
+		operator: "ella-core", plmn: plmn{MCC: "001", MNC: "01"}, amf: "10.90.0.14", core: "ella-core", coreLog: ellaCoreAMFLog,
+		dn: "10.90.3.3", dnHost: "router", gnb: "gnb", ue: "srsue-5g", radio: "gNB:001-01:000001@22", imsi: "001010000000011", ueNet: "10.45.",
 	},
 	{
-		operator: "open5gs-b", plmn: plmn{MCC: "001", MNC: "02"}, amf: "10.90.0.13", core: "open5gs-5g-b", gnb: "gnb-b",
-		ue: "srsue-5g-b", radio: "gNB:001-02:000002@22", imsi: "001020000000012", ueNet: "10.48.",
+		operator: "open5gs-b", plmn: plmn{MCC: "001", MNC: "02"}, amf: "10.90.0.13", core: "open5gs-5g-b", coreLog: open5gsAMFLog,
+		dn: "10.48.0.1", dnHost: "open5gs-5g-b", gnb: "gnb-b", ue: "srsue-5g-b", radio: "gNB:001-02:000002@22", imsi: "001020000000012", ueNet: "10.48.",
 	},
 }
 
@@ -43,14 +58,6 @@ type amfStatus struct {
 type amf struct {
 	TNLAddresses []string   `json:"tnl_addresses"`
 	Status       *amfStatus `json:"status,omitempty"`
-}
-
-func amfLogFile(core string) []string {
-	return []string{"exec", "-T", core, "cat", "/var/log/open5gs/amf.log"}
-}
-
-func amfLog(ctx context.Context, core, what string) func() error {
-	return logContains(ctx, what, amfLogFile(core)...)
 }
 
 func amfUp(ctx context.Context, c *client, operatorName string) func() error {
@@ -125,8 +132,7 @@ func ngRegistered(ctx context.Context, t *testing.T, l lab5G) {
 
 	eventually(ctx, t, l.ue+" registered with a PDU session", 120*time.Second,
 		logContains(ctx, "PDU Session Establishment successful. IP: "+l.ueNet, "logs", "--no-color", l.ue))
-	eventually(ctx, t, l.core+" registration complete", 30*time.Second,
-		amfLog(ctx, l.core, "[imsi-"+l.imsi+"] Registration complete"))
+	eventually(ctx, t, l.core+" registration complete", 30*time.Second, l.coreLog.logged(ctx, 0, l.coreLog.attached, l.imsi))
 	eventually(ctx, t, l.gnb+" Initial Context Setup complete", 30*time.Second,
 		logContains(ctx, ": InitialContextSetupResponse", "logs", "--no-color", l.gnb))
 	eventually(ctx, t, "Ella MOCN relayed the Initial Context Setup outcome from "+l.radio, 10*time.Second,
@@ -149,13 +155,13 @@ func ngLifecycle(ctx context.Context, t *testing.T, c *client, l lab5G) {
 
 	eventually(ctx, t, l.radio+" up", 120*time.Second, radioUp(ctx, c, l.radio))
 	eventually(ctx, t, l.operator+" AMF up", 30*time.Second, amfUp(ctx, c, l.operator))
-	eventually(ctx, t, l.core+" AMF accepted Ella MOCN", 30*time.Second, amfLog(ctx, l.core, "gNB-N2 accepted[10.90.0.30]"))
+	eventually(ctx, t, l.core+" AMF accepted Ella MOCN", 30*time.Second, l.coreLog.logged(ctx, 0, l.coreLog.accepted, l.imsi))
 
 	startServices(ctx, t, l.ue)
 
 	ngRegistered(ctx, t, l)
 
-	if _, err := compose(ctx, "exec", "-T", l.ue, "ping", "-c", "1", "-w", "15", "-I", "tun_srsue", l.ueNet+"0.1"); err != nil {
+	if err := uePing(ctx, l.ue, l.dn); err != nil {
 		t.Fatalf("%s user plane: %v", l.operator, err)
 	}
 
@@ -199,7 +205,7 @@ func ngLifecycle(ctx context.Context, t *testing.T, c *client, l lab5G) {
 
 	idle := logMark(ctx, t, "logs", "--no-color", l.gnb)
 
-	_, _ = compose(ctx, "exec", "-T", l.core, "ping", "-c", "3", "-W", "2", addr)
+	_, _ = compose(ctx, "exec", "-T", l.dnHost, "ping", "-c", "3", "-W", "2", addr)
 
 	eventually(ctx, t, l.gnb+" paged", 30*time.Second, logContainsAfter(ctx, "Rx PDU: Paging", idle, "logs", "--no-color", l.gnb))
 }
@@ -209,8 +215,8 @@ func TestNGDeregistration(t *testing.T) {
 	c := setUp(ctx, t)
 
 	l := lab5G{
-		operator: "open5gs", plmn: plmn{MCC: "001", MNC: "01"}, amf: "10.90.0.12", core: "open5gs-5g", gnb: "gnb-c",
-		ue: "srsue-5g-c", radio: "gNB:001-01:000003@22", imsi: "001010000000021", ueNet: "10.47.",
+		operator: "open5gs-b", plmn: plmn{MCC: "001", MNC: "02"}, amf: "10.90.0.13", core: "open5gs-5g-b", coreLog: open5gsAMFLog,
+		gnb: "gnb-c", ue: "srsue-5g-c", radio: "gNB:001-02:000003@22", imsi: "001020000000022", ueNet: "10.48.",
 	}
 
 	startServices(ctx, t, l.gnb)
@@ -235,7 +241,7 @@ func TestNGDeregistration(t *testing.T) {
 		return nil
 	})
 
-	registered := logMark(ctx, t, amfLogFile(l.core)...)
+	registered := l.coreLog.mark(ctx, t)
 	connected := logMark(ctx, t, "logs", "--no-color", l.gnb)
 
 	if _, err := compose(ctx, "exec", "-T", l.core, "curl", "-sS", "-f", "--http2-prior-knowledge", "-X", "POST",
@@ -245,11 +251,11 @@ func TestNGDeregistration(t *testing.T) {
 	}
 
 	eventually(ctx, t, l.core+" network-initiated deregistration", 30*time.Second, func() error {
-		if err := logContainsAfter(ctx, "Deregistration notify reason: imsi-"+l.imsi+":SUBSCRIPTION_WITHDRAWN", registered, amfLogFile(l.core)...)(); err != nil {
+		if err := l.coreLog.logged(ctx, registered, []string{"Deregistration notify reason: imsi-{imsi}:SUBSCRIPTION_WITHDRAWN"}, l.imsi)(); err != nil {
 			return err
 		}
 
-		return logContainsAfter(ctx, "[imsi-"+l.imsi+"] Explicit De-registered", registered, amfLogFile(l.core)...)()
+		return l.coreLog.logged(ctx, registered, []string{"[imsi-{imsi}] Explicit De-registered"}, l.imsi)()
 	})
 
 	eventually(ctx, t, l.gnb+" UE context released after deregistration", 60*time.Second,

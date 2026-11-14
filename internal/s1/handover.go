@@ -232,16 +232,13 @@ func servingCell(radios []*ranAssoc, plmn db.PLMN, cellID uint32) *ranAssoc {
 	var serving, exact []*ranAssoc
 
 	for _, n := range radios {
-		id := n.Setup.globalENBID
-
-		bits, ok := enbIDBits[id.Type]
-		if !ok || cellID>>(cellIdentityBits-bits) != id.ID {
+		if !n.Setup.ownsCellID(cellID) {
 			continue
 		}
 
 		serving = append(serving, n)
 
-		if id.PLMN == plmn {
+		if n.Setup.globalENBID.PLMN == plmn {
 			exact = append(exact, n)
 		}
 	}
