@@ -93,7 +93,7 @@ func (r *relay) rerouteNASRequest(ctx context.Context, a *amfAssoc, log *slog.Lo
 
 	r.ues.Rebind(u, target)
 	u.Ext.sets = r.sets[target]
-	r.superviseLocked(ctx, u, log)
+	r.superviseLocked(ctx, u, log, "INITIAL UE MESSAGE")
 
 	send := r.sendAMF
 	r.mu.Unlock()

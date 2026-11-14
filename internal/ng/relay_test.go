@@ -131,7 +131,7 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	}
 
 	got := ues[0]
-	if got.RadioRANUENGAPID != 7 || got.RadioAMFUENGAPID != uint64(ue.ranAMFID) ||
+	if got.RadioRANUENGAPID == nil || *got.RadioRANUENGAPID != 7 || got.RadioAMFUENGAPID != uint64(ue.ranAMFID) ||
 		got.AMFRANUENGAPID != uint32(ue.amfRANID) || got.AMFUENGAPID == nil || *got.AMFUENGAPID != 1<<39+5 ||
 		got.OperatorName != "A" || got.PLMN != plmnA || got.RadioGlobalGNBID.ID != 1 ||
 		len(got.AMFTNLAddresses) != 1 || got.AMFTNLAddresses[0] != "127.0.1.10" ||
@@ -332,7 +332,7 @@ func TestAMFLossKeepsTheUEsUntilTheirNextMessage(t *testing.T) {
 	expectReset(t, gnb, connection(nil, 2))
 	gnb.Quiet(t, 200*time.Millisecond)
 
-	if ues := h.gw.UEs(); len(ues) != 1 || ues[0].RadioRANUENGAPID != 1 {
+	if ues := h.gw.UEs(); len(ues) != 1 || *ues[0].RadioRANUENGAPID != 1 {
 		t.Fatalf("UEs = %+v, want the connected one", ues)
 	}
 

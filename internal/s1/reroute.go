@@ -97,7 +97,7 @@ func (r *relay) rerouteNASRequest(ctx context.Context, a *mmeAssoc, log *slog.Lo
 	}
 
 	r.ues.Rebind(u, target)
-	r.superviseLocked(ctx, u, log)
+	r.superviseLocked(ctx, u, log, "INITIAL UE MESSAGE")
 
 	send := r.sendMME
 	r.mu.Unlock()

@@ -282,7 +282,7 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	}
 
 	got := ues[0]
-	if got.RadioENBUES1APID != 7 || got.RadioMMEUES1APID != uint32(ue.ranMMEID) ||
+	if got.RadioENBUES1APID == nil || *got.RadioENBUES1APID != 7 || got.RadioMMEUES1APID != uint32(ue.ranMMEID) ||
 		got.MMEENBUES1APID != uint32(ue.mmeENBID) || got.MMEUES1APID == nil || *got.MMEUES1APID != 1000 ||
 		got.OperatorName != "A" || got.PLMN != plmnA || got.RadioGlobalENBID.ID != 1 ||
 		len(got.MMETNLAddresses) != 1 || got.MMETNLAddresses[0] != "127.0.0.20" ||

@@ -60,7 +60,7 @@ func (r *relay) fromRAN(ctx context.Context, from *ranAssoc, pdu ngap.PDU, msg [
 			r.errorIndicationFromRAN(ctx, from, log, m.Value, msg)
 			return
 		case ngap.ProcPathSwitchRequest:
-			r.pathSwitchRequest(ctx, from, log, m.Value)
+			r.pathSwitchRequest(ctx, from, log, m.Value, msg)
 			return
 		}
 	}

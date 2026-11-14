@@ -81,7 +81,11 @@ func (r *relay) resetMMEs(ctx context.Context, ues []*ueContext, cause s1ap.Caus
 			continue
 		}
 
-		item := s1ap.UEAssociatedLogicalS1ConnectionItem{ENBUES1APID: s1ap.Ptr(u.CoreRANID)}
+		var item s1ap.UEAssociatedLogicalS1ConnectionItem
+		if u.RANIDKnown {
+			item.ENBUES1APID = s1ap.Ptr(u.CoreRANID)
+		}
+
 		if u.CoreIDKnown {
 			item.MMEUES1APID = s1ap.Ptr(u.CoreID)
 		}
@@ -105,7 +109,11 @@ func (r *relay) resetRANs(ctx context.Context, operator string, ues []*ueContext
 	var order []*ranAssoc
 
 	for _, u := range ues {
-		item := s1ap.UEAssociatedLogicalS1ConnectionItem{ENBUES1APID: s1ap.Ptr(u.RANID)}
+		var item s1ap.UEAssociatedLogicalS1ConnectionItem
+		if u.RANIDKnown {
+			item.ENBUES1APID = s1ap.Ptr(u.RANID)
+		}
+
 		if u.CoreIDKnown {
 			item.MMEUES1APID = s1ap.Ptr(u.RANCoreID)
 		}

@@ -118,6 +118,7 @@ func (g *Gateway[S, R, I, C]) radioDisconnected(ctx context.Context, conn *sctp.
 
 func (g *Gateway[S, R, I, C]) removeLocked(n *Radio[S, R]) {
 	delete(g.radios, n.conn)
+	n.Up = false
 	n.stopPush()
 
 	if n.Setup != nil {

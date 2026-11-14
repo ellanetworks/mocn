@@ -137,7 +137,7 @@ func TestRadiosAndUEConnectionsOverBothInterfaces(t *testing.T) {
 			SupportedTAs: []ng.TA{{TAC: 0x10203, BroadcastPLMNs: []ng.BroadcastPLMN{{PLMN: plmn, Slices: []ng.SNSSAI{{SST: 1}}}}}},
 			TNLAddresses: []string{"10.0.0.6"},
 		}}, ues: []ng.UE{{
-			RadioGlobalGNBID: gnb, RadioRANUENGAPID: 7, RadioAMFUENGAPID: 9, AMFTNLAddresses: []string{"10.0.1.1"},
+			RadioGlobalGNBID: gnb, RadioRANUENGAPID: new(uint32(7)), RadioAMFUENGAPID: 9, AMFTNLAddresses: []string{"10.0.1.1"},
 			AMFRANUENGAPID: 3, AMFUENGAPID: &amfID, OperatorID: 1, OperatorName: "Operator A", PLMN: plmn, Since: gnbSince,
 			TAI: &ng.TAI{PLMN: plmn, TAC: 0x10203}, NRCGI: &ng.NRCGI{PLMN: plmn, CellID: 0x123456789},
 		}}})

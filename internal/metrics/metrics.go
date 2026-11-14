@@ -34,6 +34,7 @@ type Metrics struct {
 	InitialUE *prometheus.CounterVec
 	Paging    *prometheus.CounterVec
 	Overload  *prometheus.CounterVec
+	Handover  *prometheus.CounterVec
 }
 
 func New() *Metrics {
@@ -71,6 +72,14 @@ func New() *Metrics {
 				"no_radio: no such radio is up; ignored: OVERLOAD STOP for GUMMEIs or GUAMIs with no ongoing overload action; " +
 				"invalid: undecodable or with an invalid GUMMEI or GUAMI).",
 		}, []string{"interface", "procedure", "result"}),
+		Handover: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "ellamocn_handover_messages_total",
+			Help: "HANDOVER REQUEST messages received from MMEs and AMFs and PATH SWITCH REQUEST messages received from radios, " +
+				"by interface (s1, ng), procedure (handover_request, path_switch_request) and result " +
+				"(relayed: sent to the target radio or to the MME or AMF; no_radio: no target radio of the operator is up; " +
+				"no_mme, no_amf: no selectable MME or AMF of the source MME or AMF set is up; " +
+				"invalid: undecodable or missing an IE needed for routing; error: internal failure or failed send).",
+		}, []string{"interface", "procedure", "result"}),
 	}
 }
 
@@ -89,7 +98,7 @@ type Source interface {
 }
 
 func (m *Metrics) Collectors(sources ...Source) []prometheus.Collector {
-	return []prometheus.Collector{m.Setups, m.Overload, m.InitialUE, m.Paging, stateCollector(sources)}
+	return []prometheus.Collector{m.Setups, m.Overload, m.InitialUE, m.Paging, m.Handover, stateCollector(sources)}
 }
 
 type stateCollector []Source

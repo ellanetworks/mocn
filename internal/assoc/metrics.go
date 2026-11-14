@@ -36,6 +36,15 @@ const (
 	OverloadInvalid = "invalid"
 )
 
+const (
+	HandoverRequest   = "handover_request"
+	PathSwitchRequest = "path_switch_request"
+	HandoverRelayed   = "relayed"
+	HandoverNoRadio   = "no_radio"
+	HandoverInvalid   = "invalid"
+	HandoverError     = "error"
+)
+
 var overloadResults = map[string][]string{
 	OverloadStart: {OverloadRelayed, OverloadNoRadio, OverloadInvalid},
 	OverloadStop:  {OverloadRelayed, OverloadNoRadio, OverloadIgnored, OverloadInvalid},
@@ -68,6 +77,15 @@ func (g *Gateway[S, R, I, C]) initMetrics() {
 			m.Overload.WithLabelValues(iface, proc, r)
 		}
 	}
+
+	for proc, results := range map[string][]string{
+		HandoverRequest:   {HandoverRelayed, HandoverNoRadio, HandoverInvalid, HandoverError},
+		PathSwitchRequest: {HandoverRelayed, g.names.NoCore, HandoverInvalid, HandoverError},
+	} {
+		for _, r := range results {
+			m.Handover.WithLabelValues(iface, proc, r)
+		}
+	}
 }
 
 func (g *Gateway[S, R, I, C]) countSetup(side, result string) {
@@ -84,6 +102,10 @@ func (g *Gateway[S, R, I, C]) CountPaging(result string) {
 
 func (g *Gateway[S, R, I, C]) CountOverload(proc, result string) {
 	g.cfg.Metrics.Overload.WithLabelValues(g.names.Interface, proc, result).Inc()
+}
+
+func (g *Gateway[S, R, I, C]) CountHandover(proc, result string) {
+	g.cfg.Metrics.Handover.WithLabelValues(g.names.Interface, proc, result).Inc()
 }
 
 func (g *Gateway[S, R, I, C]) MetricsState() metrics.State {

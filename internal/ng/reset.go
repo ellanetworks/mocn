@@ -94,7 +94,11 @@ func (r *relay) resetAMFs(ctx context.Context, ues []*ueContext, cause ngap.Caus
 			continue
 		}
 
-		item := ngap.UEAssociatedLogicalNGConnectionItem{RANUENGAPID: ngap.Ptr(u.CoreRANID)}
+		var item ngap.UEAssociatedLogicalNGConnectionItem
+		if u.RANIDKnown {
+			item.RANUENGAPID = ngap.Ptr(u.CoreRANID)
+		}
+
 		if u.CoreIDKnown {
 			item.AMFUENGAPID = ngap.Ptr(u.CoreID)
 		}
@@ -118,7 +122,11 @@ func (r *relay) resetRANs(ctx context.Context, operator string, ues []*ueContext
 	var order []*ranAssoc
 
 	for _, u := range ues {
-		item := ngap.UEAssociatedLogicalNGConnectionItem{RANUENGAPID: ngap.Ptr(u.RANID)}
+		var item ngap.UEAssociatedLogicalNGConnectionItem
+		if u.RANIDKnown {
+			item.RANUENGAPID = ngap.Ptr(u.RANID)
+		}
+
 		if u.CoreIDKnown {
 			item.AMFUENGAPID = ngap.Ptr(u.RANCoreID)
 		}
