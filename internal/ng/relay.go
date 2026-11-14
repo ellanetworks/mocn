@@ -74,10 +74,10 @@ func (r *relay) fromRAN(ctx context.Context, from *ranAssoc, pdu ngap.PDU, msg [
 			log.DebugContext(ctx, "NG Reset Acknowledge from radio")
 			return
 		case ngap.ProcWriteReplaceWarning:
-			r.g.writeReplaceWarningResponse(ctx, from, log, m.Value)
+			r.g.writeReplaceWarningResponse(ctx, from, log, m.Value, msg)
 			return
 		case ngap.ProcPWSCancel:
-			r.g.pwsCancelResponse(ctx, from, log, m.Value)
+			r.g.pwsCancelResponse(ctx, from, log, m.Value, msg)
 			return
 		}
 	}

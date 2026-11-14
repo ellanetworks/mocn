@@ -167,7 +167,7 @@ func TestKillAnsweredWhenTheRadiosLeave(t *testing.T) {
 
 	skipWithoutSCTP(t)
 
-	x := startTwoOperatorsWith(t, s1.Config{ResponseTimeout: time.Minute}, pws(operatorA("127.0.2.3")), operatorB("127.0.2.4"))
+	x := startTwoOperatorsWith(t, s1.Config{WarningWait: time.Minute}, pws(operatorA("127.0.2.3")), operatorB("127.0.2.4"))
 
 	x.mmeB.Send(t, &s1ap.KillRequest{MessageIdentifier: 4370, SerialNumber: 1})
 
@@ -220,7 +220,7 @@ func TestKillAnsweredWithoutTheSilentRadios(t *testing.T) {
 
 	skipWithoutSCTP(t)
 
-	x := startTwoOperatorsWith(t, s1.Config{ResponseTimeout: 500 * time.Millisecond},
+	x := startTwoOperatorsWith(t, s1.Config{WarningWait: 500 * time.Millisecond},
 		pws(operatorA("127.0.2.5")), operatorB("127.0.2.6"))
 
 	kill := &s1ap.KillRequest{
@@ -246,6 +246,11 @@ func TestKillAnsweredWithoutTheSilentRadios(t *testing.T) {
 	x.enbA.Send(t, &s1ap.KillResponse{MessageIdentifier: 4370, SerialNumber: 3})
 	x.mmeA.Quiet(t, 300*time.Millisecond)
 
+	h := x.h
+	h.eventually(t, "silent radios counted", func() bool {
+		return testutil.ToFloat64(h.metrics.PWS.WithLabelValues("s1", "kill", "timeout")) == 2
+	})
+
 	for result, want := range map[string]float64{"relayed": 1, "not_pws_operator": 0, "no_radio": 0} {
 		if got := testutil.ToFloat64(x.h.metrics.PWS.WithLabelValues("s1", "kill", result)); got != want {
 			t.Fatalf("kill %s = %v, want %v", result, got, want)
@@ -265,11 +270,16 @@ func radioENBID(t *testing.T, id uint32) s1ap.GlobalENBID {
 	return s1ap.GlobalENBID{PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{Kind: s1ap.ENBIDMacro, Value: id}}
 }
 
-func restartIndication(t *testing.T, id s1ap.GlobalENBID, enbID, cell uint32) *s1ap.PWSRestartIndication {
+func restartIndication(t *testing.T, id s1ap.GlobalENBID, enbID uint32, cells ...uint32) *s1ap.PWSRestartIndication {
 	t.Helper()
 
+	ecgis := make([]s1ap.EUTRANCGI, 0, len(cells))
+	for _, c := range cells {
+		ecgis = append(ecgis, ecgi(t, "00101", enbID, c))
+	}
+
 	return &s1ap.PWSRestartIndication{
-		ECGIListForRestart:            []s1ap.EUTRANCGI{ecgi(t, "00101", enbID, cell)},
+		ECGIListForRestart:            ecgis,
 		GlobalENBID:                   id,
 		TAIListForRestart:             []s1ap.TAI{tai(t, "00101", 1), tai(t, "002002", 1)},
 		EmergencyAreaIDListForRestart: []s1ap.EmergencyAreaID{{0, 0, 1}},
@@ -348,8 +358,8 @@ func TestPWSRestartIndicationKeptUntilAnMMEIsUp(t *testing.T) {
 	})
 
 	enb.Send(t, restartIndication(t, radioENBID(t, 1), 1, 1))
-	enb.Send(t, restartIndication(t, radioENBID(t, 1), 1, 1))
 	enb.Send(t, restartIndication(t, radioENBID(t, 1), 1, 2))
+	enb.Send(t, restartIndication(t, radioENBID(t, 1), 1, 2, 1))
 	enb.Send(t, &s1ap.PWSFailureIndication{
 		PWSFailedECGIList: []s1ap.EUTRANCGI{ecgi(t, "00101", 1, 3)}, GlobalENBID: radioENBID(t, 1),
 	})
@@ -371,11 +381,249 @@ func TestPWSRestartIndicationKeptUntilAnMMEIsUp(t *testing.T) {
 		ServedGUMMEIs: served(t, 1, 1), RelativeMMECapacity: s1ap.Ptr(uint8(1)),
 	})
 
-	expectSameOnStream0(t, mme, restartIndication(t, gatewayENBID(t), 1, 1))
-	expectSameOnStream0(t, mme, restartIndication(t, gatewayENBID(t), 1, 2))
+	want := map[string]bool{
+		string(marshal(t, restartIndication(t, gatewayENBID(t), 1, 2, 1))): true,
+		string(marshal(t, restartIndication(t, gatewayENBID(t), 2, 1))):    true,
+	}
+
+	for range 2 {
+		f := mme.NextFrame(t)
+		if !want[string(f.Raw)] || f.Stream != 0 {
+			t.Fatalf("got %s %x on stream %d, want one kept PWS Restart Indication", procedureName(f.PDU), f.Raw, f.Stream)
+		}
+
+		delete(want, string(f.Raw))
+	}
+
 	mme.Quiet(t, 300*time.Millisecond)
 
-	if got := testutil.ToFloat64(h.metrics.PWS.WithLabelValues("s1", "pws_restart_indication", "relayed")); got != 0 {
-		t.Fatalf("pws_restart_indication relayed = %v, want 0", got)
+	if err := mme.Conn.Abort(); err != nil {
+		t.Fatal(err)
 	}
+
+	mme = mmeListener.Accept(t)
+	setUpMME(t, mme, s1ap.SupportedTAs{ta(t, 1, "00101")}, s1ap.PagingDRXv128, &s1ap.S1SetupResponse{
+		ServedGUMMEIs: served(t, 1, 1), RelativeMMECapacity: s1ap.Ptr(uint8(1)),
+	})
+	mme.Quiet(t, 300*time.Millisecond)
+}
+
+func TestPWSIndicationsWithoutAPWSOperator(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	mmeListener := listenMME(t, "127.0.2.10")
+	h := startGateway(t, mmeListener.Port(), operatorA("127.0.2.10"))
+	enb, mme := upAndRunning(t, h, mmeListener)
+
+	enb.Send(t, restartIndication(t, radioENBID(t, 1), 1, 1))
+	enb.Send(t, &s1ap.PWSFailureIndication{
+		PWSFailedECGIList: []s1ap.EUTRANCGI{ecgi(t, "00101", 1, 1)}, GlobalENBID: radioENBID(t, 1),
+	})
+	mme.Quiet(t, 300*time.Millisecond)
+
+	for _, proc := range []string{"pws_restart_indication", "pws_failure_indication"} {
+		if got := testutil.ToFloat64(h.metrics.PWS.WithLabelValues("s1", proc, "no_pws_operator")); got != 1 {
+			t.Fatalf("%s no_pws_operator = %v, want 1", proc, got)
+		}
+	}
+
+	h.Ops.Set(pws(operatorA("127.0.2.10")))
+
+	if err := h.gw.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	mme.Quiet(t, 300*time.Millisecond)
+}
+
+func TestOwnsCell(t *testing.T) {
+	t.Parallel()
+
+	a, b := plmnA, plmnB
+
+	for _, tc := range []struct {
+		id    db.GlobalENBID
+		plmn  string
+		cell  uint32
+		owned bool
+	}{
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDMacro, ID: 0xabcde}, "00101", 0xabcde<<8 | 0xff, true},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDMacro, ID: 0xabcde}, "00101", 0xabcdf<<8 | 0x01, false},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDHome, ID: 0xabcdef1}, "00101", 0xabcdef1, true},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDHome, ID: 0xabcdef1}, "00101", 0xabcdef2, false},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDShortMacro, ID: 0x3ffff}, "00101", 0x3ffff<<10 | 0x3ff, true},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDShortMacro, ID: 0x3ffff}, "00101", 0x3fffe<<10 | 0x3ff, false},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDLongMacro, ID: 0x1fffff}, "00101", 0x1fffff<<7 | 0x7f, true},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDLongMacro, ID: 0x1fffff}, "00101", 0x0fffff<<7 | 0x7f, false},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDMacro, ID: 1}, "002002", 1<<8 | 1, true},
+		{db.GlobalENBID{PLMN: a, Type: db.ENBIDMacro, ID: 1}, "00303", 1<<8 | 1, false},
+	} {
+		got := s1.OwnsCell(tc.id, []db.PLMN{a, b}, s1ap.EUTRANCGI{
+			PLMNIdentity: plmnID(t, tc.plmn[:3], tc.plmn[3:]), CellID: tc.cell,
+		})
+		if got != tc.owned {
+			t.Fatalf("%s owns %s/%07x = %v, want %v", tc.id.Ref(), tc.plmn, tc.cell, got, tc.owned)
+		}
+	}
+}
+
+func TestWarningFromTwoMMEsOfThePWSOperator(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	h, enb, mme1, mme2 := twoMMEs(t, "127.0.2.11", "127.0.2.12")
+	h.Ops.Set(pws(operatorA("127.0.2.11", "127.0.2.12")))
+
+	if err := h.gw.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	req := writeReplaceWarning(4370, 9, nil)
+	mme1.Send(t, req)
+	expectSame(t, enb, marshal(t, req))
+	mme2.Send(t, req)
+	expectSame(t, enb, marshal(t, req))
+
+	cell := &s1ap.BroadcastCompletedAreaList{CellIDBroadcast: []s1ap.CellIDBroadcastItem{{ECGI: ecgi(t, "00101", 1, 1)}}}
+	enb.Send(t, &s1ap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 9, BroadcastCompletedAreaList: cell})
+
+	if got := expectWarningResponse(t, mme1, 4370, 9); !reflect.DeepEqual(got, cell) {
+		t.Fatalf("first Broadcast Completed Area List = %+v, want %+v", got, cell)
+	}
+
+	mme2.Quiet(t, 200*time.Millisecond)
+	enb.Send(t, &s1ap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 9, BroadcastCompletedAreaList: cell})
+
+	if got := expectWarningResponse(t, mme2, 4370, 9); !reflect.DeepEqual(got, cell) {
+		t.Fatalf("second Broadcast Completed Area List = %+v, want %+v", got, cell)
+	}
+
+	mme1.Quiet(t, 200*time.Millisecond)
+}
+
+func TestInvalidWarningRequestFromTheMME(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	mmeListener := listenMME(t, "127.0.2.13")
+	h := startGateway(t, mmeListener.Port(), pws(operatorA("127.0.2.13")))
+	enb, mme := upAndRunning(t, h, mmeListener)
+
+	body := bodyOf(t, &s1ap.ErrorIndication{Cause: &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified}})
+
+	for _, proc := range []s1ap.ProcedureCode{s1ap.ProcWriteReplaceWarning, s1ap.ProcKill} {
+		mme.Send(t, initiating(proc, s1ap.CriticalityReject, body))
+		assertDiagnostics(t, expectProtocolError(t, mme, s1ap.CauseProtocolAbstractSyntaxErrorReject).CriticalityDiagnostics,
+			proc, s1ap.Ptr(s1ap.CriticalityReject))
+	}
+
+	enb.Quiet(t, 200*time.Millisecond)
+
+	for _, proc := range []string{"write_replace_warning", "kill"} {
+		if got := testutil.ToFloat64(h.metrics.PWS.WithLabelValues("s1", proc, "invalid")); got != 1 {
+			t.Fatalf("%s invalid = %v, want 1", proc, got)
+		}
+	}
+}
+
+func rawResponse(t *testing.T, msg interface{ Marshal() ([]byte, error) }, edit func(p *s1ap.RawPDU)) []byte {
+	t.Helper()
+
+	p, err := s1ap.ParseRawPDU(marshal(t, msg))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	edit(p)
+
+	out, err := p.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return out
+}
+
+func TestInvalidWarningResponsesFromTheRadio(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	mmeListener := listenMME(t, "127.0.2.14")
+	h := startGatewayWith(t, s1.Config{CorePort: mmeListener.Port(), WarningWait: time.Minute},
+		pws(operatorA("127.0.2.14")))
+	enb, mme := upAndRunning(t, h, mmeListener)
+
+	unknownReject := rawResponse(t, &s1ap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 1},
+		func(p *s1ap.RawPDU) {
+			if err := p.Insert(p.Len(), s1ap.RawIE{ID: 999, Criticality: s1ap.CriticalityReject, Value: []byte{0}}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	badList := rawResponse(t, &s1ap.WriteReplaceWarningResponse{
+		MessageIdentifier: 4370, SerialNumber: 2,
+		BroadcastCompletedAreaList: &s1ap.BroadcastCompletedAreaList{
+			CellIDBroadcast: []s1ap.CellIDBroadcastItem{{ECGI: ecgi(t, "00101", 1, 1)}},
+		},
+	}, func(p *s1ap.RawPDU) {
+		if err := p.SetValue(p.Index(s1ap.IDBroadcastCompletedAreaList), []byte{0x40}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	for serial, answer := range map[uint16][]byte{1: unknownReject, 2: badList} {
+		mme.Send(t, writeReplaceWarning(4370, serial, nil))
+		enb.Next(t)
+		enb.SendRaw(t, answer)
+
+		if got := expectWarningResponse(t, mme, 4370, serial); got != nil {
+			t.Fatalf("Broadcast Completed Area List = %+v, want none", got)
+		}
+
+		if serial == 2 {
+			ind := expect(t, enb, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication)
+			if ind.Cause == nil || ind.Cause.Group != s1ap.CauseGroupProtocol ||
+				ind.Cause.Value != s1ap.CauseProtocolTransferSyntaxError {
+				t.Fatalf("Error Indication = %+v", ind)
+			}
+		}
+
+		enb.Quiet(t, 200*time.Millisecond)
+	}
+}
+
+func TestWarningPendingWhenTheMMEIsLost(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	mmeListener := listenMME(t, "127.0.2.15")
+	h := startGatewayWith(t, s1.Config{CorePort: mmeListener.Port(), WarningWait: 300 * time.Millisecond},
+		pws(operatorA("127.0.2.15")))
+	enb, mme := upAndRunning(t, h, mmeListener)
+
+	req := writeReplaceWarning(4370, 1, nil)
+	mme.Send(t, req)
+	expectSame(t, enb, marshal(t, req))
+
+	if err := mme.Conn.Abort(); err != nil {
+		t.Fatal(err)
+	}
+
+	mme = mmeListener.Accept(t)
+	setUpMME(t, mme, s1ap.SupportedTAs{ta(t, 1, "00101")}, s1ap.PagingDRXv128, &s1ap.S1SetupResponse{
+		ServedGUMMEIs: served(t, 1, 1), RelativeMMECapacity: s1ap.Ptr(uint8(1)),
+	})
+
+	h.eventually(t, "the silent radio counted", func() bool {
+		return testutil.ToFloat64(h.metrics.PWS.WithLabelValues("s1", "write_replace_warning", "timeout")) == 1
+	})
+
+	mme.Quiet(t, 300*time.Millisecond)
+	enb.Send(t, &s1ap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 1})
+	mme.Quiet(t, 300*time.Millisecond)
 }

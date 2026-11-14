@@ -2,11 +2,14 @@ package ng
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/mocn/internal/assoc"
+	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/ellanetworks/mocn/internal/plmnid"
 	"github.com/ellanetworks/mocn/internal/tracing"
 )
@@ -32,10 +35,18 @@ var pwsIndications = map[ngap.ProcedureCode]string{
 
 // TS 38.413 clause 9.3.1.6
 // TS 38.413 clause 9.3.1.7
-func (s ranSetup) ownsCell(nci ngap.NRCellIdentity) bool {
+func (s ranSetup) ownsCellID(nci uint64) bool {
 	id := s.globalGNBID
 
-	return id.Length > 0 && id.Length <= ngap.NRCellIdentityBits && uint64(nci)>>(ngap.NRCellIdentityBits-id.Length) == uint64(id.ID)
+	return id.Length > 0 && id.Length <= ngap.NRCellIdentityBits && nci>>(ngap.NRCellIdentityBits-id.Length) == uint64(id.ID)
+}
+
+// TS 38.413 clause 9.3.1.7
+// TS 38.300 clause 8.2
+func (s ranSetup) ownsCell(c ngap.NRCGI) bool {
+	plmn, err := plmnid.Decode(c.PLMNIdentity)
+
+	return err == nil && s.ownsCellID(uint64(c.NRCellIdentity)) && (plmn == s.globalGNBID.PLMN || s.Broadcasts([]db.PLMN{plmn}))
 }
 
 // TS 38.413 clause 8.9.1.2
@@ -46,7 +57,7 @@ func warningCovers(l *ngap.WarningAreaList) func(ranSetup) bool {
 		return func(ranSetup) bool { return true }
 	case len(l.NRCGIs) > 0:
 		return func(s ranSetup) bool {
-			return slices.ContainsFunc(l.NRCGIs, func(c ngap.NRCGI) bool { return s.ownsCell(c.NRCellIdentity) })
+			return slices.ContainsFunc(l.NRCGIs, s.ownsCell)
 		}
 	}
 
@@ -116,38 +127,87 @@ func (g *Gateway) pwsCancel(ctx context.Context, a *amfAssoc, log *slog.Logger, 
 	})
 }
 
-// TS 38.413 clause 8.9.1.2
-func (g *Gateway) writeReplaceWarningResponse(ctx context.Context, n *ranAssoc, log *slog.Logger, value []byte) {
-	resp, err := ngap.ParseWriteReplaceWarningResponse(value)
+func warningKeyOf(msg []byte) (warningKey, bool) {
+	p, err := ngap.ParseRawPDU(msg)
+	if err != nil {
+		return warningKey{}, false
+	}
+
+	var k warningKey
+
+	okID, errID := p.Get(ngap.IDMessageIdentifier, &k.id)
+	okSerial, errSerial := p.Get(ngap.IDSerialNumber, &k.serial)
+
+	return k, okID && okSerial && errID == nil && errSerial == nil
+}
+
+// TS 38.413 clause 10.2
+// TS 38.413 clause 10.3.4.2
+// TS 38.413 clause 10.3.5
+// TS 38.413 clause 10.3.6
+func warningAnswer[T any](ctx context.Context, w *assoc.Warnings[warningKey, T], n *ranAssoc, log *slog.Logger,
+	proc ngap.ProcedureCode, msg []byte, key warningKey, got T, d ngap.Diagnostics, err error,
+) {
 	if err != nil {
 		tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
-		log.WarnContext(ctx, "dropped invalid Write-Replace Warning Response from radio", slog.Any("error", err))
+		log.WarnContext(ctx, "invalid "+proc.String()+" response from radio", slog.Any("error", err))
 
-		return
+		if _, ase := errors.AsType[*ngap.AbstractSyntaxError](err); !ase {
+			indicateTransferSyntax(ctx, n, log, &ngap.SuccessfulOutcome{ProcedureCode: proc})
+		}
+
+		var (
+			ok   bool
+			none T
+		)
+
+		if key, ok = warningKeyOf(msg); !ok {
+			return
+		}
+
+		got = none
+	} else if d.ReportRequired() {
+		indicateNotify(ctx, n, log, proc, ngap.TriggeringSuccessfulOutcome, d)
 	}
 
-	if !g.writes.Answer(n.Conn(), warningKey{resp.MessageIdentifier, resp.SerialNumber}, resp.BroadcastCompletedAreaList) {
-		log.InfoContext(ctx, "dropped Write-Replace Warning Response from radio: no request awaits it")
+	if !w.Answer(n.Conn(), key, got) {
+		log.InfoContext(ctx, "dropped "+proc.String()+" response from radio: no request awaits it")
 	}
+}
+
+// TS 38.413 clause 8.9.1.2
+func (g *Gateway) writeReplaceWarningResponse(ctx context.Context, n *ranAssoc, log *slog.Logger, value, msg []byte) {
+	var (
+		key  warningKey
+		list *ngap.BroadcastCompletedAreaList
+		d    ngap.Diagnostics
+	)
+
+	resp, err := ngap.ParseWriteReplaceWarningResponse(value)
+	if err == nil {
+		key, list, d = warningKey{resp.MessageIdentifier, resp.SerialNumber}, resp.BroadcastCompletedAreaList, resp.Diagnostics()
+	}
+
+	warningAnswer(ctx, g.writes, n, log, ngap.ProcWriteReplaceWarning, msg, key, list, d, err)
 }
 
 // TS 38.413 clause 8.9.2.2
-func (g *Gateway) pwsCancelResponse(ctx context.Context, n *ranAssoc, log *slog.Logger, value []byte) {
+func (g *Gateway) pwsCancelResponse(ctx context.Context, n *ranAssoc, log *slog.Logger, value, msg []byte) {
+	var (
+		key  warningKey
+		list *ngap.BroadcastCancelledAreaList
+		d    ngap.Diagnostics
+	)
+
 	resp, err := ngap.ParsePWSCancelResponse(value)
-	if err != nil {
-		tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
-		log.WarnContext(ctx, "dropped invalid PWS Cancel Response from radio", slog.Any("error", err))
-
-		return
+	if err == nil {
+		key, list, d = warningKey{resp.MessageIdentifier, resp.SerialNumber}, resp.BroadcastCancelledAreaList, resp.Diagnostics()
 	}
 
-	if !g.cancels.Answer(n.Conn(), warningKey{resp.MessageIdentifier, resp.SerialNumber}, resp.BroadcastCancelledAreaList) {
-		log.InfoContext(ctx, "dropped PWS Cancel Response from radio: no request awaits it")
-	}
+	warningAnswer(ctx, g.cancels, n, log, ngap.ProcPWSCancel, msg, key, list, d, err)
 }
 
 func (g *Gateway) warningsLost(n *ranAssoc) {
-	g.core.ForgetRestarts(n)
 	g.writes.RadioLost(n.Conn())
 	g.cancels.RadioLost(n.Conn())
 }
@@ -336,6 +396,8 @@ func cancelledAreaList(got []*ngap.BroadcastCancelledAreaList) *ngap.BroadcastCa
 
 // TS 38.413 clause 8.9.3
 // TS 38.413 clause 8.9.4
+// TS 38.413 clause 10.3.4.2
+// TS 38.413 clause 10.3.5
 // TS 38.300 clause 4.10.2.3
 // TS 23.007 clause 15A.1.2
 func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logger, code ngap.ProcedureCode,
@@ -343,11 +405,30 @@ func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logg
 ) {
 	proc := pwsIndications[code]
 
-	var err error
+	var (
+		cells []string
+		d     ngap.Diagnostics
+		err   error
+	)
+
 	if code == ngap.ProcPWSRestartIndication {
-		_, err = ngap.ParsePWSRestartIndication(value)
+		var ind *ngap.PWSRestartIndication
+		if ind, err = ngap.ParsePWSRestartIndication(value); err == nil {
+			d = ind.Diagnostics()
+
+			for _, c := range ind.CellIDListForRestart.EUTRACGIs {
+				cells = append(cells, fmt.Sprintf("e%x/%07x", c.PLMNIdentity, c.EUTRACellIdentity))
+			}
+
+			for _, c := range ind.CellIDListForRestart.NRCGIs {
+				cells = append(cells, fmt.Sprintf("n%x/%09x", c.PLMNIdentity, c.NRCellIdentity))
+			}
+		}
 	} else {
-		_, err = ngap.ParsePWSFailureIndication(value)
+		var ind *ngap.PWSFailureIndication
+		if ind, err = ngap.ParsePWSFailureIndication(value); err == nil {
+			d = ind.Diagnostics()
+		}
 	}
 
 	var p *ngap.RawPDU
@@ -364,7 +445,7 @@ func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logg
 		return
 	}
 
-	g.core.PWSIndication(ctx, n, log, proc, code.String(), msg, func(o assoc.Operator) ([]byte, error) {
+	g.core.PWSIndication(ctx, n, log, proc, code.String(), cells, func(o assoc.Operator) ([]byte, error) {
 		id, err := globalGNBIDTo(*o.GlobalGNBID)
 		if err != nil {
 			return nil, err
@@ -376,4 +457,8 @@ func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logg
 
 		return p.Marshal()
 	})
+
+	if d.ReportRequired() {
+		indicateNotify(ctx, n, log, code, ngap.TriggeringInitiatingMessage, d)
+	}
 }

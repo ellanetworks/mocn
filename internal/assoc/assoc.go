@@ -95,6 +95,7 @@ type Config struct {
 	CorePort        int
 	SetupWait       time.Duration
 	ResponseTimeout time.Duration
+	WarningWait     time.Duration
 	RetryInterval   time.Duration
 	ReconnectMin    time.Duration
 	ReconnectMax    time.Duration
@@ -105,6 +106,7 @@ type Config struct {
 const (
 	defaultSetupWait       = 4 * time.Second
 	defaultResponseTimeout = 10 * time.Second
+	defaultWarningWait     = 3 * time.Second
 	defaultRetryInterval   = 10 * time.Second
 	defaultReconnectMin    = time.Second
 	defaultReconnectMax    = 30 * time.Second
@@ -140,6 +142,7 @@ func (cfg Config) withDefaults(names Names) Config {
 	}{
 		{&cfg.SetupWait, defaultSetupWait},
 		{&cfg.ResponseTimeout, defaultResponseTimeout},
+		{&cfg.WarningWait, defaultWarningWait},
 		{&cfg.RetryInterval, defaultRetryInterval},
 		{&cfg.ReconnectMin, defaultReconnectMin},
 		{&cfg.ReconnectMax, defaultReconnectMax},

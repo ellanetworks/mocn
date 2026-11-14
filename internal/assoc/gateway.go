@@ -43,14 +43,15 @@ type Gateway[S Setup, R RadioConfig[R], I any, C Equaler[C]] struct {
 
 	reconcileMu sync.Mutex
 
-	mu        sync.Mutex
-	loop      *loop
-	operators []Operator
-	cores     map[string]*Client[I, C]
-	stopping  map[*Client[I, C]]struct{}
-	radios    map[*sctp.SCTPConn]*Radio[S, R]
-	restarts  map[*sctp.SCTPConn][]restart
-	changed   chan struct{}
+	mu            sync.Mutex
+	loop          *loop
+	operators     []Operator
+	cores         map[string]*Client[I, C]
+	stopping      map[*Client[I, C]]struct{}
+	radios        map[*sctp.SCTPConn]*Radio[S, R]
+	restarts      map[string][]restart
+	restartRadios []string
+	changed       chan struct{}
 }
 
 type loop struct {
@@ -82,7 +83,7 @@ func New[S Setup, R RadioConfig[R], I any, C Equaler[C]](cfg Config, names Names
 		cores:    map[string]*Client[I, C]{},
 		stopping: map[*Client[I, C]]struct{}{},
 		radios:   map[*sctp.SCTPConn]*Radio[S, R]{},
-		restarts: map[*sctp.SCTPConn][]restart{},
+		restarts: map[string][]restart{},
 		changed:  make(chan struct{}),
 	}
 

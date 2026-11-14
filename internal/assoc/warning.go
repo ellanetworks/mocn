@@ -1,7 +1,6 @@
 package assoc
 
 import (
-	"bytes"
 	"context"
 	"log/slog"
 	"slices"
@@ -258,10 +257,7 @@ type Warning[S any, K comparable, T any] struct {
 // TS 38.300 clause 4.10.2.3
 // TS 23.251 clause 4.5
 // TS 23.041 clause 3.4
-func (g *Gateway[S, R, I, C]) warningRadios(a *Core, covers func(S) bool) ([]*Radio[S, R], string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
+func (g *Gateway[S, R, I, C]) warningRadiosLocked(a *Core, covers func(S) bool) ([]*Radio[S, R], string) {
 	if o, ok := g.OperatorLocked(a.OperatorID()); !ok || !o.PWS {
 		return nil, PWSNotPWSOperator
 	}
@@ -290,7 +286,32 @@ func (g *Gateway[S, R, I, C]) warningRadios(a *Core, covers func(S) bool) ([]*Ra
 func Warn[S Setup, R RadioConfig[R], I any, C Equaler[C], K comparable, T any](ctx context.Context,
 	g *Gateway[S, R, I, C], w *Warnings[K, T], a *Core, log *slog.Logger, req Warning[S, K, T],
 ) {
-	radios, result := g.warningRadios(a, req.Covers)
+	answerCtx := context.WithoutCancel(ctx)
+
+	g.mu.Lock()
+
+	radios, result := g.warningRadiosLocked(a, req.Covers)
+
+	var x *warning[K, T]
+
+	if result == PWSRelayed {
+		conns := make([]*sctp.SCTPConn, 0, len(radios))
+		for _, n := range radios {
+			conns = append(conns, n.conn)
+		}
+
+		x = w.start(req.Key, conns, func(got []T, missing int) {
+			if missing > 0 {
+				g.cfg.Metrics.PWS.WithLabelValues(g.names.Interface, req.Procedure, PWSTimeout).Add(float64(missing))
+				log.WarnContext(answerCtx, "radios did not answer the "+req.What+" in time", slog.Int("radios", missing))
+			}
+
+			req.Answer(answerCtx, got)
+		})
+	}
+
+	g.mu.Unlock()
+
 	g.CountPWS(req.Procedure, result)
 
 	switch result {
@@ -309,21 +330,6 @@ func Warn[S Setup, R RadioConfig[R], I any, C Equaler[C], K comparable, T any](c
 		return
 	}
 
-	answerCtx := context.WithoutCancel(ctx)
-	conns := make([]*sctp.SCTPConn, 0, len(radios))
-
-	for _, n := range radios {
-		conns = append(conns, n.conn)
-	}
-
-	x := w.start(req.Key, conns, func(got []T, missing int) {
-		if missing > 0 {
-			log.WarnContext(answerCtx, "radios did not answer the "+req.What+" in time", slog.Int("radios", missing))
-		}
-
-		req.Answer(answerCtx, got)
-	})
-
 	log.InfoContext(ctx, req.What+" from "+g.names.Core+" relayed to radios", slog.Int("radios", len(radios)))
 
 	for _, n := range radios {
@@ -334,12 +340,17 @@ func Warn[S Setup, R RadioConfig[R], I any, C Equaler[C], K comparable, T any](c
 	}
 }
 
+// TS 36.413 clause 9.1.13.5
+const maxRestartsPerRadio = 256
+
+const maxRestartRadios = 1024
+
 type restart struct {
-	msg   []byte
+	cells []string
 	build func(o Operator) ([]byte, error)
 }
 
-func (g *Gateway[S, R, I, C]) pwsCoresLocked() (Operator, []*Core) {
+func (g *Gateway[S, R, I, C]) pwsCoresLocked() (Operator, []*Core, bool) {
 	for _, o := range g.operators {
 		if !o.PWS {
 			continue
@@ -350,10 +361,10 @@ func (g *Gateway[S, R, I, C]) pwsCoresLocked() (Operator, []*Core) {
 			cores = append(cores, c.Assoc)
 		}
 
-		return o, cores
+		return o, cores, true
 	}
 
-	return Operator{}, nil
+	return Operator{}, nil, false
 }
 
 func sendPWS(ctx context.Context, log *slog.Logger, what string, o Operator, cores []*Core,
@@ -372,71 +383,115 @@ func sendPWS(ctx context.Context, log *slog.Logger, what string, o Operator, cor
 	}
 }
 
+// TS 23.007 clause 15A.1.2
+func (g *Gateway[S, R, I, C]) supersedeRestartsLocked(ref string, cells []string) {
+	kept := slices.DeleteFunc(g.restarts[ref], func(r restart) bool {
+		return !slices.ContainsFunc(r.cells, func(c string) bool { return !slices.Contains(cells, c) })
+	})
+
+	if len(kept) == 0 {
+		delete(g.restarts, ref)
+		g.restartRadios = slices.DeleteFunc(g.restartRadios, func(r string) bool { return r == ref })
+
+		return
+	}
+
+	g.restarts[ref] = kept
+}
+
+// TS 23.007 clause 15A.1.2
+// TS 23.007 clause 15A.2
+func (g *Gateway[S, R, I, C]) keepRestartLocked(ref string, r restart) {
+	if _, ok := g.restarts[ref]; !ok {
+		if len(g.restartRadios) == maxRestartRadios {
+			delete(g.restarts, g.restartRadios[0])
+			g.restartRadios = g.restartRadios[1:]
+		}
+
+		g.restartRadios = append(g.restartRadios, ref)
+	}
+
+	kept := g.restarts[ref]
+	if len(kept) == maxRestartsPerRadio {
+		kept = kept[1:]
+	}
+
+	g.restarts[ref] = append(kept, r)
+}
+
 // TS 36.300 clause 4.6.2
 // TS 38.300 clause 4.10.2.3
 // TS 23.007 clause 15A.1.2
 // TS 23.251 clause 4.5
 func (g *Gateway[S, R, I, C]) PWSIndication(ctx context.Context, n *Radio[S, R], log *slog.Logger, proc, what string,
-	msg []byte, build func(o Operator) ([]byte, error),
+	cells []string, build func(o Operator) ([]byte, error),
 ) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	o, cores := g.pwsCoresLocked()
-	if len(cores) > 0 {
+	if n.Setup == nil {
+		return
+	}
+
+	ref := (*n.Setup).Ref()
+	restarted := proc == PWSRestartIndication
+
+	o, cores, ok := g.pwsCoresLocked()
+
+	switch {
+	case !ok:
+		g.CountPWS(proc, PWSNoPWSOperator)
+		tracing.SpanFailed(ctx, PWSNoPWSOperator)
+		log.WarnContext(ctx, what+" from radio dropped: no operator with "+g.names.Core+"s is the PWS operator")
+	case len(cores) == 0 && restarted:
+		g.CountPWS(proc, g.names.NoCore)
+		tracing.SpanFailed(ctx, g.names.NoCore)
+		g.supersedeRestartsLocked(ref, cells)
+		g.keepRestartLocked(ref, restart{cells: cells, build: build})
+		log.WarnContext(ctx, what+" from radio kept until an "+g.names.Core+" of the PWS operator is up")
+	case len(cores) == 0:
+		g.CountPWS(proc, g.names.NoCore)
+		tracing.SpanFailed(ctx, g.names.NoCore)
+		log.WarnContext(ctx, what+" from radio dropped: no "+g.names.Core+" of the PWS operator is up")
+	default:
+		if restarted {
+			g.supersedeRestartsLocked(ref, cells)
+		}
+
 		g.CountPWS(proc, PWSRelayed)
 		sendPWS(ctx, log, what, o, cores, build)
 		log.InfoContext(ctx, what+" from radio relayed to the PWS operator", slog.Int(g.names.CoreAttr+"s", len(cores)))
-
-		return
 	}
-
-	g.CountPWS(proc, g.names.NoCore)
-	tracing.SpanFailed(ctx, g.names.NoCore)
-
-	if proc != PWSRestartIndication || g.radios[n.conn] != n {
-		log.WarnContext(ctx, what+" from radio not relayed: no "+g.names.Core+" of the PWS operator is up")
-		return
-	}
-
-	if !slices.ContainsFunc(g.restarts[n.conn], func(r restart) bool { return bytes.Equal(r.msg, msg) }) {
-		g.restarts[n.conn] = append(g.restarts[n.conn], restart{msg: msg, build: build})
-	}
-
-	log.WarnContext(ctx, what+" from radio kept until an "+g.names.Core+" of the PWS operator is up")
 }
 
 // TS 23.007 clause 15A.1.2
+// TS 23.007 clause 15A.2
 func (g *Gateway[S, R, I, C]) sendRestartsLocked(ctx context.Context) {
 	if len(g.restarts) == 0 {
 		return
 	}
 
-	o, cores := g.pwsCoresLocked()
-	if len(cores) == 0 {
+	o, cores, ok := g.pwsCoresLocked()
+
+	switch {
+	case !ok:
+		g.log.WarnContext(ctx, "kept PWS Restart Indications dropped: no operator with "+g.names.Core+
+			"s is the PWS operator", slog.Int("radios", len(g.restarts)))
+	case len(cores) == 0:
 		return
-	}
+	default:
+		for _, ref := range g.restartRadios {
+			log := g.log.With(slog.String("radio", ref))
 
-	for conn, rs := range g.restarts {
-		log := g.log
-		if n, ok := g.radios[conn]; ok {
-			log = n.Logger(log)
+			for _, r := range g.restarts[ref] {
+				sendPWS(ctx, log, "PWS Restart Indication", o, cores, r.build)
+			}
+
+			log.InfoContext(ctx, "kept PWS Restart Indications from radio relayed to the PWS operator",
+				slog.Int("indications", len(g.restarts[ref])))
 		}
-
-		for _, r := range rs {
-			sendPWS(ctx, log, "PWS Restart Indication", o, cores, r.build)
-		}
-
-		log.InfoContext(ctx, "kept PWS Restart Indications from radio relayed to the PWS operator",
-			slog.Int("indications", len(rs)))
 	}
 
 	clear(g.restarts)
-}
-
-func (g *Gateway[S, R, I, C]) ForgetRestarts(n *Radio[S, R]) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	delete(g.restarts, n.conn)
+	g.restartRadios = nil
 }

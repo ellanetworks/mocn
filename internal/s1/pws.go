@@ -2,11 +2,14 @@ package s1
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/assoc"
+	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/ellanetworks/mocn/internal/plmnid"
 	"github.com/ellanetworks/mocn/internal/tracing"
 )
@@ -30,10 +33,18 @@ var pwsIndications = map[s1ap.ProcedureCode]string{
 
 // TS 36.413 clause 9.2.1.37
 // TS 36.413 clause 9.2.1.38
-func (s ranSetup) ownsCell(cellID uint32) bool {
+func (s ranSetup) ownsCellID(cellID uint32) bool {
 	bits, ok := enbIDBits[s.globalENBID.Type]
 
 	return ok && cellID>>(cellIdentityBits-bits) == s.globalENBID.ID
+}
+
+// TS 36.413 clause 9.2.1.38
+// TS 36.300 clause 8.2
+func (s ranSetup) ownsCell(c s1ap.EUTRANCGI) bool {
+	plmn, err := plmnid.Decode(c.PLMNIdentity)
+
+	return err == nil && s.ownsCellID(c.CellID) && (plmn == s.globalENBID.PLMN || s.Broadcasts([]db.PLMN{plmn}))
 }
 
 // TS 36.413 clause 8.12.1.2
@@ -44,7 +55,7 @@ func warningCovers(l *s1ap.WarningAreaList) func(ranSetup) bool {
 		return func(ranSetup) bool { return true }
 	case len(l.CellIDList) > 0:
 		return func(s ranSetup) bool {
-			return slices.ContainsFunc(l.CellIDList, func(c s1ap.EUTRANCGI) bool { return s.ownsCell(c.CellID) })
+			return slices.ContainsFunc(l.CellIDList, s.ownsCell)
 		}
 	}
 
@@ -114,38 +125,87 @@ func (g *Gateway) kill(ctx context.Context, a *mmeAssoc, log *slog.Logger, value
 	})
 }
 
-// TS 36.413 clause 8.12.1.2
-func (g *Gateway) writeReplaceWarningResponse(ctx context.Context, n *ranAssoc, log *slog.Logger, value []byte) {
-	resp, err := s1ap.ParseWriteReplaceWarningResponse(value)
+func warningKeyOf(msg []byte) (warningKey, bool) {
+	p, err := s1ap.ParseRawPDU(msg)
+	if err != nil {
+		return warningKey{}, false
+	}
+
+	var k warningKey
+
+	okID, errID := p.Get(s1ap.IDMessageIdentifier, &k.id)
+	okSerial, errSerial := p.Get(s1ap.IDSerialNumber, &k.serial)
+
+	return k, okID && okSerial && errID == nil && errSerial == nil
+}
+
+// TS 36.413 clause 10.2
+// TS 36.413 clause 10.3.4.2
+// TS 36.413 clause 10.3.5
+// TS 36.413 clause 10.3.6
+func warningAnswer[T any](ctx context.Context, w *assoc.Warnings[warningKey, T], n *ranAssoc, log *slog.Logger,
+	proc s1ap.ProcedureCode, msg []byte, key warningKey, got T, d s1ap.Diagnostics, err error,
+) {
 	if err != nil {
 		tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
-		log.WarnContext(ctx, "dropped invalid Write-Replace Warning Response from radio", slog.Any("error", err))
+		log.WarnContext(ctx, "invalid "+proc.String()+" response from radio", slog.Any("error", err))
 
-		return
+		if _, ase := errors.AsType[*s1ap.AbstractSyntaxError](err); !ase {
+			indicateTransferSyntax(ctx, n, log, &s1ap.SuccessfulOutcome{ProcedureCode: proc})
+		}
+
+		var (
+			ok   bool
+			none T
+		)
+
+		if key, ok = warningKeyOf(msg); !ok {
+			return
+		}
+
+		got = none
+	} else if d.ReportRequired() {
+		indicateNotify(ctx, n, log, proc, s1ap.TriggeringSuccessfulOutcome, d)
 	}
 
-	if !g.writes.Answer(n.Conn(), warningKey{resp.MessageIdentifier, resp.SerialNumber}, resp.BroadcastCompletedAreaList) {
-		log.InfoContext(ctx, "dropped Write-Replace Warning Response from radio: no request awaits it")
+	if !w.Answer(n.Conn(), key, got) {
+		log.InfoContext(ctx, "dropped "+proc.String()+" response from radio: no request awaits it")
 	}
+}
+
+// TS 36.413 clause 8.12.1.2
+func (g *Gateway) writeReplaceWarningResponse(ctx context.Context, n *ranAssoc, log *slog.Logger, value, msg []byte) {
+	var (
+		key  warningKey
+		list *s1ap.BroadcastCompletedAreaList
+		d    s1ap.Diagnostics
+	)
+
+	resp, err := s1ap.ParseWriteReplaceWarningResponse(value)
+	if err == nil {
+		key, list, d = warningKey{resp.MessageIdentifier, resp.SerialNumber}, resp.BroadcastCompletedAreaList, resp.Diagnostics()
+	}
+
+	warningAnswer(ctx, g.writes, n, log, s1ap.ProcWriteReplaceWarning, msg, key, list, d, err)
 }
 
 // TS 36.413 clause 8.12.2.2
-func (g *Gateway) killResponse(ctx context.Context, n *ranAssoc, log *slog.Logger, value []byte) {
+func (g *Gateway) killResponse(ctx context.Context, n *ranAssoc, log *slog.Logger, value, msg []byte) {
+	var (
+		key  warningKey
+		list *s1ap.BroadcastCancelledAreaList
+		d    s1ap.Diagnostics
+	)
+
 	resp, err := s1ap.ParseKillResponse(value)
-	if err != nil {
-		tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
-		log.WarnContext(ctx, "dropped invalid Kill Response from radio", slog.Any("error", err))
-
-		return
+	if err == nil {
+		key, list, d = warningKey{resp.MessageIdentifier, resp.SerialNumber}, resp.BroadcastCancelledAreaList, resp.Diagnostics()
 	}
 
-	if !g.kills.Answer(n.Conn(), warningKey{resp.MessageIdentifier, resp.SerialNumber}, resp.BroadcastCancelledAreaList) {
-		log.InfoContext(ctx, "dropped Kill Response from radio: no request awaits it")
-	}
+	warningAnswer(ctx, g.kills, n, log, s1ap.ProcKill, msg, key, list, d, err)
 }
 
 func (g *Gateway) warningsLost(n *ranAssoc) {
-	g.core.ForgetRestarts(n)
 	g.writes.RadioLost(n.Conn())
 	g.kills.RadioLost(n.Conn())
 }
@@ -254,6 +314,8 @@ func cancelledAreaList(got []*s1ap.BroadcastCancelledAreaList) *s1ap.BroadcastCa
 
 // TS 36.413 clause 8.12.3
 // TS 36.413 clause 8.12.4
+// TS 36.413 clause 10.3.4.2
+// TS 36.413 clause 10.3.5
 // TS 36.300 clause 4.6.2
 // TS 23.007 clause 15A.1.2
 func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logger, code s1ap.ProcedureCode,
@@ -261,11 +323,25 @@ func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logg
 ) {
 	proc := pwsIndications[code]
 
-	var err error
+	var (
+		cells []string
+		d     s1ap.Diagnostics
+		err   error
+	)
+
 	if code == s1ap.ProcPWSRestartIndication {
-		_, err = s1ap.ParsePWSRestartIndication(value)
+		var ind *s1ap.PWSRestartIndication
+		if ind, err = s1ap.ParsePWSRestartIndication(value); err == nil {
+			d = ind.Diagnostics()
+			for _, c := range ind.ECGIListForRestart {
+				cells = append(cells, fmt.Sprintf("%x/%07x", c.PLMNIdentity, c.CellID))
+			}
+		}
 	} else {
-		_, err = s1ap.ParsePWSFailureIndication(value)
+		var ind *s1ap.PWSFailureIndication
+		if ind, err = s1ap.ParsePWSFailureIndication(value); err == nil {
+			d = ind.Diagnostics()
+		}
 	}
 
 	var p *s1ap.RawPDU
@@ -282,7 +358,7 @@ func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logg
 		return
 	}
 
-	g.core.PWSIndication(ctx, n, log, proc, code.String(), msg, func(o assoc.Operator) ([]byte, error) {
+	g.core.PWSIndication(ctx, n, log, proc, code.String(), cells, func(o assoc.Operator) ([]byte, error) {
 		id, err := globalENBIDTo(*o.GlobalENBID)
 		if err != nil {
 			return nil, err
@@ -294,4 +370,8 @@ func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logg
 
 		return p.Marshal()
 	})
+
+	if d.ReportRequired() {
+		indicateNotify(ctx, n, log, code, s1ap.TriggeringInitiatingMessage, d)
+	}
 }

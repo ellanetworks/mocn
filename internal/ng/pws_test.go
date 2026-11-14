@@ -8,6 +8,7 @@ import (
 
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -22,15 +23,15 @@ func nrcgi(t *testing.T, gnbID uint32) ngap.NRCGI {
 	return ngap.NRCGI{PLMNIdentity: plmnID(t, "001", "01"), NRCellIdentity: ngap.NRCellIdentity(uint64(gnbID)<<12 | 1)}
 }
 
-func nrTAI(t *testing.T, plmn string, tac uint32) ngap.TAI {
+func nrTAI(t *testing.T, plmn string) ngap.TAI {
 	t.Helper()
 
-	return ngap.TAI{PLMNIdentity: plmnID(t, plmn[:3], plmn[3:]), TAC: ngap.TAC(tac)}
+	return ngap.TAI{PLMNIdentity: plmnID(t, plmn[:3], plmn[3:]), TAC: 1}
 }
 
-func writeReplaceWarning(id, serial uint16, area *ngap.WarningAreaList) *ngap.WriteReplaceWarningRequest {
+func writeReplaceWarning(serial uint16, area *ngap.WarningAreaList) *ngap.WriteReplaceWarningRequest {
 	return &ngap.WriteReplaceWarningRequest{
-		MessageIdentifier: ngap.MessageIdentifier(id), SerialNumber: ngap.SerialNumber(serial), WarningAreaList: area,
+		MessageIdentifier: 4370, SerialNumber: ngap.SerialNumber(serial), WarningAreaList: area,
 		RepetitionPeriod: 10, NumberOfBroadcastsRequested: 1,
 	}
 }
@@ -49,12 +50,12 @@ func expectSame(t *testing.T, p *peer, msg interface{ Marshal() ([]byte, error) 
 	}
 }
 
-func expectWarningResponse(t *testing.T, amf *peer, id, serial uint16) *ngap.BroadcastCompletedAreaList {
+func expectWarningResponse(t *testing.T, amf *peer, serial uint16) *ngap.BroadcastCompletedAreaList {
 	t.Helper()
 
 	resp := expect(t, amf, "successful", ngap.ProcWriteReplaceWarning, ngap.ParseWriteReplaceWarningResponse)
-	if resp.MessageIdentifier != ngap.MessageIdentifier(id) || resp.SerialNumber != ngap.SerialNumber(serial) {
-		t.Fatalf("Write-Replace Warning Response for %d/%d, want %d/%d", resp.MessageIdentifier, resp.SerialNumber, id, serial)
+	if resp.MessageIdentifier != 4370 || resp.SerialNumber != ngap.SerialNumber(serial) {
+		t.Fatalf("Write-Replace Warning Response for %d/%d, want 4370/%d", resp.MessageIdentifier, resp.SerialNumber, serial)
 	}
 
 	return resp.BroadcastCompletedAreaList
@@ -91,20 +92,20 @@ func TestPWSThroughTheGateway(t *testing.T) {
 	expect(t, amfA, "initiating", ngap.ProcRANConfigurationUpdate, ngap.ParseRANConfigurationUpdate)
 	amfA.Send(t, &ngap.RANConfigurationUpdateAcknowledge{})
 
-	amfB.Send(t, writeReplaceWarning(4370, 1, nil))
+	amfB.Send(t, writeReplaceWarning(1, nil))
 
-	if l := expectWarningResponse(t, amfB, 4370, 1); l != nil {
+	if l := expectWarningResponse(t, amfB, 1); l != nil {
 		t.Fatalf("Broadcast Completed Area List = %+v, want none", l)
 	}
 
-	byCell := writeReplaceWarning(4370, 2, &ngap.WarningAreaList{NRCGIs: []ngap.NRCGI{nrcgi(t, 2)}})
+	byCell := writeReplaceWarning(2, &ngap.WarningAreaList{NRCGIs: []ngap.NRCGI{nrcgi(t, 2)}})
 	amfA.Send(t, byCell)
 	expectSame(t, gnb2, byCell)
 
 	completed := &ngap.BroadcastCompletedAreaList{CellIDBroadcastNR: []ngap.CellIDBroadcastNRItem{{NRCGI: nrcgi(t, 2)}}}
 	gnb2.Send(t, &ngap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 2, BroadcastCompletedAreaList: completed})
 
-	if got := expectWarningResponse(t, amfA, 4370, 2); !reflect.DeepEqual(got, completed) {
+	if got := expectWarningResponse(t, amfA, 2); !reflect.DeepEqual(got, completed) {
 		t.Fatalf("Broadcast Completed Area List = %+v, want %+v", got, completed)
 	}
 
@@ -118,7 +119,7 @@ func TestPWSThroughTheGateway(t *testing.T) {
 	gnb1.Send(t, &ngap.PWSCancelResponse{
 		MessageIdentifier: 4370, SerialNumber: 2,
 		BroadcastCancelledAreaList: &ngap.BroadcastCancelledAreaList{TAICancelledNR: []ngap.TAICancelledNRItem{{
-			TAI:                 nrTAI(t, "00101", 1),
+			TAI:                 nrTAI(t, "00101"),
 			CancelledCellsInTAI: []ngap.CancelledCellsInTAINRItem{{NRCGI: nrcgi(t, 1), NumberOfBroadcasts: 2}},
 		}}},
 	})
@@ -141,11 +142,22 @@ func TestPWSThroughTheGateway(t *testing.T) {
 		t.Fatalf("PWS Cancel Response = %+v, want %+v", cancelled, want)
 	}
 
-	amfA.Send(t, writeReplaceWarning(4370, 3, &ngap.WarningAreaList{EUTRACGIs: []ngap.EUTRACGI{{
+	byEAI := writeReplaceWarning(4, &ngap.WarningAreaList{EmergencyAreaIDs: []ngap.EmergencyAreaID{{0, 0, 1}}})
+	amfA.Send(t, byEAI)
+	expectSame(t, gnb1, byEAI)
+	expectSame(t, gnb2, byEAI)
+	gnb1.Send(t, &ngap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 4})
+	gnb2.Send(t, &ngap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 4})
+
+	if l := expectWarningResponse(t, amfA, 4); l != nil {
+		t.Fatalf("Broadcast Completed Area List = %+v, want none", l)
+	}
+
+	amfA.Send(t, writeReplaceWarning(3, &ngap.WarningAreaList{EUTRACGIs: []ngap.EUTRACGI{{
 		PLMNIdentity: plmnID(t, "001", "01"), EUTRACellIdentity: 1<<8 | 1,
 	}}}))
 
-	if l := expectWarningResponse(t, amfA, 4370, 3); l != nil {
+	if l := expectWarningResponse(t, amfA, 3); l != nil {
 		t.Fatalf("Broadcast Completed Area List = %+v, want none", l)
 	}
 
@@ -154,7 +166,7 @@ func TestPWSThroughTheGateway(t *testing.T) {
 		return &ngap.PWSRestartIndication{
 			CellIDListForRestart:          ngap.CellIDListForRestart{NRCGIs: []ngap.NRCGI{nrcgi(t, 1)}},
 			GlobalRANNodeID:               id,
-			TAIListForRestart:             ngap.TAIListForRestart{nrTAI(t, "00101", 1), nrTAI(t, "002002", 1)},
+			TAIListForRestart:             ngap.TAIListForRestart{nrTAI(t, "00101"), nrTAI(t, "002002")},
 			EmergencyAreaIDListForRestart: ngap.EmergencyAreaIDListForRestart{{0, 0, 1}},
 		}
 	}
@@ -179,7 +191,7 @@ func TestPWSThroughTheGateway(t *testing.T) {
 	}
 
 	for key, want := range map[[2]string]float64{
-		{"write_replace_warning", "relayed"}: 1, {"write_replace_warning", "not_pws_operator"}: 1,
+		{"write_replace_warning", "relayed"}: 2, {"write_replace_warning", "not_pws_operator"}: 1,
 		{"write_replace_warning", "no_radio"}: 1, {"pws_cancel", "relayed"}: 1,
 		{"pws_restart_indication", "relayed"}: 1, {"pws_failure_indication", "relayed"}: 1,
 	} {
@@ -187,4 +199,81 @@ func TestPWSThroughTheGateway(t *testing.T) {
 			t.Fatalf("%s %s = %v, want %v", key[0], key[1], got, want)
 		}
 	}
+}
+
+func TestNGOwnsCell(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		length int
+		id     uint32
+		plmn   string
+		nci    uint64
+		owned  bool
+	}{
+		{22, 0x3fffff, "00101", 0x3fffff<<14 | 0x3fff, true},
+		{22, 0x3fffff, "00101", 0x3ffffe<<14 | 0x3fff, false},
+		{24, 1, "00101", 1<<12 | 1, true},
+		{24, 1, "002002", 1<<12 | 1, true},
+		{24, 1, "00303", 1<<12 | 1, false},
+		{28, 0xfffffff, "00101", 0xfffffff<<8 | 0xff, true},
+		{32, 0xffffffff, "00101", 0xffffffff<<4 | 0xf, true},
+		{32, 0xffffffff, "00101", 0xfffffffe<<4 | 0xf, false},
+	} {
+		got := ng.OwnsCell(db.GlobalGNBID{PLMN: plmnA, ID: tc.id, Length: tc.length}, plmnB, ngap.NRCGI{
+			PLMNIdentity: plmnID(t, tc.plmn[:3], tc.plmn[3:]), NRCellIdentity: ngap.NRCellIdentity(tc.nci),
+		})
+		if got != tc.owned {
+			t.Fatalf("gNB %x@%d owns %s/%09x = %v, want %v", tc.id, tc.length, tc.plmn, tc.nci, got, tc.owned)
+		}
+	}
+}
+
+func TestNGPWSRestartIndicationKeptUntilAnAMFIsUp(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	amfs := listenAMF(t, "127.0.3.3")
+	h := startGateway(t, amfs.Port(), pws(operatorA("127.0.3.3")))
+	gnb, amf := upAndRunning(t, h, amfs)
+
+	if err := amf.Conn.Abort(); err != nil {
+		t.Fatal(err)
+	}
+
+	h.eventually(t, "AMF not up", func() bool {
+		st, _ := h.gw.AMFStatus(1, []string{"127.0.3.3"})
+		return st.State != ng.AMFUp
+	})
+
+	restart := func(id ngap.GlobalRANNodeID) *ngap.PWSRestartIndication {
+		return &ngap.PWSRestartIndication{
+			CellIDListForRestart: ngap.CellIDListForRestart{NRCGIs: []ngap.NRCGI{nrcgi(t, 1)}},
+			GlobalRANNodeID:      id,
+			TAIListForRestart:    ngap.TAIListForRestart{nrTAI(t, "00101")},
+		}
+	}
+
+	gnb.Send(t, restart(ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: 1, Bits: 24}))
+
+	h.eventually(t, "PWS Restart Indication kept", func() bool {
+		return testutil.ToFloat64(h.metrics.PWS.WithLabelValues("ng", "pws_restart_indication", "no_amf")) == 1
+	})
+
+	if err := gnb.Conn.Abort(); err != nil {
+		t.Fatal(err)
+	}
+
+	h.eventually(t, "radio gone", func() bool { return len(h.gw.RANNodes()) == 0 })
+
+	gnb = h.connectGNB(t)
+	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
+
+	amf, _ = setupAMF(t, amfs, setupResponse(t, "amf1", 255, "00101", guami(t, "00101", 2, 1, 0)))
+	expectSame(t, amf, restart(ngap.GlobalRANNodeID{
+		Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: 0xabcde, Bits: 22,
+	}))
+	expect(t, gnb, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
+	amf.Quiet(t, 300*time.Millisecond)
 }

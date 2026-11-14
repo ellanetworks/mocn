@@ -64,8 +64,8 @@ func New(cfg Config) *Gateway {
 	g.cfg = g.core.Config()
 	g.log = g.cfg.Logger
 	g.relay = newRelay(g)
-	g.writes = assoc.NewWarnings[warningKey, *s1ap.BroadcastCompletedAreaList](g.cfg.ResponseTimeout)
-	g.kills = assoc.NewWarnings[warningKey, *s1ap.BroadcastCancelledAreaList](g.cfg.ResponseTimeout)
+	g.writes = assoc.NewWarnings[warningKey, *s1ap.BroadcastCompletedAreaList](g.cfg.WarningWait)
+	g.kills = assoc.NewWarnings[warningKey, *s1ap.BroadcastCancelledAreaList](g.cfg.WarningWait)
 
 	return g
 }

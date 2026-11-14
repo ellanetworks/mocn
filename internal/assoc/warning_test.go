@@ -1,6 +1,7 @@
 package assoc
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -108,5 +109,53 @@ func TestWarningsExpire(t *testing.T) {
 	case got := <-done:
 		t.Fatalf("answered twice: %+v", got)
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestKeptRestarts(t *testing.T) {
+	t.Parallel()
+
+	g := &Gateway[testSetup, testRadio, testInfo, testCore]{restarts: map[string][]restart{}}
+	keep := func(ref string, cells ...string) {
+		g.supersedeRestartsLocked(ref, cells)
+		g.keepRestartLocked(ref, restart{cells: cells})
+	}
+	cells := func(ref string) [][]string {
+		var out [][]string
+		for _, r := range g.restarts[ref] {
+			out = append(out, r.cells)
+		}
+
+		return out
+	}
+
+	keep("a", "1")
+	keep("a", "2")
+	keep("b", "1")
+	keep("a", "1", "2")
+
+	if got := cells("a"); !reflect.DeepEqual(got, [][]string{{"1", "2"}}) {
+		t.Fatalf("radio a = %v, want the later restart only", got)
+	}
+
+	if !reflect.DeepEqual(g.restartRadios, []string{"b", "a"}) {
+		t.Fatalf("radios = %v", g.restartRadios)
+	}
+
+	for i := range maxRestartsPerRadio + 1 {
+		keep("c", fmt.Sprint(i))
+	}
+
+	if got := cells("c"); len(got) != maxRestartsPerRadio || got[0][0] != "1" {
+		t.Fatalf("radio c keeps %d restarts from %v, want %d from 1", len(got), got[0], maxRestartsPerRadio)
+	}
+
+	for i := range maxRestartRadios {
+		keep(fmt.Sprint("r", i), "1")
+	}
+
+	if len(g.restarts) != maxRestartRadios || len(g.restartRadios) != maxRestartRadios || g.restarts["b"] != nil {
+		t.Fatalf("kept %d radios (%d listed), want %d without the oldest", len(g.restarts), len(g.restartRadios),
+			maxRestartRadios)
 	}
 }

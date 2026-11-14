@@ -75,10 +75,10 @@ func (r *relay) fromRAN(ctx context.Context, from *ranAssoc, pdu s1ap.PDU, msg [
 			log.DebugContext(ctx, "Reset Acknowledge from radio")
 			return
 		case s1ap.ProcWriteReplaceWarning:
-			r.g.writeReplaceWarningResponse(ctx, from, log, m.Value)
+			r.g.writeReplaceWarningResponse(ctx, from, log, m.Value, msg)
 			return
 		case s1ap.ProcKill:
-			r.g.killResponse(ctx, from, log, m.Value)
+			r.g.killResponse(ctx, from, log, m.Value, msg)
 			return
 		}
 	}

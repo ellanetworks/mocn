@@ -232,7 +232,7 @@ func servingCell(radios []*ranAssoc, plmn db.PLMN, cellID uint32) *ranAssoc {
 	var serving, exact []*ranAssoc
 
 	for _, n := range radios {
-		if !n.Setup.ownsCell(cellID) {
+		if !n.Setup.ownsCellID(cellID) {
 			continue
 		}
 

@@ -47,12 +47,14 @@ const (
 
 const (
 	PWSWriteReplaceWarning = "write_replace_warning"
-	PWSRestartIndication   = "pws_restart_indication"
-	PWSFailureIndication   = "pws_failure_indication"
+	PWSRestartIndication   = "pws_restart_indication" // #nosec G101
+	PWSFailureIndication   = "pws_failure_indication" // #nosec G101
 	PWSRelayed             = "relayed"
 	PWSNotPWSOperator      = "not_pws_operator"
 	PWSNoRadio             = "no_radio"
 	PWSInvalid             = "invalid"
+	PWSTimeout             = "timeout"
+	PWSNoPWSOperator       = "no_pws_operator" // #nosec G101
 )
 
 var overloadResults = map[string][]string{
@@ -97,8 +99,8 @@ func (g *Gateway[S, R, I, C]) initMetrics() {
 		}
 	}
 
-	warning := []string{PWSRelayed, PWSNotPWSOperator, PWSNoRadio, PWSInvalid}
-	indication := []string{PWSRelayed, g.names.NoCore, PWSInvalid}
+	warning := []string{PWSRelayed, PWSNotPWSOperator, PWSNoRadio, PWSTimeout, PWSInvalid}
+	indication := []string{PWSRelayed, PWSNoPWSOperator, g.names.NoCore, PWSInvalid}
 
 	for proc, results := range map[string][]string{
 		PWSWriteReplaceWarning: warning,

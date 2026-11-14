@@ -252,7 +252,7 @@ func servingCell(radios []*ranAssoc, plmn db.PLMN, nci uint64) *ranAssoc {
 	var serving, exact []*ranAssoc
 
 	for _, n := range radios {
-		if !n.Setup.ownsCell(ngap.NRCellIdentity(nci)) {
+		if !n.Setup.ownsCellID(nci) {
 			continue
 		}
 

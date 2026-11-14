@@ -283,22 +283,26 @@ ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result
 ellamocn_paging_messages_total{interface="s1",result="invalid"} 0
 ellamocn_paging_messages_total{interface="s1",result="no_radio"} 0
 ellamocn_paging_messages_total{interface="s1",result="relayed"} 0
-# HELP ellamocn_pws_messages_total PWS messages: WRITE-REPLACE WARNING REQUEST, KILL REQUEST and PWS CANCEL REQUEST received from MMEs and AMFs, PWS RESTART INDICATION and PWS FAILURE INDICATION received from radios, by interface (s1, ng), procedure (write_replace_warning, kill, pws_cancel, pws_restart_indication, pws_failure_indication) and result (relayed: sent to the radios covering the warning area, or to every MME or AMF of the PWS operator that is up; not_pws_operator: from an operator that is not the PWS operator, answered with no broadcast area; no_radio: no radio that is up covers the warning area, answered with no broadcast area; no_mme, no_amf: no MME or AMF of the PWS operator is up, a PWS RESTART INDICATION is kept and sent when one is up; invalid: undecodable).
+# HELP ellamocn_pws_messages_total PWS messages: WRITE-REPLACE WARNING REQUEST, KILL REQUEST and PWS CANCEL REQUEST received from MMEs and AMFs, PWS RESTART INDICATION and PWS FAILURE INDICATION received from radios, by interface (s1, ng), procedure (write_replace_warning, kill, pws_cancel, pws_restart_indication, pws_failure_indication) and result (relayed: sent to the radios covering the warning area, or to every MME or AMF of the PWS operator that is up; not_pws_operator: from an operator that is not the PWS operator, answered with no broadcast area; no_radio: no radio that is up covers the warning area, answered with no broadcast area; timeout: a radio the request was sent to did not answer within 3 seconds, counted once per radio; no_pws_operator: no operator with MMEs or AMFs on the interface is the PWS operator, dropped; no_mme, no_amf: no MME or AMF of the PWS operator is up, a PWS RESTART INDICATION is kept and sent when one is up; invalid: undecodable).
 # TYPE ellamocn_pws_messages_total counter
 ellamocn_pws_messages_total{interface="s1",procedure="kill",result="invalid"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="kill",result="no_radio"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="kill",result="not_pws_operator"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="kill",result="relayed"} 0
+ellamocn_pws_messages_total{interface="s1",procedure="kill",result="timeout"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="pws_failure_indication",result="invalid"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="pws_failure_indication",result="no_mme"} 0
+ellamocn_pws_messages_total{interface="s1",procedure="pws_failure_indication",result="no_pws_operator"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="pws_failure_indication",result="relayed"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="pws_restart_indication",result="invalid"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="pws_restart_indication",result="no_mme"} 0
+ellamocn_pws_messages_total{interface="s1",procedure="pws_restart_indication",result="no_pws_operator"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="pws_restart_indication",result="relayed"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",result="invalid"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",result="no_radio"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",result="not_pws_operator"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",result="relayed"} 0
+ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",result="timeout"} 0
 # HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded).
 # TYPE ellamocn_radio_associations gauge
 ellamocn_radio_associations{interface="s1",state="connected"} 0
