@@ -63,12 +63,24 @@ func (r *relay) fromRAN(ctx context.Context, from *ranAssoc, pdu s1ap.PDU, msg [
 		case s1ap.ProcPathSwitchRequest:
 			r.pathSwitchRequest(ctx, from, log, pdu, msg)
 			return
+		case s1ap.ProcPWSRestartIndication, s1ap.ProcPWSFailureIndication:
+			r.g.pwsIndication(ctx, from, log, m.ProcedureCode, m.Value, msg)
+			return
 		}
 	}
 
-	if m, ok := pdu.(*s1ap.SuccessfulOutcome); ok && m.ProcedureCode == s1ap.ProcReset {
-		log.DebugContext(ctx, "Reset Acknowledge from radio")
-		return
+	if m, ok := pdu.(*s1ap.SuccessfulOutcome); ok {
+		switch m.ProcedureCode {
+		case s1ap.ProcReset:
+			log.DebugContext(ctx, "Reset Acknowledge from radio")
+			return
+		case s1ap.ProcWriteReplaceWarning:
+			r.g.writeReplaceWarningResponse(ctx, from, log, m.Value)
+			return
+		case s1ap.ProcKill:
+			r.g.killResponse(ctx, from, log, m.Value)
+			return
+		}
 	}
 
 	p, err := s1ap.ParseRawPDU(msg)
@@ -111,6 +123,12 @@ func (r *relay) fromMME(ctx context.Context, from *mmeAssoc, pdu s1ap.PDU, msg [
 		case s1ap.ProcOverloadStop:
 			r.g.overloadStop(ctx, from, log, m.Value)
 			return
+		case s1ap.ProcWriteReplaceWarning:
+			r.g.writeReplaceWarning(ctx, from, log, m.Value, msg)
+			return
+		case s1ap.ProcKill:
+			r.g.kill(ctx, from, log, m.Value, msg)
+			return
 		}
 	}
 
@@ -138,6 +156,8 @@ func ueAssociated(p *s1ap.RawPDU) bool {
 }
 
 func (r *relay) ranLost(ctx context.Context, from *ranAssoc, cause s1ap.Cause) {
+	r.g.warningsLost(from)
+
 	r.mu.Lock()
 	gone := r.ues.Remove(r.ues.Where(func(u *ueContext) bool { return u.RAN == from })...)
 	r.mu.Unlock()

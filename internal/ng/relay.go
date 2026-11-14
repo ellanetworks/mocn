@@ -62,12 +62,24 @@ func (r *relay) fromRAN(ctx context.Context, from *ranAssoc, pdu ngap.PDU, msg [
 		case ngap.ProcPathSwitchRequest:
 			r.pathSwitchRequest(ctx, from, log, m.Value, msg)
 			return
+		case ngap.ProcPWSRestartIndication, ngap.ProcPWSFailureIndication:
+			r.g.pwsIndication(ctx, from, log, m.ProcedureCode, m.Value, msg)
+			return
 		}
 	}
 
-	if m, ok := pdu.(*ngap.SuccessfulOutcome); ok && m.ProcedureCode == ngap.ProcNGReset {
-		log.DebugContext(ctx, "NG Reset Acknowledge from radio")
-		return
+	if m, ok := pdu.(*ngap.SuccessfulOutcome); ok {
+		switch m.ProcedureCode {
+		case ngap.ProcNGReset:
+			log.DebugContext(ctx, "NG Reset Acknowledge from radio")
+			return
+		case ngap.ProcWriteReplaceWarning:
+			r.g.writeReplaceWarningResponse(ctx, from, log, m.Value)
+			return
+		case ngap.ProcPWSCancel:
+			r.g.pwsCancelResponse(ctx, from, log, m.Value)
+			return
+		}
 	}
 
 	p, err := ngap.ParseRawPDU(msg)
@@ -117,6 +129,12 @@ func (r *relay) fromAMF(ctx context.Context, from *amfAssoc, pdu ngap.PDU, msg [
 		case ngap.ProcRerouteNASRequest:
 			r.rerouteNASRequest(ctx, from, log, m.Value, msg)
 			return
+		case ngap.ProcWriteReplaceWarning:
+			r.g.writeReplaceWarning(ctx, from, log, m.Value, msg)
+			return
+		case ngap.ProcPWSCancel:
+			r.g.pwsCancel(ctx, from, log, m.Value, msg)
+			return
 		}
 	}
 
@@ -144,6 +162,8 @@ func ueAssociated(p *ngap.RawPDU) bool {
 }
 
 func (r *relay) ranLost(ctx context.Context, from *ranAssoc, cause ngap.Cause) {
+	r.g.warningsLost(from)
+
 	r.mu.Lock()
 	gone := r.ues.Remove(r.ues.Where(func(u *ueContext) bool { return u.RAN == from })...)
 	r.mu.Unlock()

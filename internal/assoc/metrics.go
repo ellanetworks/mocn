@@ -45,6 +45,16 @@ const (
 	HandoverError     = "error"
 )
 
+const (
+	PWSWriteReplaceWarning = "write_replace_warning"
+	PWSRestartIndication   = "pws_restart_indication"
+	PWSFailureIndication   = "pws_failure_indication"
+	PWSRelayed             = "relayed"
+	PWSNotPWSOperator      = "not_pws_operator"
+	PWSNoRadio             = "no_radio"
+	PWSInvalid             = "invalid"
+)
+
 var overloadResults = map[string][]string{
 	OverloadStart: {OverloadRelayed, OverloadNoRadio, OverloadInvalid},
 	OverloadStop:  {OverloadRelayed, OverloadNoRadio, OverloadIgnored, OverloadInvalid},
@@ -86,6 +96,20 @@ func (g *Gateway[S, R, I, C]) initMetrics() {
 			m.Handover.WithLabelValues(iface, proc, r)
 		}
 	}
+
+	warning := []string{PWSRelayed, PWSNotPWSOperator, PWSNoRadio, PWSInvalid}
+	indication := []string{PWSRelayed, g.names.NoCore, PWSInvalid}
+
+	for proc, results := range map[string][]string{
+		PWSWriteReplaceWarning: warning,
+		g.names.Kill:           warning,
+		PWSRestartIndication:   indication,
+		PWSFailureIndication:   indication,
+	} {
+		for _, r := range results {
+			m.PWS.WithLabelValues(iface, proc, r)
+		}
+	}
 }
 
 func (g *Gateway[S, R, I, C]) countSetup(side, result string) {
@@ -106,6 +130,10 @@ func (g *Gateway[S, R, I, C]) CountOverload(proc, result string) {
 
 func (g *Gateway[S, R, I, C]) CountHandover(proc, result string) {
 	g.cfg.Metrics.Handover.WithLabelValues(g.names.Interface, proc, result).Inc()
+}
+
+func (g *Gateway[S, R, I, C]) CountPWS(proc, result string) {
+	g.cfg.Metrics.PWS.WithLabelValues(g.names.Interface, proc, result).Inc()
 }
 
 func (g *Gateway[S, R, I, C]) MetricsState() metrics.State {

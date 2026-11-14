@@ -32,6 +32,9 @@ type lab struct {
 	mme      string
 	amf      string
 	core     string
+	coreLog  coreLog
+	dn       string
+	dnHost   string
 	enb      string
 	radio    string
 	srsue    string
@@ -42,15 +45,46 @@ type lab struct {
 
 var labs = []lab{
 	{
-		operator: "open5gs", plmn: plmn{MCC: "001", MNC: "01"}, enbID: 1, gnbID: 1, mme: "10.90.0.10", amf: "10.90.0.12",
-		core: "open5gs", enb: "srsenb",
+		operator: "ella-core", plmn: plmn{MCC: "001", MNC: "01"}, enbID: 1, gnbID: 1, mme: "10.90.0.14", amf: "10.90.0.14",
+		core: "ella-core", coreLog: ellaCoreLog, dn: "10.90.3.3", dnHost: "router", enb: "srsenb",
 		radio: "eNB:001-01:MacroeNB-0019b", srsue: "srsue", imsi: "001010000000001", ueNet: "10.45.",
 	},
 	{
 		operator: "open5gs-b", plmn: plmn{MCC: "001", MNC: "02"}, enbID: 2, gnbID: 2, mme: "10.90.0.11", amf: "10.90.0.13",
-		core: "open5gs-b", enb: "srsenb-b",
+		core: "open5gs-b", coreLog: open5gsMMELog("open5gs-b"), dn: "10.46.0.1", dnHost: "open5gs-b", enb: "srsenb-b",
 		radio: "eNB:001-02:MacroeNB-0019c", srsue: "srsue-b", imsi: "001020000000002", ueNet: "10.46.", pagedUE: true,
 	},
+}
+
+type coreLog struct {
+	args           []string
+	accepted       []string
+	attached       []string
+	idle           []string
+	serviceRequest []string
+	detached       []string
+}
+
+const ellaSUPI = `"supi":"imsi-{imsi}"`
+
+var ellaCoreLog = coreLog{
+	args:           []string{"logs", "--no-color", "ella-core"},
+	accepted:       []string{`"msg":"Radio setup complete"`, `"ran_addr":"10.90.0.30`, `"rat":"4g"`},
+	attached:       []string{`"msg":"UE registration accepted"`, ellaSUPI},
+	idle:           []string{`"msg":"UE idle"`, ellaSUPI, `"rat":"4g"`},
+	serviceRequest: []string{`"msg":"Service Request accepted"`, ellaSUPI},
+	detached:       []string{`"msg":"Detach Request"`, ellaSUPI},
+}
+
+func open5gsMMELog(core string) coreLog {
+	return coreLog{
+		args:           []string{"exec", "-T", core, "cat", "/var/log/open5gs/mme.log"},
+		accepted:       []string{"eNB-S1 accepted[10.90.0.30]"},
+		attached:       []string{"[{imsi}] Attach complete"},
+		idle:           []string{"Number of eNB-UEs is now 0"},
+		serviceRequest: []string{"[{imsi}] Service request"},
+		detached:       []string{"Detach request"},
+	}
 }
 
 type client struct {
@@ -59,10 +93,10 @@ type client struct {
 	http  *http.Client
 }
 
-func newClient() *client {
-	base := os.Getenv("E2E_API")
+func newClient(env, fallback string) *client {
+	base := os.Getenv(env)
 	if base == "" {
-		base = "http://127.0.0.1:5032"
+		base = fallback
 	}
 
 	return &client{base: base, http: &http.Client{Timeout: 10 * time.Second}}
@@ -265,10 +299,82 @@ func metric(text, name string, labels map[string]string) (float64, bool) {
 	return 0, false
 }
 
+var ellaCoreSubscribers = []string{"001010000000001", "001010000000011", "001010000000021"}
+
+func setUpEllaCore(ctx context.Context, t *testing.T) *client {
+	t.Helper()
+
+	c := newClient("E2E_CORE_API", "http://127.0.0.1:5033")
+
+	eventually(ctx, t, "Ella Core API", 120*time.Second, func() error {
+		_, err := c.do(ctx, http.MethodGet, "/api/v1/status", nil, nil)
+		return err
+	})
+
+	var login struct {
+		Token string `json:"token"`
+	}
+
+	creds := map[string]string{"email": adminEmail, "password": adminPass}
+
+	status, err := c.do(ctx, http.MethodPost, "/api/v1/init", creds, &login)
+	if status == http.StatusForbidden {
+		_, err = c.do(ctx, http.MethodPost, "/api/v1/auth/login", creds, &login)
+	}
+
+	if err != nil {
+		t.Fatalf("authenticate to Ella Core: %v", err)
+	}
+
+	c.token = login.Token
+
+	var apiToken struct {
+		Token string `json:"token"`
+	}
+
+	name := map[string]string{"name": fmt.Sprintf("e2e-%d", time.Now().UnixNano())}
+	if _, err := c.do(ctx, http.MethodPost, "/api/v1/users/me/api-tokens", name, &apiToken); err != nil {
+		t.Fatalf("create an Ella Core API token: %v", err)
+	}
+
+	c.token = apiToken.Token
+
+	if _, err := c.do(ctx, http.MethodPut, "/api/v1/slices/default/data-networks/internet", map[string]bool{"nat": false}, nil); err != nil {
+		t.Fatalf("disable NAT on Ella Core: %v", err)
+	}
+
+	for _, imsi := range ellaCoreSubscribers {
+		status, err := c.do(ctx, http.MethodGet, "/api/v1/subscribers/"+imsi, nil, nil)
+		if status != http.StatusNotFound {
+			if err != nil {
+				t.Fatalf("get Ella Core subscriber %s: %v", imsi, err)
+			}
+
+			continue
+		}
+
+		sub := map[string]string{
+			"imsi":           imsi,
+			"key":            "465b5ce8b199b49faa5f0a2ee238a6bc",
+			"opc":            "cd63cb71954a9f4e48a5994e37a02baf",
+			"sequenceNumber": "000000000001",
+			"profile_name":   "default",
+		}
+
+		if _, err := c.do(ctx, http.MethodPost, "/api/v1/subscribers", sub, nil); err != nil {
+			t.Fatalf("create Ella Core subscriber %s: %v", imsi, err)
+		}
+	}
+
+	return c
+}
+
 func setUp(ctx context.Context, t *testing.T) *client {
 	t.Helper()
 
-	c := newClient()
+	setUpEllaCore(ctx, t)
+
+	c := newClient("E2E_API", "http://127.0.0.1:5032")
 
 	eventually(ctx, t, "Ella MOCN API", 120*time.Second, func() error {
 		_, err := c.do(ctx, http.MethodGet, "/api/v1/status", nil, nil)
@@ -382,7 +488,7 @@ func TestS1Setup(t *testing.T) {
 			return nil
 		})
 
-		eventually(ctx, t, l.operator+" MME accepted Ella MOCN", 30*time.Second, mmeLog(ctx, l.core, "eNB-S1 accepted[10.90.0.30]"))
+		eventually(ctx, t, l.core+" MME accepted Ella MOCN", 30*time.Second, l.coreLog.logged(ctx, 0, l.coreLog.accepted, l.imsi))
 	}
 
 	eventually(ctx, t, "S1 Setup metrics", 30*time.Second, func() error {
@@ -507,16 +613,41 @@ func relayedToCore(ctx context.Context, msg, ref, procedure string) func() error
 	}
 }
 
-func mmeLogFile(core string) []string {
-	return []string{"exec", "-T", core, "cat", "/var/log/open5gs/mme.log"}
+func (cl coreLog) mark(ctx context.Context, t *testing.T) int {
+	t.Helper()
+
+	return logMark(ctx, t, cl.args...)
 }
 
-func mmeLog(ctx context.Context, core, what string) func() error {
-	return logContains(ctx, what, mmeLogFile(core)...)
-}
+func (cl coreLog) logged(ctx context.Context, mark int, patterns []string, imsi string) func() error {
+	return func() error {
+		out, err := compose(ctx, cl.args...)
+		if err != nil {
+			return err
+		}
 
-func mmeLogAfter(ctx context.Context, core, what string, mark int) func() error {
-	return logContainsAfter(ctx, what, mark, mmeLogFile(core)...)
+		if len(out) < mark {
+			return fmt.Errorf("log shrank from %d to %d bytes", mark, len(out))
+		}
+
+		want := make([]string, len(patterns))
+		for i, p := range patterns {
+			want[i] = strings.ReplaceAll(p, "{imsi}", imsi)
+		}
+
+	lines:
+		for line := range strings.SplitSeq(out[mark:], "\n") {
+			for _, w := range want {
+				if !strings.Contains(line, w) {
+					continue lines
+				}
+			}
+
+			return nil
+		}
+
+		return fmt.Errorf("%q not logged yet", want)
+	}
 }
 
 func ueConnections(ctx context.Context, c *client) ([]ueConnection, error) {
@@ -530,7 +661,13 @@ func ueConnections(ctx context.Context, c *client) ([]ueConnection, error) {
 }
 
 func ping(ctx context.Context, l lab) error {
-	_, err := compose(ctx, "exec", "-T", l.srsue, "ping", "-c", "1", "-w", "15", "-I", "tun_srsue", l.ueNet+"0.1")
+	return uePing(ctx, l.srsue, l.dn)
+}
+
+func uePing(ctx context.Context, ue, dn string) error {
+	_, err := compose(ctx, "exec", "-T", ue, "sh", "-c",
+		fmt.Sprintf("ip route replace %[1]s dev tun_srsue && ping -c 1 -w 15 -I tun_srsue %[1]s", dn))
+
 	return err
 }
 
@@ -610,14 +747,14 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 
 	eventually(ctx, t, l.srsue+" attached with an IP", 180*time.Second,
 		logContains(ctx, "Network attach successful. IP: "+l.ueNet, "logs", "--no-color", l.srsue))
-	eventually(ctx, t, l.core+" MME attach complete", 30*time.Second, mmeLog(ctx, l.core, "["+l.imsi+"] Attach complete"))
+	eventually(ctx, t, l.core+" MME attach complete", 30*time.Second, l.coreLog.logged(ctx, 0, l.coreLog.attached, l.imsi))
 	eventually(ctx, t, l.enb+" Initial Context Setup complete", 30*time.Second,
 		logContains(ctx, "Tx S1AP SDU, InitialContextSetupResponse", "logs", "--no-color", l.enb))
 	eventually(ctx, t, "Ella MOCN relayed the Initial Context Setup outcome from "+l.radio, 10*time.Second,
 		relayedToCore(ctx, "relayed S1AP message to MME", l.radio, "InitialContextSetup (9)"))
 	eventually(ctx, t, l.operator+" user plane up", 30*time.Second, func() error { return ping(ctx, l) })
 
-	connected := logMark(ctx, t, mmeLogFile(l.core)...)
+	connected := l.coreLog.mark(ctx, t)
 
 	eventually(ctx, t, l.operator+" UE connection in /api/v1/ue-connections", 10*time.Second, func() error {
 		items, err := operatorUEs(ctx, c, l)
@@ -657,10 +794,10 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 			return fmt.Errorf("%d UE connections left", len(items))
 		}
 
-		return mmeLogAfter(ctx, l.core, "Number of eNB-UEs is now 0", connected)()
+		return l.coreLog.logged(ctx, connected, l.coreLog.idle, l.imsi)()
 	})
 
-	idle := logMark(ctx, t, mmeLogFile(l.core)...)
+	idle := l.coreLog.mark(ctx, t)
 
 	if l.pagedUE {
 		addr, err := ueAddress(ctx, l)
@@ -668,26 +805,26 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 			t.Fatal(err)
 		}
 
-		if _, err := compose(ctx, "exec", "-T", l.core, "ping", "-c", "1", "-w", "15", addr); err != nil {
+		if _, err := compose(ctx, "exec", "-T", l.dnHost, "ping", "-c", "1", "-w", "15", addr); err != nil {
 			t.Fatalf("downlink ping to the idle UE: %v", err)
 		}
 	} else if err := ping(ctx, l); err != nil {
 		t.Fatalf("ping after release: %v", err)
 	}
 
-	eventually(ctx, t, l.core+" MME service request", 30*time.Second, mmeLogAfter(ctx, l.core, "["+l.imsi+"] Service request", idle))
+	eventually(ctx, t, l.core+" MME service request", 30*time.Second, l.coreLog.logged(ctx, idle, l.coreLog.serviceRequest, l.imsi))
 
 	if items, err := operatorUEs(ctx, c, l); err != nil || len(items) != 1 {
 		t.Fatalf("UE connections after service request = %+v, %v", items, err)
 	}
 
-	attached := logMark(ctx, t, mmeLogFile(l.core)...)
+	attached := l.coreLog.mark(ctx, t)
 
 	if _, err := compose(ctx, "exec", "-T", l.srsue, "pkill", "-INT", "srsue"); err != nil {
 		t.Fatal(err)
 	}
 
-	eventually(ctx, t, l.core+" MME detach", 30*time.Second, mmeLogAfter(ctx, l.core, "Detach request", attached))
+	eventually(ctx, t, l.core+" MME detach", 30*time.Second, l.coreLog.logged(ctx, attached, l.coreLog.detached, l.imsi))
 
 	eventually(ctx, t, l.operator+" UE context released after detach", 30*time.Second, func() error {
 		items, err := operatorUEs(ctx, c, l)

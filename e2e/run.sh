@@ -7,6 +7,8 @@ OCUDU_TAG=$(./ocudu/tag.sh)
 export OCUDU_TAG
 export E2E_API_PORT=${E2E_API_PORT:-5032}
 export E2E_API=http://127.0.0.1:$E2E_API_PORT
+export E2E_CORE_API_PORT=${E2E_CORE_API_PORT:-5033}
+export E2E_CORE_API=http://127.0.0.1:$E2E_CORE_API_PORT
 artifacts=${E2E_ARTIFACTS:-$PWD/.artifacts}
 
 finish() {
@@ -15,26 +17,24 @@ finish() {
 	if [ "$rc" -ne 0 ]; then
 		mkdir -p "$artifacts"
 		docker compose ps -a || true
-		for svc in mocn open5gs open5gs-b open5gs-5g open5gs-5g-b srsenb srsue srsenb-b srsue-b gnb srsue-5g gnb-b srsue-5g-b gnb-c srsue-5g-c; do
+		for svc in mocn ella-core router open5gs-b open5gs-5g-b srsenb srsue srsenb-b srsue-b gnb srsue-5g gnb-b srsue-5g-b gnb-c srsue-5g-c; do
 			docker compose logs --no-color "$svc" >"$artifacts/$svc.log" 2>&1 || true
 		done
-		docker compose cp open5gs:/var/log/open5gs "$artifacts/open5gs" >/dev/null 2>&1 || true
 		docker compose cp open5gs-b:/var/log/open5gs "$artifacts/open5gs-b" >/dev/null 2>&1 || true
-		docker compose cp open5gs-5g:/var/log/open5gs "$artifacts/open5gs-5g" >/dev/null 2>&1 || true
 		docker compose cp open5gs-5g-b:/var/log/open5gs "$artifacts/open5gs-5g-b" >/dev/null 2>&1 || true
 		docker compose exec -T mocn pkill -INT tcpdump >/dev/null 2>&1 || true
 		sleep 1
 		docker compose cp mocn:/data/sctp.pcap "$artifacts/sctp.pcap" >/dev/null 2>&1 || true
 		echo "--- mocn"
 		tail -n 200 "$artifacts/mocn.log" || true
-		echo "--- open5gs mme"
-		tail -n 100 "$artifacts/open5gs/mme.log" || true
+		echo "--- ella-core"
+		tail -n 200 "$artifacts/ella-core.log" || true
 		echo "--- open5gs-b mme"
 		tail -n 100 "$artifacts/open5gs-b/mme.log" || true
 		echo "--- srsenb"
 		tail -n 100 "$artifacts/srsenb.log" || true
-		echo "--- open5gs-5g amf"
-		tail -n 100 "$artifacts/open5gs-5g/amf.log" || true
+		echo "--- open5gs-5g-b amf"
+		tail -n 100 "$artifacts/open5gs-5g-b/amf.log" || true
 		echo "--- gnb"
 		tail -n 100 "$artifacts/gnb.log" || true
 		echo "logs and S1/NG pcap in $artifacts"
@@ -56,7 +56,7 @@ compile=$!
 
 docker compose build mocn
 wait "$pull"
-docker compose up -d --wait mocn open5gs open5gs-b open5gs-5g open5gs-5g-b
+docker compose up -d --wait mocn ella-core router open5gs-b open5gs-5g-b
 docker compose exec -d mocn tcpdump -i any -U -w /data/sctp.pcap sctp
 
 wait "$compile"

@@ -39,9 +39,12 @@ const (
 var RadioStates = []RadioState{RadioConnected, RadioUp}
 
 type Operator struct {
-	ID    int64
-	Name  string
-	PLMNs []db.PLMN
+	ID          int64
+	Name        string
+	PLMNs       []db.PLMN
+	PWS         bool
+	GlobalENBID *db.GlobalENBID
+	GlobalGNBID *db.GlobalGNBID
 }
 
 type TAI struct {
@@ -80,6 +83,7 @@ type Names struct {
 	RadioUpdate string
 	NoCore      string
 	CoreFailure string
+	Kill        string
 }
 
 type Config struct {

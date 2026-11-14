@@ -2,27 +2,9 @@ package ng_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/ellanetworks/core/ngap"
 )
-
-func TestNonUEProceduresTerminatedLocally(t *testing.T) {
-	t.Parallel()
-
-	skipWithoutSCTP(t)
-
-	amfs := listenAMF(t, "127.0.1.50")
-	h := startGateway(t, amfs.Port(), operatorA("127.0.1.50"))
-	gnb, amf := upAndRunning(t, h, amfs)
-
-	amf.Send(t, &ngap.PWSCancelRequest{MessageIdentifier: 0x1112, SerialNumber: 1})
-	gnb.Quiet(t, 300*time.Millisecond)
-
-	ind := expectProtocolError(t, amf, ngap.CauseProtocolAbstractSyntaxErrorReject)
-	assertDiagnostics(t, ind.CriticalityDiagnostics, ngap.ProcPWSCancel, ngap.Ptr(ngap.CriticalityReject))
-	amf.Quiet(t, 100*time.Millisecond)
-}
 
 func TestRepeatedNGSetupReinitialisesUEContexts(t *testing.T) {
 	t.Parallel()

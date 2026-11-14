@@ -13,10 +13,6 @@ const EMAIL = "e2e-created@ellanetworks.com";
 const PASSWORD = "E2eCreatedPassw0rd!";
 const NEW_PASSWORD = "E2eChangedPassw0rd!";
 
-test.beforeEach(async ({ request }) => {
-  await deleteUserIfPresent(request, await adminToken(request), EMAIL);
-});
-
 test("an admin creates a user, changes its role and password, and deletes it", async ({
   page,
   request,
@@ -24,6 +20,7 @@ test("an admin creates a user, changes its role and password, and deletes it", a
   baseURL,
 }) => {
   const token = await adminToken(request);
+  await deleteUserIfPresent(request, token, EMAIL);
 
   await page.goto("/users");
   await page.getByRole("button", { name: "Create" }).click();

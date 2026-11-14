@@ -124,7 +124,7 @@ func TestUnsupportedProceduresRejected(t *testing.T) {
 	}
 
 	for _, proc := range []ngap.ProcedureCode{
-		ngap.ProcWriteReplaceWarning, ngap.ProcPWSCancel, ngap.ProcRetrieveUEInformation, ngap.ProcUEInformationTransfer,
+		ngap.ProcRetrieveUEInformation, ngap.ProcUEInformationTransfer,
 	} {
 		amf.Send(t, initiating(proc, reject, nonUEBody))
 
@@ -137,9 +137,9 @@ func TestUnsupportedProceduresRejected(t *testing.T) {
 		ngap.ProcUERadioCapabilityIDMapping, &reject)
 
 	notify := ngap.CriticalityNotify
-	amf.Send(t, initiating(ngap.ProcPWSCancel, notify, nonUEBody))
+	amf.Send(t, initiating(ngap.ProcRetrieveUEInformation, notify, nonUEBody))
 	assertDiagnostics(t, expectProtocolError(t, amf, ngap.CauseProtocolAbstractSyntaxErrorIgnoreAndNotify).CriticalityDiagnostics,
-		ngap.ProcPWSCancel, &notify)
+		ngap.ProcRetrieveUEInformation, &notify)
 
 	amf.Send(t, initiating(ngap.ProcDownlinkRIMInformationTransfer, ngap.CriticalityIgnore, nonUEBody))
 	amf.Quiet(t, 200*time.Millisecond)

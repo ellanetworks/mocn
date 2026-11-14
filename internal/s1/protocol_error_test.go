@@ -74,7 +74,7 @@ func TestUnsupportedProceduresRejected(t *testing.T) {
 		t.Fatalf("Error Indication eNB UE S1AP ID = %v, want 7", ind.ENBUES1APID)
 	}
 
-	for _, proc := range []s1ap.ProcedureCode{s1ap.ProcWriteReplaceWarning, s1ap.ProcKill, s1ap.ProcRetrieveUEInformation} {
+	for _, proc := range []s1ap.ProcedureCode{s1ap.ProcRetrieveUEInformation, s1ap.ProcMMEDirectInformationTransfer} {
 		mme.Send(t, initiating(proc, reject, nonUEBody))
 
 		ind := expectProtocolError(t, mme, s1ap.CauseProtocolAbstractSyntaxErrorReject)
@@ -86,9 +86,9 @@ func TestUnsupportedProceduresRejected(t *testing.T) {
 		s1ap.ProcUERadioCapabilityIDMapping, &reject)
 
 	notify := s1ap.CriticalityNotify
-	mme.Send(t, initiating(s1ap.ProcKill, notify, nonUEBody))
+	mme.Send(t, initiating(s1ap.ProcRetrieveUEInformation, notify, nonUEBody))
 	assertDiagnostics(t, expectProtocolError(t, mme, s1ap.CauseProtocolAbstractSyntaxErrorIgnoreAndNotify).CriticalityDiagnostics,
-		s1ap.ProcKill, &notify)
+		s1ap.ProcRetrieveUEInformation, &notify)
 
 	mme.Send(t, initiating(s1ap.ProcMMEDirectInformationTransfer, s1ap.CriticalityIgnore, nonUEBody))
 	mme.Quiet(t, 200*time.Millisecond)
