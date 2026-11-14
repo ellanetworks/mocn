@@ -312,6 +312,7 @@ func (g *Gateway[S, R, I, C]) startClientLocked(ctx context.Context, c *Client[I
 	go func() {
 		defer g.clients.Done()
 		defer close(c.done)
+		defer cancel()
 		defer func() {
 			g.mu.Lock()
 			delete(g.stopping, c)
