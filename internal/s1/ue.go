@@ -30,7 +30,7 @@ type ECGI struct {
 
 type UE struct {
 	RadioGlobalENBID db.GlobalENBID
-	RadioENBUES1APID uint32
+	RadioENBUES1APID *uint32
 	RadioMMEUES1APID uint32
 	MMETNLAddresses  []string
 	MMEENBUES1APID   uint32
@@ -44,10 +44,12 @@ type UE struct {
 }
 
 type ueInfo struct {
-	radio db.GlobalENBID
-	tai   *TAI
-	ecgi  *ECGI
-	told  bool
+	radio     db.GlobalENBID
+	tai       *TAI
+	ecgi      *ECGI
+	told      bool
+	switching bool
+	source    s1ap.MMEUES1APID
 }
 
 type (
@@ -63,13 +65,17 @@ func newUETable() *ueTable {
 func snapshotUE(u *ueContext) UE {
 	s := UE{
 		RadioGlobalENBID: u.Ext.radio,
-		RadioENBUES1APID: uint32(u.RANID),
 		RadioMMEUES1APID: uint32(u.RANCoreID),
 		MMETNLAddresses:  u.Core.TNLAddresses(),
 		MMEENBUES1APID:   uint32(u.CoreRANID),
 		OperatorID:       u.OperatorID,
 		PLMN:             u.PLMN,
 		Since:            u.Since,
+	}
+
+	if u.RANIDKnown {
+		id := uint32(u.RANID)
+		s.RadioENBUES1APID = &id
 	}
 
 	if u.CoreIDKnown {

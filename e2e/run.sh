@@ -58,7 +58,6 @@ docker compose build mocn
 wait "$pull"
 docker compose up -d --wait mocn open5gs open5gs-b open5gs-5g open5gs-5g-b
 docker compose exec -d mocn tcpdump -i any -U -w /data/sctp.pcap sctp
-docker compose up -d srsenb srsue srsenb-b srsue-b
 
 wait "$compile"
 

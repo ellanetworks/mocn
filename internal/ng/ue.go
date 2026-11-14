@@ -30,7 +30,7 @@ type NRCGI struct {
 
 type UE struct {
 	RadioGlobalGNBID db.GlobalGNBID
-	RadioRANUENGAPID uint32
+	RadioRANUENGAPID *uint32
 	RadioAMFUENGAPID uint64
 	AMFTNLAddresses  []string
 	AMFRANUENGAPID   uint32
@@ -44,14 +44,16 @@ type UE struct {
 }
 
 type ueInfo struct {
-	radio   db.GlobalGNBID
-	tai     *TAI
-	nrcgi   *NRCGI
-	told    bool
-	guami   *GUAMI
-	sets    []amfSet
-	unbound bool
-	backup  amfName
+	radio     db.GlobalGNBID
+	tai       *TAI
+	nrcgi     *NRCGI
+	told      bool
+	guami     *GUAMI
+	sets      []amfSet
+	unbound   bool
+	backup    amfName
+	switching bool
+	source    ngap.AMFUENGAPID
 }
 
 type (
@@ -67,13 +69,17 @@ func newUETable() *ueTable {
 func snapshotUE(u *ueContext) UE {
 	s := UE{
 		RadioGlobalGNBID: u.Ext.radio,
-		RadioRANUENGAPID: uint32(u.RANID),
 		RadioAMFUENGAPID: uint64(u.RANCoreID),
 		AMFTNLAddresses:  u.Core.TNLAddresses(),
 		AMFRANUENGAPID:   uint32(u.CoreRANID),
 		OperatorID:       u.OperatorID,
 		PLMN:             u.PLMN,
 		Since:            u.Since,
+	}
+
+	if u.RANIDKnown {
+		id := uint32(u.RANID)
+		s.RadioRANUENGAPID = &id
 	}
 
 	if u.CoreIDKnown {

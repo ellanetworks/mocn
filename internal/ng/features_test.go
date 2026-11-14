@@ -64,45 +64,6 @@ func TestErrorIndicationWithOnlyTheAMFUEID(t *testing.T) {
 	amf.Quiet(t, 200*time.Millisecond)
 }
 
-func TestHandoverAndPathSwitchRequestsFail(t *testing.T) {
-	t.Parallel()
-
-	skipWithoutSCTP(t)
-
-	amfs := listenAMF(t, "127.0.1.92")
-	h := startGateway(t, amfs.Port(), operatorA("127.0.1.92"))
-	gnb, amf := upAndRunning(t, h, amfs)
-
-	amf.Send(t, initiating(ngap.ProcHandoverResourceAllocation, ngap.CriticalityReject, bodyOf(t, uplinkNAS(t, 11, 7))))
-
-	fail := expect(t, amf, "unsuccessful", ngap.ProcHandoverResourceAllocation, ngap.ParseHandoverFailure)
-	if fail.AMFUENGAPID == nil || *fail.AMFUENGAPID != 11 || fail.Cause == nil ||
-		fail.Cause.Group != ngap.CauseGroupRadioNetwork || fail.Cause.Value != ngap.CauseRadioNetworkHOFailureInTarget {
-		t.Fatalf("Handover Failure = %+v", fail)
-	}
-
-	gnb.Send(t, &ngap.PathSwitchRequest{
-		RANUENGAPID: 9, SourceAMFUENGAPID: 33, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1)),
-		UESecurityCapabilities: &ngap.UESecurityCapabilities{NREncryptionAlgorithms: 0xe000, NRIntegrityProtectionAlgorithms: 0xe000},
-		PDUSessionResourceToBeSwitchedDLList: ngap.PDUSessionResourceToBeSwitchedDLList{
-			{PDUSessionID: 1, Transfer: ngap.TransferContainer{0x00}}, {PDUSessionID: 2, Transfer: ngap.TransferContainer{0x00}},
-		},
-	})
-
-	psf := expect(t, gnb, "unsuccessful", ngap.ProcPathSwitchRequest, ngap.ParsePathSwitchRequestFailure)
-	if psf.AMFUENGAPID == nil || *psf.AMFUENGAPID != 33 || psf.RANUENGAPID == nil || *psf.RANUENGAPID != 9 ||
-		len(psf.PDUSessionResourceReleased) != 2 || psf.PDUSessionResourceReleased[1].PDUSessionID != 2 {
-		t.Fatalf("Path Switch Request Failure = %+v", psf)
-	}
-
-	transfer, err := ngap.ParsePathSwitchRequestUnsuccessfulTransfer(psf.PDUSessionResourceReleased[0].Transfer)
-	if err != nil || transfer.Cause.Value != ngap.CauseProtocolMessageNotCompatible {
-		t.Fatalf("Path Switch Request Unsuccessful Transfer = %+v, %v", transfer, err)
-	}
-
-	amf.Quiet(t, 200*time.Millisecond)
-}
-
 func TestDuplicateGlobalGNBIDRejected(t *testing.T) {
 	t.Parallel()
 

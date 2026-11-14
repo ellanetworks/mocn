@@ -16,6 +16,7 @@ type ID interface {
 type UE[R, A comparable, N, C ID, X any] struct {
 	RAN         R
 	RANID       N
+	RANIDKnown  bool
 	RANCoreID   C
 	Core        A
 	CoreRANID   N
@@ -79,7 +80,10 @@ func (t *Table[R, A, N, C, X]) Add(u *UE[R, A, N, C, X]) error {
 
 	u.RANCoreID = t.nextCoreID
 	t.byRANCoreID[u.RANCoreID] = u
-	t.byRANID[ranKey[R, N]{u.RAN, u.RANID}] = u
+
+	if u.RANIDKnown {
+		t.byRANID[ranKey[R, N]{u.RAN, u.RANID}] = u
+	}
 
 	if u.Core == none {
 		return nil
@@ -98,9 +102,22 @@ func (t *Table[R, A, N, C, X]) Add(u *UE[R, A, N, C, X]) error {
 	return nil
 }
 
+func (t *Table[R, A, N, C, X]) SetRANID(u *UE[R, A, N, C, X], id N) bool {
+	key := ranKey[R, N]{u.RAN, id}
+	if other := t.byRANID[key]; other != nil && other != u {
+		return false
+	}
+
+	t.dropRANID(u)
+	u.RANID, u.RANIDKnown = id, true
+	t.byRANID[key] = u
+
+	return true
+}
+
 func (t *Table[R, A, N, C, X]) SetCoreID(u *UE[R, A, N, C, X], id C) {
 	if u.CoreIDKnown {
-		delete(t.byCoreID, coreKey[A, C]{u.Core, u.CoreID})
+		t.dropCoreID(u)
 	} else if u.Release != nil {
 		u.Release.Stop()
 		u.Release = nil
@@ -111,11 +128,33 @@ func (t *Table[R, A, N, C, X]) SetCoreID(u *UE[R, A, N, C, X], id C) {
 }
 
 func (t *Table[R, A, N, C, X]) Rebind(u *UE[R, A, N, C, X], core A) {
-	if u.CoreIDKnown {
-		delete(t.byCoreID, coreKey[A, C]{u.Core, u.CoreID})
+	t.dropCoreID(u)
+	u.Core, u.CoreIDKnown = core, false
+}
+
+func (t *Table[R, A, N, C, X]) Detach(u *UE[R, A, N, C, X]) {
+	var none A
+
+	if u.Core != none && t.byCoreRANID[u.CoreRANID] == u {
+		delete(t.byCoreRANID, u.CoreRANID)
 	}
 
-	u.Core, u.CoreIDKnown = core, false
+	t.dropCoreID(u)
+	u.Core, u.CoreIDKnown = none, false
+}
+
+func (t *Table[R, A, N, C, X]) dropRANID(u *UE[R, A, N, C, X]) {
+	key := ranKey[R, N]{u.RAN, u.RANID}
+	if u.RANIDKnown && t.byRANID[key] == u {
+		delete(t.byRANID, key)
+	}
+}
+
+func (t *Table[R, A, N, C, X]) dropCoreID(u *UE[R, A, N, C, X]) {
+	key := coreKey[A, C]{u.Core, u.CoreID}
+	if u.CoreIDKnown && t.byCoreID[key] == u {
+		delete(t.byCoreID, key)
+	}
 }
 
 func (t *Table[R, A, N, C, X]) Remove(us ...*UE[R, A, N, C, X]) []*UE[R, A, N, C, X] {
@@ -130,7 +169,7 @@ func (t *Table[R, A, N, C, X]) Remove(us ...*UE[R, A, N, C, X]) []*UE[R, A, N, C
 		}
 
 		delete(t.byRANCoreID, u.RANCoreID)
-		delete(t.byRANID, ranKey[R, N]{u.RAN, u.RANID})
+		t.dropRANID(u)
 
 		if u.Core != none {
 			delete(t.byCoreRANID, u.CoreRANID)
@@ -141,10 +180,7 @@ func (t *Table[R, A, N, C, X]) Remove(us ...*UE[R, A, N, C, X]) []*UE[R, A, N, C
 		}
 
 		u.TraceID = tracing.RANTraceID{}
-
-		if u.CoreIDKnown {
-			delete(t.byCoreID, coreKey[A, C]{u.Core, u.CoreID})
-		}
+		t.dropCoreID(u)
 
 		out = append(out, u)
 	}

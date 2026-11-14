@@ -32,9 +32,9 @@ This path returns the UE connections, oldest first.
 | `interface`            | string | `s1` or `ng`. |
 | `radio`                | object | The connection between the radio and Ella MOCN. |
 | `radio.ref`            | string | The radio's [`ref`](radios.md#list-radios). |
-| `radio.enb_ue_s1ap_id` | int    | S1 only. eNB UE S1AP ID, allocated by the radio. `0` to `16777215`. |
+| `radio.enb_ue_s1ap_id` | int    | S1 only. eNB UE S1AP ID, allocated by the radio. `0` to `16777215`. Absent until the radio answers a HANDOVER REQUEST. |
 | `radio.mme_ue_s1ap_id` | int    | S1 only. MME UE S1AP ID, allocated by Ella MOCN. `0` to `4294967295`. |
-| `radio.ran_ue_ngap_id` | int    | NG only. RAN UE NGAP ID, allocated by the radio. `0` to `4294967295`. |
+| `radio.ran_ue_ngap_id` | int    | NG only. RAN UE NGAP ID, allocated by the radio. `0` to `4294967295`. Absent until the radio answers a HANDOVER REQUEST. |
 | `radio.amf_ue_ngap_id` | int    | NG only. AMF UE NGAP ID, allocated by Ella MOCN. `0` to `1099511627775`. |
 | `mme`                  | object | S1 only. The S1 connection between Ella MOCN and the operator's MME. |
 | `mme.tnl_addresses`    | array  | The MME's TNL addresses, as configured on the operator. |
@@ -46,7 +46,7 @@ This path returns the UE connections, oldest first.
 | `amf.amf_ue_ngap_id`   | int    | AMF UE NGAP ID, allocated by the AMF. Absent until the AMF's first message for the UE. |
 | `operator`             | string | Name of the operator that serves the selected PLMN. |
 | `plmn`                 | object | The selected PLMN, with `mcc` and `mnc`. |
-| `since`                | string | When the radio sent the INITIAL UE MESSAGE. |
+| `since`                | string | When Ella MOCN received the INITIAL UE MESSAGE, HANDOVER REQUEST or PATH SWITCH REQUEST. |
 | `tai`                  | object | The last TAI the radio reported for the UE: `plmn` and `tac`, 6 lower-case hexadecimal digits. Absent when none. |
 | `ecgi`                 | object | S1 only. The last E-UTRAN CGI the radio reported for the UE: `plmn` and `cell_id`, the 28-bit E-UTRAN Cell Identity. Absent when none. |
 | `nr_cgi`               | object | NG only. The last NR CGI the radio reported for the UE: `plmn` and `cell_id`, the 36-bit NR Cell Identity. Absent when none. |

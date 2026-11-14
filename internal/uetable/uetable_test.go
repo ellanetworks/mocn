@@ -33,7 +33,7 @@ func TestUEIDAllocation(t *testing.T) {
 	tbl.nextCoreID = 1<<32 - 2
 	tbl.nextRANID = maxENBID - 1
 
-	u1 := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 1, Core: a}
+	u1 := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 1, RANIDKnown: true, Core: a}
 	if err := tbl.Add(u1); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestUEIDAllocation(t *testing.T) {
 	tbl.byRANCoreID[0] = u1
 	tbl.byCoreRANID[0] = u1
 
-	u2 := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 2, Core: a}
+	u2 := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 2, RANIDKnown: true, Core: a}
 	if err := tbl.Add(u2); err != nil {
 		t.Fatal(err)
 	}
@@ -84,12 +84,12 @@ func TestUEIDAllocationWithoutCore(t *testing.T) {
 
 	tbl.nextRANID = maxENBID
 
-	relayed := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 1, Core: a}
+	relayed := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 1, RANIDKnown: true, Core: a}
 	if err := tbl.Add(relayed); err != nil {
 		t.Fatal(err)
 	}
 
-	released := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 2}
+	released := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 2, RANIDKnown: true}
 	if err := tbl.Add(released); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestUEIDAllocationWraps(t *testing.T) {
 	var got []*UE[*radio, *core, uint32, uint64, ext]
 
 	for i := range 3 {
-		u := &UE[*radio, *core, uint32, uint64, ext]{RAN: ran, RANID: uint32(i), Core: amf}
+		u := &UE[*radio, *core, uint32, uint64, ext]{RAN: ran, RANID: uint32(i), RANIDKnown: true, Core: amf}
 		if err := ues.Add(u); err != nil {
 			t.Fatal(err)
 		}
@@ -140,5 +140,92 @@ func TestUEIDAllocationWraps(t *testing.T) {
 
 	if gone := ues.Remove(got...); len(gone) != 3 || len(ues.byRANCoreID)+len(ues.byRANID)+len(ues.byCoreRANID)+len(ues.byCoreID) != 0 {
 		t.Fatalf("left %+v", ues)
+	}
+}
+
+func TestRANIDLearnedAfterAdd(t *testing.T) {
+	t.Parallel()
+
+	tbl := New[*radio, *core, uint32, uint32, ext](maxENBID, maxMMEID, errFull)
+	n, a := &radio{}, &core{}
+
+	held := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 4, RANIDKnown: true, Core: a}
+	pending := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, Core: a}
+
+	for _, u := range []*UE[*radio, *core, uint32, uint32, ext]{held, pending} {
+		if err := tbl.Add(u); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if tbl.ByRANID(n, 0) != nil || len(tbl.byRANID) != 1 {
+		t.Fatal("UE without a RAN-side ID indexed by it")
+	}
+
+	if tbl.SetRANID(pending, 4) || pending.RANIDKnown {
+		t.Fatal("RAN-side ID of another UE taken")
+	}
+
+	if !tbl.SetRANID(pending, 5) || tbl.ByRANID(n, 5) != pending {
+		t.Fatal("RAN-side ID not learned")
+	}
+
+	if gone := tbl.Remove(pending, held); len(gone) != 2 || len(tbl.byRANID) != 0 {
+		t.Fatalf("left %+v", tbl.byRANID)
+	}
+}
+
+func TestCoreIDTakenOverByANewConnection(t *testing.T) {
+	t.Parallel()
+
+	tbl := New[*radio, *core, uint32, uint32, ext](maxENBID, maxMMEID, errFull)
+	a := &core{}
+	source := &UE[*radio, *core, uint32, uint32, ext]{RAN: &radio{}, RANID: 1, RANIDKnown: true, Core: a}
+	target := &UE[*radio, *core, uint32, uint32, ext]{RAN: &radio{}, RANID: 1, RANIDKnown: true, Core: a}
+
+	for _, u := range []*UE[*radio, *core, uint32, uint32, ext]{source, target} {
+		if err := tbl.Add(u); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tbl.SetCoreID(source, 9)
+	tbl.SetCoreID(target, 9)
+
+	if tbl.ByCoreID(a, 9) != target {
+		t.Fatal("MME UE S1AP ID not taken over")
+	}
+
+	tbl.Remove(source)
+
+	if tbl.ByCoreID(a, 9) != target {
+		t.Fatal("removing the old connection dropped the new one's MME UE S1AP ID")
+	}
+}
+
+func TestDetachedUEKeepsOnlyItsRadioSide(t *testing.T) {
+	t.Parallel()
+
+	tbl := New[*radio, *core, uint32, uint32, ext](maxENBID, maxMMEID, errFull)
+	n, a := &radio{}, &core{}
+
+	u := &UE[*radio, *core, uint32, uint32, ext]{RAN: n, RANID: 1, RANIDKnown: true, Core: a}
+	if err := tbl.Add(u); err != nil {
+		t.Fatal(err)
+	}
+
+	tbl.SetCoreID(u, 9)
+	tbl.Detach(u)
+
+	if u.Core != nil || u.CoreIDKnown || len(tbl.byCoreRANID)+len(tbl.byCoreID) != 0 || tbl.ByRANID(n, 1) != u {
+		t.Fatalf("detached UE = %+v, table %+v", u, tbl)
+	}
+
+	if counts := tbl.CountByOperator(); len(counts) != 0 {
+		t.Fatalf("detached UE counted: %v", counts)
+	}
+
+	if gone := tbl.Remove(u); len(gone) != 1 || len(tbl.byRANCoreID)+len(tbl.byRANID) != 0 {
+		t.Fatal("detached UE not removed")
 	}
 }

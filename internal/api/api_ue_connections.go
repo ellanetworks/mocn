@@ -138,7 +138,7 @@ func s1UEConnection(u s1.UE) UEConnection {
 	resp := UEConnection{
 		Interface: metrics.InterfaceS1,
 		Radio: UEConnectionRadio{
-			Ref: u.RadioGlobalENBID.Ref(), ENBUES1APID: new(u.RadioENBUES1APID), MMEUES1APID: new(u.RadioMMEUES1APID),
+			Ref: u.RadioGlobalENBID.Ref(), ENBUES1APID: u.RadioENBUES1APID, MMEUES1APID: new(u.RadioMMEUES1APID),
 		},
 		MME: &UEConnectionMME{
 			TNLAddresses: append([]string{}, u.MMETNLAddresses...), ENBUES1APID: u.MMEENBUES1APID,
@@ -164,7 +164,7 @@ func ngUEConnection(u ng.UE) UEConnection {
 	resp := UEConnection{
 		Interface: metrics.InterfaceNG,
 		Radio: UEConnectionRadio{
-			Ref: u.RadioGlobalGNBID.Ref(), RANUENGAPID: new(u.RadioRANUENGAPID), AMFUENGAPID: new(u.RadioAMFUENGAPID),
+			Ref: u.RadioGlobalGNBID.Ref(), RANUENGAPID: u.RadioRANUENGAPID, AMFUENGAPID: new(u.RadioAMFUENGAPID),
 		},
 		AMF: &UEConnectionAMF{
 			TNLAddresses: append([]string{}, u.AMFTNLAddresses...), RANUENGAPID: u.AMFRANUENGAPID,

@@ -233,43 +233,6 @@ func TestInitialContextSetupRequestKeepsTheGUMMEIOfTheMME(t *testing.T) {
 	}
 }
 
-func TestHandoverAndPathSwitchRequestsFail(t *testing.T) {
-	t.Parallel()
-
-	skipWithoutSCTP(t)
-
-	mmeListener := listenMME(t, "127.0.0.76")
-	h := startGateway(t, mmeListener.Port(), operatorA("127.0.0.76"))
-	enb, mme := upAndRunning(t, h, mmeListener)
-
-	reject := s1ap.CriticalityReject
-	mme.Send(t, initiating(s1ap.ProcHandoverResourceAllocation, reject, bodyOf(t, uplinkNAS(t, 11, 7))))
-
-	fail := expect(t, mme, "unsuccessful", s1ap.ProcHandoverResourceAllocation, s1ap.ParseHandoverFailure)
-	if fail.MMEUES1APID == nil || *fail.MMEUES1APID != 11 || fail.Cause == nil ||
-		fail.Cause.Group != s1ap.CauseGroupRadioNetwork || fail.Cause.Value != s1ap.CauseRadioNetworkHOFailureInTarget {
-		t.Fatalf("Handover Failure = %+v", fail)
-	}
-
-	enb.Send(t, &s1ap.PathSwitchRequest{
-		ENBUES1APID: 9, SourceMMEUES1APID: 33,
-		ERABToBeSwitchedDL: []s1ap.ERABToBeSwitchedDLItem{{
-			ERABID: 5, TransportLayerAddress: s1ap.TransportLayerAddress{10, 0, 0, 1}, GTPTEID: 1,
-		}},
-		EUTRANCGI:              &s1ap.EUTRANCGI{PLMNIdentity: plmnID(t, "001", "01"), CellID: 0x19b01},
-		TAI:                    &s1ap.TAI{PLMNIdentity: plmnID(t, "001", "01"), TAC: 1},
-		UESecurityCapabilities: &s1ap.UESecurityCapabilities{EncryptionAlgorithms: 0x8000, IntegrityProtectionAlgorithms: 0xc000},
-	})
-
-	psf := expect(t, enb, "unsuccessful", s1ap.ProcPathSwitchRequest, s1ap.ParsePathSwitchRequestFailure)
-	if psf.MMEUES1APID == nil || *psf.MMEUES1APID != 33 || psf.ENBUES1APID == nil || *psf.ENBUES1APID != 9 ||
-		psf.Cause == nil || psf.Cause.Value != s1ap.CauseProtocolMessageNotCompatible {
-		t.Fatalf("Path Switch Request Failure = %+v", psf)
-	}
-
-	mme.Quiet(t, 200*time.Millisecond)
-}
-
 func TestDuplicateGlobalENBIDRejected(t *testing.T) {
 	t.Parallel()
 

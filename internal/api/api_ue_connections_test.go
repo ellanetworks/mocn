@@ -23,18 +23,18 @@ func TestListUEConnections(t *testing.T) {
 	a := newS1TestAPI(t, fakeS1{ues: []s1.UE{
 		{
 			RadioGlobalENBID: db.GlobalENBID{PLMN: plmn, Type: db.ENBIDMacro, ID: 411},
-			RadioENBUES1APID: 7, RadioMMEUES1APID: 1, MMETNLAddresses: []string{"10.0.0.1", "10.0.0.2"},
+			RadioENBUES1APID: new(uint32(7)), RadioMMEUES1APID: 1, MMETNLAddresses: []string{"10.0.0.1", "10.0.0.2"},
 			MMEENBUES1APID: 2, MMEUES1APID: &mmeID, OperatorID: 1, OperatorName: "Operator A", PLMN: plmn, Since: since,
 			TAI: &s1.TAI{PLMN: plmn, TAC: 1}, ECGI: &s1.ECGI{PLMN: plmn, CellID: 0x19b01},
 		},
 		{
 			RadioGlobalENBID: db.GlobalENBID{PLMN: plmn, Type: db.ENBIDMacro, ID: 411},
-			RadioENBUES1APID: 8, RadioMMEUES1APID: 3, MMETNLAddresses: []string{"10.0.0.1"},
+			RadioENBUES1APID: new(uint32(8)), RadioMMEUES1APID: 3, MMETNLAddresses: []string{"10.0.0.1"},
 			MMEENBUES1APID: 4, OperatorName: "Operator A", PLMN: plmn, Since: since,
 		},
 		{
 			RadioGlobalENBID: db.GlobalENBID{PLMN: plmn, Type: db.ENBIDMacro, ID: 412},
-			RadioENBUES1APID: 9, RadioMMEUES1APID: 5, MMETNLAddresses: []string{"10.0.1.1"},
+			RadioENBUES1APID: new(uint32(9)), RadioMMEUES1APID: 5, MMETNLAddresses: []string{"10.0.1.1"},
 			MMEENBUES1APID: 6, OperatorName: "Operator B", PLMN: plmn, Since: since,
 		},
 	}})

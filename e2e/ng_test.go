@@ -139,24 +139,19 @@ func TestNGRegistrationAndPaging(t *testing.T) {
 
 	for _, l := range labs5G {
 		t.Run(l.operator, func(t *testing.T) {
-			t.Parallel()
 			ngLifecycle(t.Context(), t, c, l)
 		})
 	}
 }
 
 func ngLifecycle(ctx context.Context, t *testing.T, c *client, l lab5G) {
-	if _, err := compose(ctx, "up", "-d", l.gnb); err != nil {
-		t.Fatal(err)
-	}
+	startServices(ctx, t, l.gnb)
 
 	eventually(ctx, t, l.radio+" up", 120*time.Second, radioUp(ctx, c, l.radio))
 	eventually(ctx, t, l.operator+" AMF up", 30*time.Second, amfUp(ctx, c, l.operator))
 	eventually(ctx, t, l.core+" AMF accepted Ella MOCN", 30*time.Second, amfLog(ctx, l.core, "gNB-N2 accepted[10.90.0.30]"))
 
-	if _, err := compose(ctx, "up", "-d", l.ue); err != nil {
-		t.Fatal(err)
-	}
+	startServices(ctx, t, l.ue)
 
 	ngRegistered(ctx, t, l)
 
@@ -218,16 +213,12 @@ func TestNGDeregistration(t *testing.T) {
 		ue: "srsue-5g-c", radio: "gNB:001-01:000003@22", imsi: "001010000000021", ueNet: "10.47.",
 	}
 
-	if _, err := compose(ctx, "up", "-d", l.gnb); err != nil {
-		t.Fatal(err)
-	}
+	startServices(ctx, t, l.gnb)
 
 	eventually(ctx, t, l.radio+" up", 120*time.Second, radioUp(ctx, c, l.radio))
 	eventually(ctx, t, l.operator+" AMF up", 30*time.Second, amfUp(ctx, c, l.operator))
 
-	if _, err := compose(ctx, "up", "-d", l.ue); err != nil {
-		t.Fatal(err)
-	}
+	startServices(ctx, t, l.ue)
 
 	ngRegistered(ctx, t, l)
 
@@ -276,15 +267,19 @@ func TestNGDeregistration(t *testing.T) {
 
 		return nil
 	})
-
-	if _, err := compose(ctx, "stop", "-t", "1", l.ue, l.gnb); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestNGMetrics(t *testing.T) {
 	ctx := t.Context()
 	c := setUp(ctx, t)
+
+	for _, l := range labs5G {
+		startServices(ctx, t, l.gnb)
+	}
+
+	for _, l := range labs5G {
+		eventually(ctx, t, l.radio+" up", 120*time.Second, radioUp(ctx, c, l.radio))
+	}
 
 	eventually(ctx, t, "NG metrics", 30*time.Second, func() error {
 		text, err := metricsText(ctx, c)

@@ -1960,7 +1960,7 @@ components:
               type: integer
               minimum: 0
               maximum: 16777215
-              description: Allocated by the radio. S1 only.
+              description: Allocated by the radio. S1 only. Absent until the radio answers a HANDOVER REQUEST.
             mme_ue_s1ap_id:
               type: integer
               minimum: 0
@@ -1970,7 +1970,7 @@ components:
               type: integer
               minimum: 0
               maximum: 4294967295
-              description: Allocated by the radio. NG only.
+              description: Allocated by the radio. NG only. Absent until the radio answers a HANDOVER REQUEST.
             amf_ue_ngap_id:
               type: integer
               minimum: 0
@@ -2024,7 +2024,7 @@ components:
         since:
           type: string
           format: date-time
-          description: When the radio sent the INITIAL UE MESSAGE.
+          description: When Ella MOCN received the INITIAL UE MESSAGE, HANDOVER REQUEST or PATH SWITCH REQUEST.
         tai:
           description: The last TAI the radio reported for the UE. Absent when unknown.
           $ref: "#/components/schemas/TAI"

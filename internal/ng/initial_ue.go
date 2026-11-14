@@ -186,7 +186,7 @@ func (r *relay) initialUEMessage(ctx context.Context, n *ranAssoc, log *slog.Log
 	}
 
 	u := &ueContext{
-		RAN: n, RANID: ranID, Core: amf, OperatorID: op.ID, PLMN: plmn, Since: r.g.cfg.Now(),
+		RAN: n, RANID: ranID, RANIDKnown: true, Core: amf, OperatorID: op.ID, PLMN: plmn, Since: r.g.cfg.Now(),
 		Ext: ueInfo{radio: radio, sets: r.sets[amf]},
 	}
 
@@ -208,7 +208,7 @@ func (r *relay) initialUEMessage(ctx context.Context, n *ranAssoc, log *slog.Log
 		return
 	}
 
-	r.superviseLocked(ctx, u, log)
+	r.superviseLocked(ctx, u, log, "INITIAL UE MESSAGE")
 
 	send := r.sendAMF
 	r.mu.Unlock()
@@ -243,7 +243,7 @@ func selectable(cands []amfCandidate) []amfCandidate {
 func (r *relay) releaseUnrouted(ctx context.Context, n *ranAssoc, log *slog.Logger, ranID ngap.RANUENGAPID,
 	cause ngap.Cause,
 ) {
-	u := &ueContext{RAN: n, RANID: ranID}
+	u := &ueContext{RAN: n, RANID: ranID, RANIDKnown: true}
 
 	r.mu.Lock()
 
@@ -254,11 +254,23 @@ func (r *relay) releaseUnrouted(ctx context.Context, n *ranAssoc, log *slog.Logg
 		return
 	}
 
+	r.mu.Unlock()
+
+	r.releaseRadioSide(ctx, n, log, u, cause)
+}
+
+// TS 38.413 clause 8.3.3
+func (r *relay) releaseRadioSide(ctx context.Context, n *ranAssoc, log *slog.Logger, u *ueContext, cause ngap.Cause) {
+	r.mu.Lock()
+	ranID := u.RANID
+	r.mu.Unlock()
+
 	out, err := (&ngap.UEContextReleaseCommand{
 		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: u.RANCoreID, RANUENGAPID: ranID, Pair: true},
 		Cause:     &cause,
 	}).Marshal()
 	if err != nil {
+		r.mu.Lock()
 		r.ues.Remove(u)
 		r.mu.Unlock()
 		log.ErrorContext(ctx, "failed to marshal UE Context Release Command", slog.Any("error", err))
@@ -268,6 +280,8 @@ func (r *relay) releaseUnrouted(ctx context.Context, n *ranAssoc, log *slog.Logg
 
 	log = log.With(slog.Uint64("amf_ue_ngap_id", uint64(u.RANCoreID)))
 	timerCtx := tracing.DetachedRoot(ctx)
+
+	r.mu.Lock()
 	u.Release = time.AfterFunc(r.g.cfg.ResponseTimeout, func() {
 		r.mu.Lock()
 		pending := r.ues.ByRANCoreID(u.RANCoreID) == u
@@ -299,7 +313,7 @@ func (r *relay) releaseUnrouted(ctx context.Context, n *ranAssoc, log *slog.Logg
 	log.InfoContext(ctx, "UE Context Release Command sent to radio", slog.String("cause", cause.String()))
 }
 
-func (r *relay) superviseLocked(ctx context.Context, u *ueContext, log *slog.Logger) {
+func (r *relay) superviseLocked(ctx context.Context, u *ueContext, log *slog.Logger, request string) {
 	if u.Release != nil {
 		u.Release.Stop()
 	}
@@ -316,7 +330,7 @@ func (r *relay) superviseLocked(ctx context.Context, u *ueContext, log *slog.Log
 		gone := r.ues.Remove(u)
 		r.mu.Unlock()
 
-		log.WarnContext(ctx, "no answer from AMF to INITIAL UE MESSAGE, UE context released",
+		log.WarnContext(ctx, "no answer from AMF to "+request+", UE context released",
 			slog.Uint64("amf_ran_ue_ngap_id", uint64(u.CoreRANID)))
 		r.resetAMFs(ctx, gone, causeRadioUnspec)
 		r.resetRANs(ctx, u.Core.Operator(), gone, causeRadioUnspec)

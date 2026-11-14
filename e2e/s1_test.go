@@ -319,6 +319,10 @@ func TestS1Setup(t *testing.T) {
 	ctx := t.Context()
 	c := setUp(ctx, t)
 
+	if _, err := compose(ctx, "up", "-d", "srsenb", "srsenb-b"); err != nil {
+		t.Fatal(err)
+	}
+
 	eventually(ctx, t, "radios up", 120*time.Second, func() error {
 		var nodes struct {
 			Items []radio `json:"items"`
@@ -435,6 +439,23 @@ func compose(ctx context.Context, args ...string) (string, error) {
 	return string(out), nil
 }
 
+func startServices(ctx context.Context, t *testing.T, services ...string) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+
+		if _, err := compose(ctx, append([]string{"stop", "-t", "1"}, services...)...); err != nil {
+			t.Error(err)
+		}
+	})
+
+	if _, err := compose(ctx, append([]string{"up", "-d"}, services...)...); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func logMark(ctx context.Context, t *testing.T, args ...string) int {
 	t.Helper()
 
@@ -549,7 +570,6 @@ func TestUEAttachServiceRequestDetach(t *testing.T) {
 
 	for _, l := range labs {
 		t.Run(l.operator, func(t *testing.T) {
-			t.Parallel()
 			ueLifecycle(t.Context(), t, c, l)
 		})
 	}
@@ -586,6 +606,8 @@ func TestRelayMetrics(t *testing.T) {
 }
 
 func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
+	startServices(ctx, t, l.srsue)
+
 	eventually(ctx, t, l.srsue+" attached with an IP", 180*time.Second,
 		logContains(ctx, "Network attach successful. IP: "+l.ueNet, "logs", "--no-color", l.srsue))
 	eventually(ctx, t, l.core+" MME attach complete", 30*time.Second, mmeLog(ctx, l.core, "["+l.imsi+"] Attach complete"))

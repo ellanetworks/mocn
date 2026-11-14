@@ -251,6 +251,16 @@ ellamocn_core_associations{interface="s1",operator="A",state="up"} 1
 # HELP ellamocn_core_overloaded Core (MME, AMF) associations of the configured MMEs and AMFs with an ongoing overload action (TS 36.413 clause 8.7.6, TS 38.413 clause 8.7.7), by interface (s1, ng) and operator.
 # TYPE ellamocn_core_overloaded gauge
 ellamocn_core_overloaded{interface="s1",operator="A"} 0
+# HELP ellamocn_handover_messages_total HANDOVER REQUEST messages received from MMEs and AMFs and PATH SWITCH REQUEST messages received from radios, by interface (s1, ng), procedure (handover_request, path_switch_request) and result (relayed: sent to the target radio or to the MME or AMF; no_radio: no target radio of the operator is up; no_mme, no_amf: no selectable MME or AMF of the source MME or AMF set is up; invalid: undecodable or missing an IE needed for routing; error: internal failure or failed send).
+# TYPE ellamocn_handover_messages_total counter
+ellamocn_handover_messages_total{interface="s1",procedure="handover_request",result="error"} 0
+ellamocn_handover_messages_total{interface="s1",procedure="handover_request",result="invalid"} 0
+ellamocn_handover_messages_total{interface="s1",procedure="handover_request",result="no_radio"} 0
+ellamocn_handover_messages_total{interface="s1",procedure="handover_request",result="relayed"} 0
+ellamocn_handover_messages_total{interface="s1",procedure="path_switch_request",result="error"} 0
+ellamocn_handover_messages_total{interface="s1",procedure="path_switch_request",result="invalid"} 0
+ellamocn_handover_messages_total{interface="s1",procedure="path_switch_request",result="no_mme"} 0
+ellamocn_handover_messages_total{interface="s1",procedure="path_switch_request",result="relayed"} 0
 # HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1, ng) and result (relayed: sent to an MME or AMF; unknown_plmn: no operator serves the PLMN; no_mme, no_amf: no selectable MME or AMF of the operator; rejected: reuses an allocated eNB UE S1AP ID or RAN UE NGAP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME or AMF).
 # TYPE ellamocn_initial_ue_messages_total counter
 ellamocn_initial_ue_messages_total{interface="s1",result="error"} 0
