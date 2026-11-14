@@ -11,6 +11,8 @@ RUN git init -q . \
  && git remote add origin https://gitlab.com/ocudu/ocudu.git \
  && git fetch -q --depth 1 origin "$OCUDU_COMMIT" \
  && git checkout -q FETCH_HEAD
+RUN sed -i 's/const unsigned min_pool_workers = 1;/const unsigned min_pool_workers = 2;/' apps/services/worker_manager/worker_manager.cpp \
+ && grep -q 'const unsigned min_pool_workers = 2;' apps/services/worker_manager/worker_manager.cpp
 RUN --mount=type=cache,target=/root/.cache/ccache \
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMARCH="$MARCH" -DBUILD_TESTING=False \
       -DENABLE_UHD=Off -DENABLE_DPDK=Off -DENABLE_ZEROMQ=On \
