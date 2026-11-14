@@ -22,7 +22,6 @@ var (
 	ErrTooManyPLMNs      = errors.New("too many PLMNs")
 	ErrInvalid           = errors.New("invalid")
 	ErrConstraintCheck   = errors.New("check constraint violated")
-	ErrBusy              = errors.New("too busy")
 )
 
 type DB struct {
@@ -94,23 +93,28 @@ var migrations = []string{
 		operator_id INTEGER NOT NULL REFERENCES operators (id) ON DELETE CASCADE,
 		mcc TEXT NOT NULL CHECK (length(mcc) = 3 AND mcc NOT GLOB '*[^0-9]*'),
 		mnc TEXT NOT NULL CHECK (length(mnc) IN (2, 3) AND mnc NOT GLOB '*[^0-9]*'),
-		UNIQUE (mcc, mnc)
+		UNIQUE (mcc, mnc),
+		UNIQUE (id, operator_id)
 	);
 	CREATE INDEX operator_plmns_operator_id ON operator_plmns (operator_id);
 	CREATE TABLE global_enb_ids (
 		operator_id INTEGER PRIMARY KEY REFERENCES operators (id) ON DELETE CASCADE,
-		operator_plmn_id INTEGER NOT NULL REFERENCES operator_plmns (id),
+		operator_plmn_id INTEGER NOT NULL,
 		enb_id_type TEXT NOT NULL CHECK (enb_id_type IN ('macro', 'short_macro', 'long_macro')),
 		enb_id INTEGER NOT NULL CHECK (enb_id >= 0 AND enb_id < CASE enb_id_type
-			WHEN 'macro' THEN 1 << 20 WHEN 'short_macro' THEN 1 << 18 ELSE 1 << 21 END)
+			WHEN 'macro' THEN 1 << 20 WHEN 'short_macro' THEN 1 << 18 ELSE 1 << 21 END),
+		FOREIGN KEY (operator_plmn_id, operator_id) REFERENCES operator_plmns (id, operator_id) ON DELETE CASCADE
 	);
+	CREATE INDEX global_enb_ids_operator_plmn_id ON global_enb_ids (operator_plmn_id, operator_id);
 	CREATE TABLE global_gnb_ids (
 		operator_id INTEGER PRIMARY KEY REFERENCES operators (id) ON DELETE CASCADE,
-		operator_plmn_id INTEGER NOT NULL REFERENCES operator_plmns (id),
+		operator_plmn_id INTEGER NOT NULL,
 		gnb_id INTEGER NOT NULL,
-		gnb_id_length INTEGER NOT NULL CHECK (gnb_id_length BETWEEN 22 AND 32),
-		CHECK (gnb_id >= 0 AND gnb_id < 1 << gnb_id_length)
+		bit_length INTEGER NOT NULL CHECK (bit_length BETWEEN 22 AND 32),
+		CHECK (gnb_id >= 0 AND gnb_id < 1 << bit_length),
+		FOREIGN KEY (operator_plmn_id, operator_id) REFERENCES operator_plmns (id, operator_id) ON DELETE CASCADE
 	);
+	CREATE INDEX global_gnb_ids_operator_plmn_id ON global_gnb_ids (operator_plmn_id, operator_id);
 	CREATE TABLE mmes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		operator_id INTEGER NOT NULL REFERENCES operators (id) ON DELETE CASCADE,
@@ -376,9 +380,9 @@ func each(ctx context.Context, q querier, query string, fn func(scanner) error, 
 }
 
 func isConstraint(err error, code sqlite3.ErrNoExtended) bool {
-	var e sqlite3.Error
+	e, ok := errors.AsType[sqlite3.Error](err)
 
-	return errors.As(err, &e) && e.ExtendedCode == code
+	return ok && e.ExtendedCode == code
 }
 
 func checkAffected(res sql.Result) error {

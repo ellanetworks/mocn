@@ -18,23 +18,21 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import { useColorScheme, useTheme } from "@mui/material/styles";
-import {
-  AccountCircle as AccountCircleIcon,
-  AdminPanelSettings as AdminPanelSettingsIcon,
-  Brightness6 as ThemeIcon,
-  BugReport as BugReportIcon,
-  Dashboard as DashboardIcon,
-  Check as CheckIcon,
-  DarkMode as DarkModeIcon,
-  Hub as HubIcon,
-  Info as InfoIcon,
-  LightMode as LightModeIcon,
-  Logout as LogoutIcon,
-  Menu as MenuIcon,
-  OpenInNew as OpenInNewIcon,
-  Person as PersonIcon,
-  SettingsInputAntenna as SettingsInputAntennaIcon,
-} from "@mui/icons-material";
+import AccountCircleIcon from "@mui/icons-material/AccountCircle";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+import ThemeIcon from "@mui/icons-material/Brightness6";
+import BugReportIcon from "@mui/icons-material/BugReport";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import CheckIcon from "@mui/icons-material/Check";
+import DarkModeIcon from "@mui/icons-material/DarkMode";
+import HubIcon from "@mui/icons-material/Hub";
+import InfoIcon from "@mui/icons-material/Info";
+import LightModeIcon from "@mui/icons-material/LightMode";
+import LogoutIcon from "@mui/icons-material/Logout";
+import MenuIcon from "@mui/icons-material/Menu";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import PersonIcon from "@mui/icons-material/Person";
+import SettingsInputAntennaIcon from "@mui/icons-material/SettingsInputAntenna";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import DeploymentIdentity from "@/components/DeploymentIdentity";
 import Footer from "@/components/Footer";
@@ -339,7 +337,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         </Box>
 
         <Divider />
-        <Box>
+        <Box component="nav" aria-label="Support">
           <List>
             <ListSubheader>Support</ListSubheader>
             <ListItem disablePadding>

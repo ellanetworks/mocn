@@ -1,9 +1,11 @@
 package s1
 
 import (
+	"log/slog"
 	"slices"
 
 	"github.com/ellanetworks/core/s1ap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
 )
 
@@ -16,12 +18,6 @@ type ranSetup struct {
 	drx         s1ap.PagingDRX
 }
 
-type operatorView struct {
-	id    int64
-	name  string
-	plmns []db.PLMN
-}
-
 type mmePool struct {
 	plmns  []db.PLMN
 	served []ServedGUMMEIs
@@ -32,7 +28,9 @@ type enbConfig struct {
 	drx s1ap.PagingDRX
 }
 
-func (c enbConfig) equal(o enbConfig) bool {
+type servedGUMMEIs []ServedGUMMEIs
+
+func (c enbConfig) Equal(o enbConfig) bool {
 	return c.drx == o.drx && tasEqual(c.tas, o.tas)
 }
 
@@ -42,15 +40,24 @@ func tasEqual(a, b []TA) bool {
 	})
 }
 
-func gummeisEqual(a, b []ServedGUMMEIs) bool {
-	return slices.EqualFunc(a, b, func(x, y ServedGUMMEIs) bool {
+func (s servedGUMMEIs) Equal(o servedGUMMEIs) bool {
+	return slices.EqualFunc(s, o, func(x, y ServedGUMMEIs) bool {
 		return slices.Equal(x.PLMNs, y.PLMNs) && slices.Equal(x.GroupIDs, y.GroupIDs) &&
 			slices.Equal(x.MMECodes, y.MMECodes)
 	})
 }
 
-func broadcasts(tas []TA, plmns []db.PLMN) bool {
-	for _, ta := range tas {
+func (s servedGUMMEIs) Pushed() servedGUMMEIs {
+	return s
+}
+
+func (s servedGUMMEIs) Empty() bool {
+	return len(s) == 0
+}
+
+// TS 36.300 clause 4.6.2
+func (s ranSetup) Broadcasts(plmns []db.PLMN) bool {
+	for _, ta := range s.tas {
 		for _, p := range ta.BroadcastPLMNs {
 			if slices.Contains(plmns, p) {
 				return true
@@ -61,17 +68,42 @@ func broadcasts(tas []TA, plmns []db.PLMN) bool {
 	return false
 }
 
-// TS 36.300 clause 4.6.2
-func servingOperators(tas []TA, ops []operatorView) []int64 {
-	var ids []int64
-
-	for _, o := range ops {
-		if broadcasts(tas, o.plmns) {
-			ids = append(ids, o.id)
+// TS 36.413 clause 8.5.2
+// TS 36.300 clause 4.7.4
+func (s ranSetup) Serves(tai assoc.TAI) bool {
+	for _, ta := range s.tas {
+		if uint32(ta.TAC) == tai.TAC && slices.Contains(ta.BroadcastPLMNs, tai.PLMN) {
+			return true
 		}
 	}
 
-	return ids
+	return false
+}
+
+func (protocol) CoreConfig(plmns []db.PLMN, setups []ranSetup) (enbConfig, bool) {
+	return enbConfigFor(plmns, setups)
+}
+
+func (protocol) ConfigAttrs(cfg enbConfig) []slog.Attr {
+	return []slog.Attr{
+		slog.Int("supported_tas", len(cfg.tas)), slog.Int("default_paging_drx", pagingDRXFrames(cfg.drx)),
+	}
+}
+
+func (p protocol) RadioConfigLocked() servedGUMMEIs {
+	pools := []mmePool{}
+
+	for c := range p.core.ClientsLocked() {
+		if c.State != assoc.Up {
+			continue
+		}
+
+		if o, ok := p.core.OperatorLocked(c.OperatorID()); ok {
+			pools = append(pools, mmePool{plmns: o.PLMNs, served: c.Info.served})
+		}
+	}
+
+	return mergeServedGUMMEIs(pools)
 }
 
 // TS 36.413 clause 9.1.8.4
@@ -134,7 +166,7 @@ func enbConfigFor(plmns []db.PLMN, nodes []ranSetup) (enbConfig, bool) {
 }
 
 // TS 36.413 clause 9.1.8.5
-func mergeServedGUMMEIs(pools []mmePool) []ServedGUMMEIs {
+func mergeServedGUMMEIs(pools []mmePool) servedGUMMEIs {
 	var (
 		merged ServedGUMMEIs
 		found  bool
@@ -182,5 +214,9 @@ func mergeServedGUMMEIs(pools []mmePool) []ServedGUMMEIs {
 	slices.Sort(merged.MMECodes)
 	merged.MMECodes = slices.Compact(merged.MMECodes)
 
-	return []ServedGUMMEIs{merged}
+	return servedGUMMEIs{merged}
+}
+
+func (s ranSetup) Ref() string {
+	return s.globalENBID.Ref()
 }

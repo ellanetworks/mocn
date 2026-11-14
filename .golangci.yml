@@ -21,6 +21,7 @@ linters:
     sloglint:
       # A log made where a context is in scope takes it, so that it carries the trace context of its span.
       context: scope
+      attr-only: true
 issues:
   new-from-rev: ""
   new: false

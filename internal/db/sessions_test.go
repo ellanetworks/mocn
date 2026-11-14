@@ -8,6 +8,8 @@ import (
 )
 
 func TestSessions(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 10, 27, 12, 0, 0, 123, time.UTC)
@@ -62,6 +64,8 @@ func TestSessions(t *testing.T) {
 }
 
 func TestCreateSessionKeepsTheNewestPerUser(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
@@ -99,6 +103,8 @@ func TestCreateSessionKeepsTheNewestPerUser(t *testing.T) {
 }
 
 func TestDeleteExpiredSessions(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)

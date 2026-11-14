@@ -5,18 +5,21 @@ import (
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/plmnid"
 )
 
 func TestSelectMME(t *testing.T) {
+	t.Parallel()
+
 	plmnA := db.PLMN{MCC: "001", MNC: "01"}
 	plmnB := db.PLMN{MCC: "001", MNC: "02"}
 
-	idA, err := encodePLMN(plmnA)
+	idA, err := plmnid.Encode[s1ap.PLMNIdentity](plmnA)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	first, second, third := &MMEAssociation{}, &MMEAssociation{}, &MMEAssociation{}
+	first, second, third := &mmeAssoc{}, &mmeAssoc{}, &mmeAssoc{}
 	cands := []mmeCandidate{
 		{assoc: first, capacity: 1, served: []ServedGUMMEIs{{PLMNs: []db.PLMN{plmnA}, GroupIDs: []uint16{1}, MMECodes: []uint8{1}}}},
 		{assoc: second, capacity: 3, served: []ServedGUMMEIs{{PLMNs: []db.PLMN{plmnA}, GroupIDs: []uint16{2}, MMECodes: []uint8{2}}}},
@@ -29,7 +32,7 @@ func TestSelectMME(t *testing.T) {
 		name string
 		id   ueIdentity
 		intN func(int) int
-		want *MMEAssociation
+		want *mmeAssoc
 		rule string
 	}{
 		{
@@ -110,77 +113,75 @@ func TestSelectMME(t *testing.T) {
 	}
 }
 
-func TestUEIDAllocation(t *testing.T) {
-	tbl := newUETable()
-	n, a := &RANAssociation{}, &MMEAssociation{}
+func TestOverloadedMMEsAvoidedByCapacitySelection(t *testing.T) {
+	t.Parallel()
 
-	tbl.nextMMEID = 1<<32 - 2
-	tbl.nextENBID = maxENBUES1APID - 1
-
-	u1 := &ueContext{ran: n, enbID: 1, mme: a}
-	if err := tbl.add(u1); err != nil {
-		t.Fatal(err)
+	plmn := db.PLMN{MCC: "001", MNC: "01"}
+	busy, idle := &mmeAssoc{}, &mmeAssoc{}
+	servedBy := func(code uint8) []ServedGUMMEIs {
+		return []ServedGUMMEIs{{PLMNs: []db.PLMN{plmn}, GroupIDs: []uint16{1}, MMECodes: []uint8{code}}}
 	}
 
-	if u1.ranMMEID != 1<<32-1 || u1.mmeENBID != maxENBUES1APID {
-		t.Fatalf("IDs = %d/%d", u1.ranMMEID, u1.mmeENBID)
+	cands := []mmeCandidate{
+		{assoc: busy, capacity: 255, served: servedBy(1), overloaded: true},
+		{assoc: idle, capacity: 1, served: servedBy(2)},
 	}
 
-	tbl.byRANMMEID[0] = u1
-	tbl.byMMEENBID[0] = u1
+	first := func(int) int { return 0 }
 
-	u2 := &ueContext{ran: n, enbID: 2, mme: a}
-	if err := tbl.add(u2); err != nil {
-		t.Fatal(err)
+	if got, rule := selectMME(cands, ueIdentity{plmn: plmn}, first); got != idle || rule != selectedByCapacity {
+		t.Fatalf("selected %p by %s, want the MME without overload", got, rule)
 	}
 
-	if u2.ranMMEID != 1 || u2.mmeENBID != 1 {
-		t.Fatalf("IDs after wrapping past used ones = %d/%d", u2.ranMMEID, u2.mmeENBID)
+	if got, _ := selectMME(cands, ueIdentity{plmn: plmn, stmsi: &s1ap.STMSI{MMEC: 1}}, first); got != busy {
+		t.Fatal("an overloaded MME identified by the S-TMSI was not selected")
 	}
 
-	delete(tbl.byRANMMEID, 0)
-	delete(tbl.byMMEENBID, 0)
-
-	tbl.setMMEID(u2, 77)
-
-	if got := tbl.onMME(a, s1ap.Ptr(s1ap.MMEUES1APID(77)), nil); len(got) != 1 || got[0] != u2 {
-		t.Fatalf("lookup by MME UE S1AP ID = %v", got)
+	cands[1].overloaded = true
+	if got, _ := selectMME(cands, ueIdentity{plmn: plmn}, first); got != busy {
+		t.Fatal("no MME selected when all are overloaded")
 	}
 
-	if got := tbl.onRAN(n, s1ap.Ptr(u1.ranMMEID), s1ap.Ptr(s1ap.ENBUES1APID(2))); len(got) != 2 {
-		t.Fatalf("lookup by both IDs = %v", got)
-	}
-
-	if gone := tbl.remove(u1, u2, u1); len(gone) != 2 {
-		t.Fatalf("removed %d", len(gone))
-	}
-
-	if len(tbl.byRANMMEID)+len(tbl.byRANENBID)+len(tbl.byMMEENBID)+len(tbl.byMMEID) != 0 {
-		t.Fatal("table not empty")
+	cands[1].overloaded, cands[1].capacity = false, 0
+	if got, _ := selectMME(cands, ueIdentity{plmn: plmn}, first); got != busy {
+		t.Fatal("no MME selected when the only MME without overload has no capacity")
 	}
 }
 
-func TestUEIDAllocationWithoutMME(t *testing.T) {
-	tbl := newUETable()
-	n, a := &RANAssociation{}, &MMEAssociation{}
+func TestRerouteTarget(t *testing.T) {
+	t.Parallel()
 
-	tbl.nextENBID = maxENBUES1APID
+	plmn := db.PLMN{MCC: "001", MNC: "01"}
 
-	relayed := &ueContext{ran: n, enbID: 1, mme: a}
-	if err := tbl.add(relayed); err != nil {
+	id, err := plmnid.Encode[s1ap.PLMNIdentity](plmn)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	released := &ueContext{ran: n, enbID: 2}
-	if err := tbl.add(released); err != nil {
-		t.Fatal(err)
+	a, b, c := &mmeAssoc{}, &mmeAssoc{}, &mmeAssoc{}
+	cands := []mmeCandidate{
+		{assoc: a, capacity: 255, served: []ServedGUMMEIs{{PLMNs: []db.PLMN{plmn}, GroupIDs: []uint16{1}, MMECodes: []uint8{1}}}},
+		{assoc: b, capacity: 255, served: []ServedGUMMEIs{{PLMNs: []db.PLMN{plmn}, GroupIDs: []uint16{2}, MMECodes: []uint8{2}}}},
+		{assoc: c, capacity: 1, served: []ServedGUMMEIs{{PLMNs: []db.PLMN{plmn}, GroupIDs: []uint16{2, 3}, MMECodes: []uint8{3}}}},
 	}
 
-	if relayed.mmeENBID != 0 || released.ranMMEID != relayed.ranMMEID+1 || len(tbl.byMMEENBID) != 1 {
-		t.Fatalf("IDs = %d/%d, %d MME-side IDs", released.ranMMEID, relayed.mmeENBID, len(tbl.byMMEENBID))
+	first := func(int) int { return 0 }
+
+	if got := rerouteTarget(cands, plmn, 2, nil, first); got != b {
+		t.Fatal("no MME of the MME group selected by capacity")
 	}
 
-	if gone := tbl.remove(released); len(gone) != 1 || tbl.byMMEENBID[0] != relayed {
-		t.Fatal("removing a UE without an MME freed an MME-side ID")
+	guti := &s1ap.AdditionalGUTI{GUMMEI: s1ap.GUMMEI{PLMNIdentity: id, MMEGroupID: s1ap.MMEGroupID{0, 3}, MMECode: 3}}
+	if got := rerouteTarget(cands, plmn, 2, guti, first); got != c {
+		t.Fatal("the MME of the MME group identified by the Additional GUTI not selected")
+	}
+
+	guti.GUMMEI.MMEGroupID, guti.GUMMEI.MMECode = s1ap.MMEGroupID{0, 1}, 1
+	if got := rerouteTarget(cands, plmn, 2, guti, first); got != b {
+		t.Fatal("an MME outside the MME group selected by the Additional GUTI")
+	}
+
+	if got := rerouteTarget(cands, db.PLMN{MCC: "001", MNC: "02"}, 2, nil, first); got != nil {
+		t.Fatal("an MME of another PLMN selected")
 	}
 }

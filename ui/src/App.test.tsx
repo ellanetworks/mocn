@@ -34,7 +34,7 @@ const serve = (role: RoleID | null = RoleID.Admin) => {
         "/api/v1/users/me/api-tokens": () => json(200, { result: page([]) }),
         "/api/v1/metrics": () => new Response("", { status: 200 }),
         "/api/v1/operators": () => json(200, { result: { items: [] } }),
-        "/api/v1/radios": () => json(200, { result: { items: [] } }),
+        "/api/v1/radios": () => json(200, { result: page([]) }),
       }),
     ),
   );

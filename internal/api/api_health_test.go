@@ -10,6 +10,8 @@ import (
 )
 
 func TestLivez(t *testing.T) {
+	t.Parallel()
+
 	cfg := testConfig(t, openStore(t))
 	cfg.Ready = func(context.Context) []api.Check {
 		return []api.Check{{Name: "database", Detail: "database is locked"}}
@@ -41,6 +43,8 @@ func readyz(t *testing.T, h http.Handler) (int, api.Readiness) {
 }
 
 func TestReadyz(t *testing.T) {
+	t.Parallel()
+
 	var checks []api.Check
 
 	cfg := testConfig(t, openStore(t))
@@ -67,6 +71,8 @@ func TestReadyz(t *testing.T) {
 }
 
 func TestReadyzWithoutChecks(t *testing.T) {
+	t.Parallel()
+
 	cfg := testConfig(t, openStore(t))
 	cfg.Ready = nil
 

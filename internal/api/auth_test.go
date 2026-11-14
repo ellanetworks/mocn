@@ -64,6 +64,8 @@ func loadSpec(t *testing.T, a *testAPI) (map[string]specOperation, []map[string]
 }
 
 func TestRoutesMatchSpec(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	ops, global := loadSpec(t, a)
 	routes := api.Routes()
@@ -99,6 +101,8 @@ func TestRoutesMatchSpec(t *testing.T) {
 }
 
 func TestProtectedRoutesRequireToken(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	paths := strings.NewReplacer("{id}", "1", "{email}", testAdmin, "{$}", "")
@@ -141,6 +145,8 @@ func TestProtectedRoutesRequireToken(t *testing.T) {
 }
 
 func TestPublicRoutes(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	for _, route := range []string{"GET /api/v1/status", "GET /api/v1/metrics", "GET /api/v1/openapi.yaml"} {
@@ -152,6 +158,8 @@ func TestPublicRoutes(t *testing.T) {
 }
 
 func TestSecurityHeaders(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 
 	for _, req := range []*http.Request{
@@ -181,6 +189,8 @@ func TestSecurityHeaders(t *testing.T) {
 }
 
 func TestCrossOriginRequestsAreRejected(t *testing.T) {
+	t.Parallel()
+
 	a := newTestAPI(t)
 	_, cookie := a.login(t, testAdmin, testPassword)
 

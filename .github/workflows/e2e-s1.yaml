@@ -5,11 +5,12 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   e2e-s1:
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v7
@@ -21,6 +22,13 @@ jobs:
       - name: Load the SCTP kernel module
         run: |
           sudo modprobe sctp || { sudo apt-get update && sudo apt-get install -y "linux-modules-extra-$(uname -r)" && sudo modprobe sctp; }
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run the S1 lab
         env:

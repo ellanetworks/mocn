@@ -9,6 +9,7 @@ import (
 	"github.com/ellanetworks/core/per"
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/s1"
+	"github.com/ellanetworks/mocn/internal/sctptest"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -28,7 +29,7 @@ func tracedGateway(t *testing.T, mmeIP string) (*harness, *fakeMME, spans) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec), sdktrace.WithIDGenerator(tracing.IDGenerator()))
 
 	mmeListener := listenMME(t, mmeIP)
-	h := startGatewayWith(t, s1.Config{MMEPort: mmeListener.port(), TracerProvider: tp}, operatorA(mmeIP))
+	h := startGatewayWith(t, s1.Config{CorePort: mmeListener.Port(), TracerProvider: tp}, operatorA(mmeIP))
 
 	return h, mmeListener, spans{rec: rec}
 }
@@ -43,7 +44,7 @@ func attr(s sdktrace.ReadOnlySpan, key string) attribute.Value {
 func (sp spans) wait(t *testing.T, name, side, messageType string, match func(sdktrace.ReadOnlySpan) bool) sdktrace.ReadOnlySpan {
 	t.Helper()
 
-	deadline := time.Now().Add(waitFor)
+	deadline := time.Now().Add(sctptest.WaitFor)
 
 	for {
 		for _, s := range sp.rec.Ended() {
@@ -101,6 +102,8 @@ func assertInt(t *testing.T, s sdktrace.ReadOnlySpan, key string, want int64) {
 }
 
 func TestS1APSpans(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	h, mmeListener, sp := tracedGateway(t, "127.0.0.34")
@@ -168,7 +171,7 @@ func TestS1APSpans(t *testing.T) {
 		t.Errorf("send to radio operator = %q", got)
 	}
 
-	mme.send(t, contextSetup(ue, true))
+	mme.Send(t, contextSetup(ue, true))
 	expectRaw(t, enb, "initiating", s1ap.ProcInitialContextSetup)
 
 	ics := sp.wait(t, "s1ap/receive", "core", "InitialContextSetupRequest", nil)
@@ -179,7 +182,7 @@ func TestS1APSpans(t *testing.T) {
 		MMEUES1APID: s1ap.Ptr(ue.ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(7)),
 		ERABSetup: []s1ap.ERABSetupItemCtxtSURes{{ERABID: 5, TransportLayerAddress: s1ap.TransportLayerAddress{10, 90, 1, 21}, GTPTEID: 1}},
 	}
-	enb.send(t, resp)
+	enb.Send(t, resp)
 	expectRaw(t, mme, "successful", s1ap.ProcInitialContextSetup)
 
 	icsResp := sp.wait(t, "s1ap/receive", "radio", "InitialContextSetupResponse", nil)
@@ -221,33 +224,36 @@ func assertNoSecrets(t *testing.T, sp spans) {
 }
 
 func TestS1APSpanErrors(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	h, mmeListener, sp := tracedGateway(t, "127.0.0.35")
 	enb, mme := upAndRunning(t, h, mmeListener)
 
-	enb.send(t, rawPDU{&s1ap.InitiatingMessage{
+	enb.Send(t, rawPDU{&s1ap.InitiatingMessage{
 		ProcedureCode: s1ap.ProcUplinkNASTransport, Criticality: s1ap.CriticalityIgnore, Value: []byte{0xff},
 	}})
 	assertError(t, sp.wait(t, "s1ap/receive", "radio", "UplinkNASTransport", nil), "invalid")
+	expectProtocolError(t, enb, s1ap.CauseProtocolTransferSyntaxError)
 
 	unknown := initialUE(t, 3)
 	unknown.TAI.PLMNIdentity = plmnID(t, "009", "09")
-	enb.send(t, unknown)
+	enb.Send(t, unknown)
 	expectReleaseCommand(t, enb, 3, s1ap.CauseGroupMisc, s1ap.CauseMiscUnknownPLMN)
 	assertError(t, sp.wait(t, "s1ap/receive", "radio", "InitialUEMessage", nil), "unknown_plmn")
 
-	enb.send(t, uplinkNAS(t, 4242, 9))
+	enb.Send(t, uplinkNAS(t, 4242, 9))
 	expectRaw(t, enb, "initiating", s1ap.ProcErrorIndication)
 	assertError(t, sp.wait(t, "s1ap/receive", "radio", "UplinkNASTransport", func(s sdktrace.ReadOnlySpan) bool {
 		return attr(s, "s1ap.mme_ue_s1ap_id").AsInt64() == 4242
 	}), "unknown_ue")
 
-	mme.send(t, paging(t, tai(t, "00101", 9)))
+	mme.Send(t, paging(t, tai(t, "00101", 9)))
 	assertError(t, sp.wait(t, "s1ap/receive", "core", "Paging", nil), "no_radio")
 
 	h.gw.CloseMMESends()
-	enb.send(t, initialUE(t, 4))
+	enb.Send(t, initialUE(t, 4))
 	expectReleaseCommand(t, enb, 4, s1ap.CauseGroupTransport, s1ap.CauseTransportResourceUnavailable)
 
 	recv := sp.wait(t, "s1ap/receive", "radio", "InitialUEMessage", func(s sdktrace.ReadOnlySpan) bool {
@@ -349,6 +355,8 @@ func ranTraceID(id s1ap.EUTRANTraceID) trace.TraceID {
 }
 
 func TestRANTraceCorrelation(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	h, mmeListener, sp := tracedGateway(t, "127.0.0.36")
@@ -357,10 +365,10 @@ func TestRANTraceCorrelation(t *testing.T) {
 
 	first := s1ap.EUTRANTraceID{0x00, 0xf1, 0x10, 0x00, 0x00, 0x01, 0x00, 0x01}
 	ics := withTraceActivation(t, contextSetup(ue, true), first)
-	mme.send(t, ics)
+	mme.Send(t, ics)
 
 	f, raw := expectRaw(t, enb, "initiating", s1ap.ProcInitialContextSetup)
-	assertRelayed(t, ics, f)
+	assertRelayed(t, ics, servingMME(t, f, 1, 1, 1000))
 
 	var got s1ap.TraceActivation
 	if ok, err := raw.Get(s1ap.IDTraceActivation, &got); err != nil || !ok || got.EUTRANTraceID != first {
@@ -374,7 +382,7 @@ func TestRANTraceCorrelation(t *testing.T) {
 
 	sp.child(t, recv, "radio", "InitialContextSetupRequest")
 
-	enb.send(t, uplinkNAS(t, ue.ranMMEID, 7))
+	enb.Send(t, uplinkNAS(t, ue.ranMMEID, 7))
 	expectRaw(t, mme, "initiating", s1ap.ProcUplinkNASTransport)
 
 	ul := sp.wait(t, "s1ap/receive", "radio", "UplinkNASTransport", nil)
@@ -384,7 +392,7 @@ func TestRANTraceCorrelation(t *testing.T) {
 
 	sp.child(t, ul, "core", "UplinkNASTransport")
 
-	mme.send(t, deactivateTrace(t, ue.mmeUEID, ue.mmeENBID, first))
+	mme.Send(t, deactivateTrace(t, ue.mmeUEID, ue.mmeENBID, first))
 	expectRaw(t, enb, "initiating", s1ap.ProcDeactivateTrace)
 
 	deact := sp.wait(t, "s1ap/receive", "core", "DeactivateTrace", nil)
@@ -392,7 +400,7 @@ func TestRANTraceCorrelation(t *testing.T) {
 		t.Fatalf("Deactivate Trace trace ID = %s, want %s", deact.SpanContext().TraceID(), ranTraceID(first))
 	}
 
-	enb.send(t, uplinkNAS(t, ue.ranMMEID, 7))
+	enb.Send(t, uplinkNAS(t, ue.ranMMEID, 7))
 	expectRaw(t, mme, "initiating", s1ap.ProcUplinkNASTransport)
 
 	after := sp.wait(t, "s1ap/receive", "radio", "UplinkNASTransport", func(s sdktrace.ReadOnlySpan) bool {
@@ -404,7 +412,7 @@ func TestRANTraceCorrelation(t *testing.T) {
 
 	second := s1ap.EUTRANTraceID{0x00, 0xf1, 0x10, 0x00, 0x00, 0x02, 0x00, 0x07}
 	start := &s1ap.TraceStart{MMEUES1APID: ue.mmeUEID, ENBUES1APID: ue.mmeENBID, TraceActivation: traceActivation(second)}
-	mme.send(t, start)
+	mme.Send(t, start)
 
 	f, _ = expectRaw(t, enb, "initiating", s1ap.ProcTraceStart)
 	assertRelayed(t, start, f)
@@ -417,12 +425,12 @@ func TestRANTraceCorrelation(t *testing.T) {
 		t.Fatalf("Trace Start trace ID = %s, want %s", ts.SpanContext().TraceID(), ranTraceID(second))
 	}
 
-	mme.send(t, &s1ap.UEContextReleaseCommand{
+	mme.Send(t, &s1ap.UEContextReleaseCommand{
 		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: ue.mmeUEID, ENBUES1APID: ue.mmeENBID, Pair: true},
 		Cause:     &s1ap.Cause{Group: s1ap.CauseGroupNAS, Value: 0},
 	})
 	expectRaw(t, enb, "initiating", s1ap.ProcUEContextRelease)
-	enb.send(t, &s1ap.UEContextReleaseComplete{MMEUES1APID: s1ap.Ptr(ue.ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(7))})
+	enb.Send(t, &s1ap.UEContextReleaseComplete{MMEUES1APID: s1ap.Ptr(ue.ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(7))})
 	expectRaw(t, mme, "successful", s1ap.ProcUEContextRelease)
 
 	complete := sp.wait(t, "s1ap/receive", "radio", "UEContextReleaseComplete", nil)
@@ -430,7 +438,7 @@ func TestRANTraceCorrelation(t *testing.T) {
 		t.Fatalf("UE Context Release Complete trace ID = %s, want %s", complete.SpanContext().TraceID(), ranTraceID(second))
 	}
 
-	enb.send(t, initialUE(t, 7))
+	enb.Send(t, initialUE(t, 7))
 	expectRaw(t, mme, "initiating", s1ap.ProcInitialUEMessage)
 
 	again := sp.wait(t, "s1ap/receive", "radio", "InitialUEMessage", func(s sdktrace.ReadOnlySpan) bool {
@@ -440,7 +448,7 @@ func TestRANTraceCorrelation(t *testing.T) {
 		t.Fatalf("trace ID %s after release", again.SpanContext().TraceID())
 	}
 
-	enb.send(t, uplinkNAS(t, ue.ranMMEID, 7))
+	enb.Send(t, uplinkNAS(t, ue.ranMMEID, 7))
 	expectRaw(t, enb, "initiating", s1ap.ProcErrorIndication)
 
 	stale := sp.wait(t, "s1ap/receive", "radio", "UplinkNASTransport", func(s sdktrace.ReadOnlySpan) bool {
@@ -454,6 +462,8 @@ func TestRANTraceCorrelation(t *testing.T) {
 }
 
 func TestMMEConfigurationUpdateRetransmissionDetachedFromRequestSpan(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	rec := tracetest.NewSpanRecorder()
@@ -461,11 +471,11 @@ func TestMMEConfigurationUpdateRetransmissionDetachedFromRequestSpan(t *testing.
 	sp := spans{rec: rec}
 
 	mmeListener := listenMME(t, "127.0.0.37")
-	h := startGatewayWith(t, s1.Config{MMEPort: mmeListener.port(), TracerProvider: tp}, operatorA("127.0.0.37"))
-	mme := mmeListener.accept(t)
+	h := startGatewayWith(t, s1.Config{CorePort: mmeListener.Port(), TracerProvider: tp}, operatorA("127.0.0.37"))
+	mme := mmeListener.Accept(t)
 
 	enb := h.connectENB(t)
-	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv128, ta(t, 1, "00101")))
+	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv128, ta(t, 1, "00101")))
 
 	gummeis := served(t, 1, 1)
 	gummeis[0].ServedPLMNs = append(gummeis[0].ServedPLMNs, plmnID(t, "002", "002"))
@@ -476,7 +486,7 @@ func TestMMEConfigurationUpdateRetransmissionDetachedFromRequestSpan(t *testing.
 
 	changed := operatorA("127.0.0.37")
 	changed.PLMNs = append(changed.PLMNs, plmnB)
-	h.ops.set(changed)
+	h.Ops.Set(changed)
 
 	ctx, api := tp.Tracer("test").Start(t.Context(), "PUT /api/v1/operators/A")
 

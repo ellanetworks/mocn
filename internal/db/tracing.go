@@ -31,13 +31,11 @@ func noopTracer() trace.Tracer {
 }
 
 func errorType(err error) attribute.KeyValue {
-	var se sqlite3.Error
+	if se, ok := errors.AsType[sqlite3.Error](err); ok {
+		return semconv.ErrorTypeKey.String(strconv.Itoa(int(se.ExtendedCode)))
+	}
 
 	switch {
-	case errors.As(err, &se):
-		return semconv.ErrorTypeKey.String(strconv.Itoa(int(se.ExtendedCode)))
-	case errors.Is(err, ErrBusy):
-		return semconv.ErrorTypeKey.String("busy")
 	case errors.Is(err, context.DeadlineExceeded):
 		return semconv.ErrorTypeKey.String("timeout")
 	case errors.Is(err, context.Canceled):

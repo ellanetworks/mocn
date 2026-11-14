@@ -1,0 +1,27 @@
+logger:
+  file:
+    path: /var/log/open5gs/smf.log
+smf:
+  sbi:
+    server:
+      - address: 127.0.0.4
+        port: 7777
+    client:
+      scp:
+        - uri: http://127.0.0.200:7777
+  pfcp:
+    server:
+      - address: 127.0.0.4
+    client:
+      upf:
+        - address: 127.0.0.7
+  gtpu:
+    server:
+      - address: 127.0.0.4
+  session:
+    - subnet: ${UE_NET}.0.0/16
+      gateway: ${UE_NET}.0.1
+      dnn: internet
+  dns:
+    - 8.8.8.8
+  mtu: 1400

@@ -9,7 +9,7 @@ import {
   Link,
   Typography,
 } from "@mui/material";
-import { ContentCopy as ContentCopyIcon } from "@mui/icons-material";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { ApiError } from "@/queries/utils";
 

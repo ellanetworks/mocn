@@ -1,10 +1,12 @@
 import { apiFetch } from "@/queries/utils";
 
-export type ENBIDType = "macro" | "short_macro" | "long_macro";
-
-export type AnyENBIDType = ENBIDType | "home";
+export type ENBIDType = "macro" | "home" | "short_macro" | "long_macro";
 
 export type MMEState = "disconnected" | "connected" | "up" | "setup_failed";
+
+export type AMFState = "disconnected" | "connected" | "up" | "setup_failed";
+
+export type RANNodeType = "eNB" | "gNB";
 
 export interface PLMN {
   mcc: string;
@@ -20,7 +22,7 @@ export interface GlobalENBID {
 export interface GlobalGNBID {
   plmn: PLMN;
   gnb_id: number;
-  gnb_id_length: number;
+  bit_length: number;
 }
 
 export const CORE_NODE_KINDS = ["MME", "AMF"] as const;
@@ -31,13 +33,13 @@ export interface CoreNode {
   tnl_addresses: string[];
 }
 
-export interface ServedGUMMEI {
+export interface ServedGUMMEIsItem {
   served_plmns: PLMN[];
   served_group_ids: number[];
   served_mmecs: number[];
 }
 
-export type OverloadAction =
+export type MMEOverloadAction =
   | "reject_non_emergency_mo_dt"
   | "reject_rrc_cr_signalling"
   | "permit_emergency_sessions_and_mobile_terminated_services_only"
@@ -52,9 +54,9 @@ export interface GUMMEI {
   mme_code: number;
 }
 
-export interface Overload {
+export interface MMEOverload {
   gummei: GUMMEI;
-  overload_action: OverloadAction;
+  overload_action: MMEOverloadAction;
   traffic_load_reduction_indication?: number;
 }
 
@@ -63,9 +65,9 @@ export interface MMEStatus {
   since: string;
   primary_tnl_address?: string;
   mme_name?: string;
-  served_gummeis?: ServedGUMMEI[];
+  served_gummeis?: ServedGUMMEIsItem[];
   relative_mme_capacity?: number;
-  overload?: Overload[];
+  overload?: MMEOverload[];
   ue_connections: number;
 }
 
@@ -73,20 +75,78 @@ export interface MME extends CoreNode {
   status?: MMEStatus;
 }
 
+export type AMFOverloadAction = Extract<
+  MMEOverloadAction,
+  | "reject_non_emergency_mo_dt"
+  | "reject_rrc_cr_signalling"
+  | "permit_emergency_sessions_and_mobile_terminated_services_only"
+  | "permit_high_priority_sessions_and_mobile_terminated_services_only"
+>;
+
+export interface GUAMI {
+  plmn: PLMN;
+  amf_region_id: number;
+  amf_set_id: number;
+  amf_pointer: number;
+}
+
+export interface SNSSAI {
+  sst: number;
+  sd?: string;
+}
+
+export interface PLMNSupport {
+  plmn: PLMN;
+  snssais: SNSSAI[];
+}
+
+export interface SliceOverload {
+  snssais: SNSSAI[];
+  overload_action?: AMFOverloadAction;
+  traffic_load_reduction_indication?: number;
+}
+
+export interface AMFOverload {
+  guamis: GUAMI[];
+  overload_action?: AMFOverloadAction;
+  traffic_load_reduction_indication?: number;
+  slices?: SliceOverload[];
+}
+
+export interface AMFStatus {
+  state: AMFState;
+  since: string;
+  primary_tnl_address?: string;
+  amf_name?: string;
+  served_guamis?: GUAMI[];
+  plmn_support?: PLMNSupport[];
+  relative_amf_capacity?: number;
+  unavailable_guamis?: GUAMI[];
+  overload?: AMFOverload[];
+  ue_connections: number;
+}
+
+export interface AMF extends CoreNode {
+  status?: AMFStatus;
+}
+
 export interface Operator {
   name: string;
   pws_operator: boolean;
   plmns: PLMN[];
-  global_enb_id?: GlobalENBID | null;
-  global_gnb_id?: GlobalGNBID | null;
-  mmes?: MME[] | null;
-  amfs?: CoreNode[] | null;
+  global_enb_id?: GlobalENBID;
+  global_gnb_id?: GlobalGNBID;
+  mmes: MME[];
+  amfs: AMF[];
   ue_connections?: number;
   ue_connections_by_radio?: RadioUEConnections[];
 }
 
 export interface RadioUEConnections {
-  radio: string;
+  ref: string;
+  type: RANNodeType;
+  global_enb_id?: GlobalENBID;
+  global_gnb_id?: GlobalGNBID;
   name?: string;
   ue_connections: number;
 }

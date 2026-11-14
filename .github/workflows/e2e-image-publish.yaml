@@ -1,0 +1,39 @@
+name: E2E Image Publish
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - e2e/ocudu/Dockerfile
+  workflow_dispatch:
+
+jobs:
+  publish-ocudu:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the OCUDU gNB image
+        run: |
+          image="ghcr.io/ellanetworks/ella-mocn-e2e-ocudu:$(e2e/ocudu/tag.sh)"
+
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "$image is already published"
+            exit 0
+          fi
+
+          DOCKER_BUILDKIT=1 docker build -t "$image" e2e/ocudu
+          docker push "$image"

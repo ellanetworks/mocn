@@ -6,6 +6,7 @@ import (
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/plmnid"
 )
 
 const (
@@ -17,14 +18,14 @@ const (
 
 var enbIDKinds = map[s1ap.ENBIDKind]db.ENBIDType{
 	s1ap.ENBIDMacro:      db.ENBIDMacro,
-	s1ap.ENBIDHome:       ENBIDHome,
+	s1ap.ENBIDHome:       db.ENBIDHome,
 	s1ap.ENBIDShortMacro: db.ENBIDShortMacro,
 	s1ap.ENBIDLongMacro:  db.ENBIDLongMacro,
 }
 
 // TS 36.413 clause 9.2.1.37
 func globalENBIDFrom(g s1ap.GlobalENBID) (db.GlobalENBID, error) {
-	plmn, err := decodePLMN(g.PLMNIdentity)
+	plmn, err := plmnid.Decode(g.PLMNIdentity)
 	if err != nil {
 		return db.GlobalENBID{}, err
 	}
@@ -39,7 +40,7 @@ func globalENBIDFrom(g s1ap.GlobalENBID) (db.GlobalENBID, error) {
 
 // TS 36.413 clause 9.2.1.37
 func globalENBIDTo(g db.GlobalENBID) (s1ap.GlobalENBID, error) {
-	plmn, err := encodePLMN(g.PLMN)
+	plmn, err := plmnid.Encode[s1ap.PLMNIdentity](g.PLMN)
 	if err != nil {
 		return s1ap.GlobalENBID{}, err
 	}
@@ -57,7 +58,7 @@ func plmnsFrom(ids []s1ap.PLMNIdentity) ([]db.PLMN, error) {
 	out := make([]db.PLMN, 0, len(ids))
 
 	for _, id := range ids {
-		p, err := decodePLMN(id)
+		p, err := plmnid.Decode(id)
 		if err != nil {
 			return nil, err
 		}
@@ -72,7 +73,7 @@ func plmnsTo(plmns []db.PLMN) ([]s1ap.PLMNIdentity, error) {
 	out := make([]s1ap.PLMNIdentity, 0, len(plmns))
 
 	for _, p := range plmns {
-		id, err := encodePLMN(p)
+		id, err := plmnid.Encode[s1ap.PLMNIdentity](p)
 		if err != nil {
 			return nil, err
 		}
@@ -188,4 +189,14 @@ func causeText(c *s1ap.Cause) string {
 	}
 
 	return c.String()
+}
+
+func waitOf(t *s1ap.TimeToWait) *time.Duration {
+	if t == nil {
+		return nil
+	}
+
+	d := timeToWait[*t]
+
+	return &d
 }

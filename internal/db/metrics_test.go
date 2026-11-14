@@ -13,6 +13,8 @@ import (
 )
 
 func TestMetricsCountFailuresOnly(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 	ctx := t.Context()
 
@@ -48,6 +50,8 @@ func TestMetricsCountFailuresOnly(t *testing.T) {
 }
 
 func TestMetricsLint(t *testing.T) {
+	t.Parallel()
+
 	d := openTestDB(t)
 
 	for _, c := range d.Collectors() {
@@ -63,6 +67,8 @@ func TestMetricsLint(t *testing.T) {
 }
 
 func TestEveryCallIsObserved(t *testing.T) {
+	t.Parallel()
+
 	unobserved := map[string]bool{
 		"Close": true, "Collectors": true, "Ping": true, "JWTSecret": true,
 	}

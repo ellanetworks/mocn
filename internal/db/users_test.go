@@ -19,6 +19,8 @@ func createTestUser(t *testing.T, d *DB, email string, role Role) int64 {
 }
 
 func TestUserLifecycle(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -70,6 +72,8 @@ func TestUserLifecycle(t *testing.T) {
 }
 
 func TestUserNotFound(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -87,6 +91,8 @@ func TestUserNotFound(t *testing.T) {
 }
 
 func TestUserEmailIsUniqueWhateverItsCase(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -99,6 +105,8 @@ func TestUserEmailIsUniqueWhateverItsCase(t *testing.T) {
 }
 
 func TestUserRoleIsChecked(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -116,6 +124,8 @@ func TestUserRoleIsChecked(t *testing.T) {
 }
 
 func TestListUsers(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -154,6 +164,8 @@ func TestListUsers(t *testing.T) {
 }
 
 func TestUserUpdatesEndSessions(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
@@ -213,6 +225,8 @@ func TestUserUpdatesEndSessions(t *testing.T) {
 }
 
 func TestDeleteUserDeletesSessionsAndTokens(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
@@ -247,6 +261,8 @@ func TestDeleteUserDeletesSessionsAndTokens(t *testing.T) {
 }
 
 func TestUserWithoutPassword(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -289,6 +305,8 @@ func TestUserWithoutPassword(t *testing.T) {
 }
 
 func TestCreateUserIsCapped(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 
@@ -314,6 +332,8 @@ func TestCreateUserIsCapped(t *testing.T) {
 }
 
 func TestUserRolePinned(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
@@ -343,6 +363,8 @@ func TestUserRolePinned(t *testing.T) {
 }
 
 func TestLastAdminWithAPasswordIsKept(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	d := openTestDB(t)
 

@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-type Response struct {
+type response struct {
 	Result any `json:"result,omitempty"`
 }
 
@@ -16,7 +16,7 @@ type ErrorResponse struct {
 }
 
 func writeResponse(ctx context.Context, w http.ResponseWriter, v any, status int, logger *slog.Logger) {
-	writeJSON(ctx, w, Response{Result: v}, status, logger)
+	writeJSON(ctx, w, response{Result: v}, status, logger)
 }
 
 func writeError(ctx context.Context, w http.ResponseWriter, status int, message string, err error, logger *slog.Logger) {

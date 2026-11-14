@@ -4,7 +4,9 @@ import (
 	"slices"
 
 	"github.com/ellanetworks/core/s1ap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/plmnid"
 )
 
 const (
@@ -14,9 +16,10 @@ const (
 )
 
 type mmeCandidate struct {
-	assoc    *MMEAssociation
-	served   []ServedGUMMEIs
-	capacity uint8
+	assoc      *mmeAssoc
+	served     []ServedGUMMEIs
+	capacity   uint8
+	overloaded bool
 }
 
 type ueIdentity struct {
@@ -25,39 +28,30 @@ type ueIdentity struct {
 	stmsi  *s1ap.STMSI
 }
 
-func (g *Gateway) selectionLocked(plmn db.PLMN) (operatorView, []mmeCandidate, bool) {
-	var op operatorView
-
-	found := false
-
-	for _, o := range g.operators {
-		if slices.Contains(o.plmns, plmn) {
-			op, found = o, true
-			break
-		}
+func (g *Gateway) selectionLocked(plmn db.PLMN) (assoc.Operator, []mmeCandidate, bool) {
+	i := slices.IndexFunc(g.core.OperatorsLocked(), func(o assoc.Operator) bool { return slices.Contains(o.PLMNs, plmn) })
+	if i < 0 {
+		return assoc.Operator{}, nil, false
 	}
 
-	if !found {
-		return operatorView{}, nil, false
-	}
+	op := g.core.OperatorsLocked()[i]
 
+	return op, g.candidatesLocked(op.ID), true
+}
+
+func (g *Gateway) candidatesLocked(operatorID int64) []mmeCandidate {
 	var cands []mmeCandidate
 
-	for _, key := range sortedKeys(g.mmes) {
-		c := g.mmes[key]
-		if c.operatorID != op.id || c.status.State != MMEUp || c.assoc == nil {
-			continue
-		}
-
-		cand := mmeCandidate{assoc: c.assoc, served: c.status.ServedGUMMEIs}
-		if c.status.RelativeMMECapacity != nil {
-			cand.capacity = *c.status.RelativeMMECapacity
+	for _, c := range g.core.UpLocked(operatorID) {
+		cand := mmeCandidate{assoc: c.Assoc, served: c.Info.served, overloaded: len(c.Info.overload) > 0}
+		if c.Info.capacity != nil {
+			cand.capacity = *c.Info.capacity
 		}
 
 		cands = append(cands, cand)
 	}
 
-	return op, cands, true
+	return cands
 }
 
 // TS 36.300 clause 4.6.2
@@ -65,13 +59,13 @@ func (g *Gateway) selectionLocked(plmn db.PLMN) (operatorView, []mmeCandidate, b
 // TS 23.401 clause 4.3.8.3
 // TS 23.401 clause 4.3.7.2
 // TS 23.401 clause 4.3.7.3
-func selectMME(cands []mmeCandidate, id ueIdentity, intN func(int) int) (*MMEAssociation, string) {
+func selectMME(cands []mmeCandidate, id ueIdentity, intN func(int) int) (*mmeAssoc, string) {
 	if len(cands) == 0 {
 		return nil, ""
 	}
 
 	if g := id.gummei; g != nil {
-		if plmn, err := decodePLMN(g.PLMNIdentity); err == nil {
+		if plmn, err := plmnid.Decode(g.PLMNIdentity); err == nil {
 			group := uint16(g.MMEGroupID[0])<<8 | uint16(g.MMEGroupID[1])
 			if c := findServing(cands, plmn, &group, uint8(g.MMECode)); c != nil {
 				return c, selectedByGUMMEI
@@ -85,29 +79,50 @@ func selectMME(cands []mmeCandidate, id ueIdentity, intN func(int) int) (*MMEAss
 		}
 	}
 
-	total := 0
+	if a := weighted(cands, func(c mmeCandidate) bool { return !c.overloaded }, intN); a != nil {
+		return a, selectedByCapacity
+	}
+
+	if a := weighted(cands, func(mmeCandidate) bool { return true }, intN); a != nil {
+		return a, selectedByCapacity
+	}
+
+	return nil, ""
+}
+
+// TS 23.401 clause 4.3.7.2
+// TS 23.401 clause 4.3.7.4.1
+func weighted(cands []mmeCandidate, keep func(mmeCandidate) bool, intN func(int) int) *mmeAssoc {
+	var (
+		pool  []mmeCandidate
+		total int
+	)
+
 	for _, c := range cands {
-		total += int(c.capacity)
+		if c.capacity > 0 && keep(c) {
+			pool = append(pool, c)
+			total += int(c.capacity)
+		}
 	}
 
 	if total == 0 {
-		return nil, ""
+		return nil
 	}
 
 	pick := intN(total)
 
-	for _, c := range cands {
+	for _, c := range pool {
 		if pick < int(c.capacity) {
-			return c.assoc, selectedByCapacity
+			return c.assoc
 		}
 
 		pick -= int(c.capacity)
 	}
 
-	return cands[len(cands)-1].assoc, selectedByCapacity
+	return pool[len(pool)-1].assoc
 }
 
-func findServing(cands []mmeCandidate, plmn db.PLMN, group *uint16, code uint8) *MMEAssociation {
+func findServing(cands []mmeCandidate, plmn db.PLMN, group *uint16, code uint8) *mmeAssoc {
 	for _, c := range cands {
 		for _, s := range c.served {
 			if slices.Contains(s.PLMNs, plmn) && slices.Contains(s.MMECodes, code) &&

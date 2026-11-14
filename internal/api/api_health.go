@@ -15,13 +15,13 @@ type Readiness struct {
 	Checks []Check `json:"checks"`
 }
 
-func Livez() http.Handler {
+func livez() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 }
 
-func Readyz(cfg Config) http.Handler {
+func readyz(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		res := Readiness{Ready: true, Checks: []Check{}}
 

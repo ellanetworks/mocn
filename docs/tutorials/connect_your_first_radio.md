@@ -229,11 +229,11 @@ Go to **Operators** and click **Create**. Set:
 
 Click **Create**. The **Operators / Operator A** page opens.
 
-Next to **Gateway identity**, click the edit icon. Under **4G (Global eNB ID)**, turn on **Set** and set **eNB ID** to `1`. Keep **PLMN** at `001/01` and **eNB ID type** at **Macro (20 bits)**. Click **Save**.
+Next to **4G Gateway Identity (Global eNB ID)**, click the edit icon. Turn on **Set a Global eNB ID** and set **eNB ID** to `1`. Keep **PLMN** at `001-01` and **eNB ID type** at **Macro (20 bits)**. Click **Save**.
 
-For 4G, **Gateway identity** shows `001/01 · Macro (20 bits) · 1`.
+**4G Gateway Identity (Global eNB ID)** shows `001-01 · Macro (20 bits) · 1`.
 
-In **Core network nodes**, click **Add**. Keep **Type** at **MME**, set **Address 1** to `10.93.0.2`, Ella Core's address, and click **Add**.
+In **Core Network Nodes**, click **Add Core Node**. Keep **Type** at **MME (4G)**, set **Address 1** to `10.93.0.2`, Ella Core's address, and click **Add**.
 
 The MME appears with the status **Connected**. It stays **Connected** until a radio connects.
 
@@ -266,9 +266,9 @@ srsue-1  | Network attach successful. IP: 10.45.0.1
 
 In the Ella MOCN UI, go to **Radios**. The radio `srsenb01` has the status **Up** and **1** UE connection.
 
-Click `srsenb01`. Under **UE connections by operator**, `Operator A` has **1** UE connection.
+Click `srsenb01`. Under **UE Connections by Operator**, `Operator A` has **1** UE connection.
 
-Go to **Operators** and click `Operator A`. In **Core network nodes**, the MME has the name `ella`, the status **Up** and **1** UE connection.
+Go to **Operators** and click `Operator A`. In **Core Network Nodes**, the MME has the name `ella`, the status **Up** and **1** UE connection.
 
 You have connected your first radio to an operator's core through Ella MOCN.
 

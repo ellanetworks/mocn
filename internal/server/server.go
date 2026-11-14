@@ -9,12 +9,15 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/api"
 	"github.com/ellanetworks/mocn/internal/config"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/metrics"
+	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/ellanetworks/mocn/internal/s1"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"github.com/ellanetworks/mocn/version"
@@ -22,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	versioncollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -35,6 +39,7 @@ type Config struct {
 	Listener       net.Listener
 	TLS            *tls.Config
 	S1Listener     *sctp.Listener
+	NGListener     *sctp.Listener
 	DBPath         string
 	Frontend       fs.FS
 	BcryptCost     int
@@ -44,9 +49,20 @@ type Config struct {
 }
 
 func Run(ctx context.Context, cfg Config) (err error) {
+	owned := false
+
+	defer func() {
+		if !owned {
+			closeListeners(cfg)
+		}
+	}()
+
+	if c := cfg.BcryptCost; c != 0 && (c < bcrypt.MinCost || c > bcrypt.MaxCost) {
+		return fmt.Errorf("bcrypt cost %d is out of range [%d, %d]", c, bcrypt.MinCost, bcrypt.MaxCost)
+	}
+
 	tp, shutdownTracing, err := newTracerProvider(ctx, cfg)
 	if err != nil {
-		_ = cfg.Listener.Close()
 		return err
 	}
 
@@ -61,7 +77,6 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	database, err := db.Open(ctx, cfg.DBPath, db.WithTracerProvider(tp))
 	if err != nil {
-		_ = cfg.Listener.Close()
 		return err
 	}
 
@@ -73,41 +88,44 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	secret, err := database.JWTSecret(ctx)
 	if err != nil {
-		_ = cfg.Listener.Close()
 		return fmt.Errorf("read the JWT secret: %w", err)
 	}
 
 	requests := api.NewRequestMetrics()
 
-	gateway := s1.New(s1.Config{
-		Listener: cfg.S1Listener, Operators: database.ListOperators, TracerProvider: tp, Logger: cfg.Logger,
+	m := metrics.New()
+
+	s1Gateway := s1.New(s1.Config{
+		Listener: cfg.S1Listener, Operators: database.ListOperators, Metrics: m, TracerProvider: tp, Logger: cfg.Logger,
 	})
 
-	gatewayCtx, stopGateway := context.WithCancel(ctx)
-	defer stopGateway()
+	ngGateway := ng.New(ng.Config{
+		Listener: cfg.NGListener, Operators: database.ListOperators, Metrics: m, TracerProvider: tp, Logger: cfg.Logger,
+	})
 
-	gatewayDone := make(chan struct{})
+	gatewayCtx, stopGateways := context.WithCancel(ctx)
+	defer stopGateways()
 
-	go func() {
-		defer close(gatewayDone)
+	var gateways sync.WaitGroup
 
-		_ = gateway.Run(gatewayCtx)
-	}()
+	gateways.Go(func() { s1Gateway.Run(gatewayCtx) })
+	gateways.Go(func() { ngGateway.Run(gatewayCtx) })
 
 	defer func() {
-		stopGateway()
-		<-gatewayDone
+		stopGateways()
+		gateways.Wait()
 	}()
 
 	srv := &http.Server{
 		Handler: api.NewHandler(api.Config{
 			Frontend:       cfg.Frontend,
 			Ready:          readiness(database),
-			Metrics:        newRegistry(database, requests, gateway),
+			Metrics:        newRegistry(database, requests, m.Collectors(s1Gateway, ngGateway)),
 			Requests:       requests,
 			Auth:           database,
-			Operators:      reconciling{DB: database, gateway: gateway, logger: cfg.Logger},
-			S1:             gateway,
+			Operators:      reconciling{DB: database, gateways: []reconciler{s1Gateway, ngGateway}, logger: cfg.Logger},
+			S1:             s1Gateway,
+			NG:             ngGateway,
 			SecureCookie:   cfg.TLS != nil,
 			JWTSecret:      func() []byte { return secret },
 			BcryptCost:     cfg.BcryptCost,
@@ -130,15 +148,22 @@ func Run(ctx context.Context, cfg Config) (err error) {
 		served <- srv.Serve(cfg.Listener)
 	}()
 
+	owned = true
+
 	v := version.Get()
 
-	s1Address := ""
+	s1Address, ngAddress := "", ""
 	if cfg.S1Listener != nil {
 		s1Address = cfg.S1Listener.Addr().String()
 	}
 
-	cfg.Logger.InfoContext(ctx, "mocn started", "version", v.Version, "revision", v.Revision,
-		"api", cfg.Listener.Addr().String(), "tls", cfg.TLS != nil, "s1", s1Address, "db", cfg.DBPath)
+	if cfg.NGListener != nil {
+		ngAddress = cfg.NGListener.Addr().String()
+	}
+
+	cfg.Logger.InfoContext(ctx, "mocn started", slog.String("version", v.Version), slog.String("revision", v.Revision),
+		slog.String("api", cfg.Listener.Addr().String()), slog.Bool("tls", cfg.TLS != nil), slog.String("s1", s1Address),
+		slog.String("ng", ngAddress), slog.String("db", cfg.DBPath))
 
 	var failed error
 
@@ -152,10 +177,10 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		cfg.Logger.ErrorContext(shutdownCtx, "api shutdown", "error", err)
+		cfg.Logger.ErrorContext(shutdownCtx, "api shutdown", slog.Any("error", err))
 
 		if err := srv.Close(); err != nil {
-			cfg.Logger.ErrorContext(shutdownCtx, "api close", "error", err)
+			cfg.Logger.ErrorContext(shutdownCtx, "api close", slog.Any("error", err))
 		}
 	}
 
@@ -166,6 +191,20 @@ func Run(ctx context.Context, cfg Config) (err error) {
 	cfg.Logger.InfoContext(shutdownCtx, "mocn stopped")
 
 	return nil
+}
+
+func closeListeners(cfg Config) {
+	if cfg.Listener != nil {
+		_ = cfg.Listener.Close()
+	}
+
+	if cfg.S1Listener != nil {
+		_ = cfg.S1Listener.Close()
+	}
+
+	if cfg.NGListener != nil {
+		_ = cfg.NGListener.Close()
+	}
 }
 
 func newTracerProvider(ctx context.Context, cfg Config) (trace.TracerProvider, func(context.Context) error, error) {
@@ -198,7 +237,7 @@ func readiness(database *db.DB) func(ctx context.Context) []api.Check {
 	}
 }
 
-func newRegistry(database *db.DB, requests *api.RequestMetrics, gateway *s1.Gateway) *prometheus.Registry {
+func newRegistry(database *db.DB, requests *api.RequestMetrics, gateways []prometheus.Collector) *prometheus.Registry {
 	v := version.Get()
 
 	build := prometheus.Labels{"version": v.Version}
@@ -214,20 +253,26 @@ func newRegistry(database *db.DB, requests *api.RequestMetrics, gateway *s1.Gate
 	)
 	registry.MustRegister(database.Collectors()...)
 	registry.MustRegister(requests.Collectors()...)
-	registry.MustRegister(gateway.Collectors()...)
+	registry.MustRegister(gateways...)
 
 	return registry
 }
 
+type reconciler interface {
+	Reconcile(ctx context.Context) error
+}
+
 type reconciling struct {
 	*db.DB
-	gateway *s1.Gateway
-	logger  *slog.Logger
+	gateways []reconciler
+	logger   *slog.Logger
 }
 
 func (r reconciling) reconcile(ctx context.Context) {
-	if err := r.gateway.Reconcile(context.WithoutCancel(ctx)); err != nil {
-		r.logger.ErrorContext(ctx, "failed to apply operator changes to S1", slog.Any("error", err))
+	for _, g := range r.gateways {
+		if err := g.Reconcile(context.WithoutCancel(ctx)); err != nil {
+			r.logger.ErrorContext(ctx, "failed to apply operator changes", slog.Any("error", err))
+		}
 	}
 }
 

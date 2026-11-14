@@ -11,6 +11,8 @@ import (
 )
 
 func TestGetStatus(t *testing.T) {
+	t.Parallel()
+
 	h := testHandler(t, Config{Logger: slog.New(slog.DiscardHandler)})
 
 	rec := httptest.NewRecorder()

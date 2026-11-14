@@ -10,6 +10,8 @@ import (
 )
 
 func TestMetricsCountRequestsByRouteAndCode(t *testing.T) {
+	t.Parallel()
+
 	store := openStore(t)
 	cfg := testConfig(t, store)
 	cfg.Requests = api.NewRequestMetrics()

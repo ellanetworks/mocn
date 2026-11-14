@@ -7,6 +7,8 @@ import (
 )
 
 func TestJWTSecretSurvivesReopening(t *testing.T) {
+	t.Parallel()
+
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "mocn.db")
 

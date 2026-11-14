@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Button, Link } from "@mui/material";
+import { Box, Button, Link, Skeleton } from "@mui/material";
 import {
   DataGrid,
   type GridColDef,
@@ -18,7 +18,7 @@ const columns: GridColDef<User>[] = [
     field: "email",
     headerName: "Email",
     flex: 1,
-    minWidth: 220,
+    minWidth: 180,
     renderCell: ({ row }) => (
       <Link
         component={RouterLink}
@@ -33,7 +33,8 @@ const columns: GridColDef<User>[] = [
   {
     field: "role_id",
     headerName: "Role",
-    width: 240,
+    flex: 0.6,
+    minWidth: 120,
     valueGetter: (_value, row) => roleLabels[row.role_id],
   },
 ];
@@ -51,7 +52,7 @@ export default function Users() {
       listUsers({ page: pagination.page + 1, perPage: pagination.pageSize }),
     placeholderData: (prev) => prev,
   });
-  const { data, isFetching } = users;
+  const { data } = users;
 
   return (
     <Box component="section" aria-labelledby="users-title">
@@ -71,25 +72,27 @@ export default function Users() {
         }
       />
       <QueryAlert query={users} subject="users" />
-      <DataGrid
-        aria-label="Users"
-        rows={data?.items ?? []}
-        columns={columns}
-        getRowId={(row) => row.email}
-        loading={isFetching && !data}
-        paginationMode="server"
-        rowCount={data?.total_count ?? 0}
-        paginationModel={pagination}
-        onPaginationModelChange={setPagination}
-        pageSizeOptions={[25, 50]}
-        disableColumnMenu
-        disableColumnSorting
-        disableRowSelectionOnClick
-        disableVirtualization
-        autoHeight
-        localeText={{ noRowsLabel: "No users." }}
-        sx={GRID_SX}
-      />
+      {users.isPending && <Skeleton variant="rounded" height={120} />}
+      {data && (
+        <DataGrid
+          aria-label="Users"
+          rows={data.items}
+          columns={columns}
+          getRowId={(row) => row.email}
+          paginationMode="server"
+          rowCount={data.total_count}
+          paginationModel={pagination}
+          onPaginationModelChange={setPagination}
+          pageSizeOptions={[25, 50]}
+          disableColumnMenu
+          disableColumnSorting
+          disableRowSelectionOnClick
+          disableVirtualization
+          autoHeight
+          localeText={{ noRowsLabel: "No users." }}
+          sx={GRID_SX}
+        />
+      )}
       {creating && <CreateUserDialog onClose={() => setCreating(false)} />}
     </Box>
   );

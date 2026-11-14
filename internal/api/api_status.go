@@ -12,7 +12,7 @@ type Status struct {
 	Initialized bool   `json:"initialized"`
 }
 
-func GetStatus(cfg Config) http.Handler {
+func getStatus(cfg Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n, err := cfg.Auth.CountUsers(r.Context())
 		if err != nil {

@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from "react";
+import { useId, useState } from "react";
 import {
   Box,
   Button,
@@ -15,43 +15,43 @@ import {
   TextField,
   Tooltip,
 } from "@mui/material";
-import { Add as AddIcon, Delete as DeleteIcon } from "@mui/icons-material";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import DialogError from "@/components/DialogError";
 import EditDialog from "@/components/EditDialog";
-import { useSnackbar } from "@/contexts/SnackbarContext";
+import { errorMessage, useSnackbar } from "@/contexts/SnackbarContext";
 import { useOperatorUpdate } from "@/hooks/useOperatorUpdate";
 import { useTouched } from "@/hooks/useTouched";
 import {
   CORE_NODE_KINDS,
+  type CoreNode,
   type CoreNodeKind,
   createOperator,
   type ENBIDType,
   type Operator,
-  type PLMN,
 } from "@/queries/operators";
 import {
   addressErrors,
   addressRow,
   type AddressRow,
+  CORE_NODE_KIND_LABELS,
+  coreNodeKey,
   ENB_ID_BITS,
-  ENB_IDENTITY_LABEL,
   ENB_ID_TYPE_LABELS,
-  ENB_ID_TYPES,
   enbIdError,
   formatPLMN,
-  GNB_IDENTITY_LABEL,
+  gnbIdBitLengthError,
   gnbIdError,
-  gnbIdLengthError,
   isValidAddresses,
   isValidName,
   isValidPLMNs,
-  MAX_GNB_ID_LENGTH,
+  MAX_GNB_ID_BIT_LENGTH,
   MAX_PLMNS,
   maxENBID,
   maxGNBID,
-  MIN_GNB_ID_LENGTH,
+  MIN_GNB_ID_BIT_LENGTH,
+  OPERATOR_ENB_ID_TYPES,
   nameError,
   parsePLMN,
   plmnErrors,
@@ -240,8 +240,6 @@ export function CreateOperatorDialog({
           name: name.trim(),
           pws_operator: false,
           plmns: plmnParams(plmns),
-          global_enb_id: null,
-          global_gnb_id: null,
           mmes: [],
           amfs: [],
         })
@@ -319,226 +317,245 @@ export function EditPLMNsDialog({
   );
 }
 
-function IdentityPart({
+function IdentitySwitch({
   label,
   set,
   blocked,
   onSet,
-  children,
 }: {
   label: string;
   set: boolean;
   blocked?: string;
   onSet: (set: boolean) => void;
-  children: ReactNode;
 }) {
-  const hint = useId();
-  const title = useId();
-  return (
-    <FormControl component="fieldset" aria-labelledby={title} sx={fieldsetSx}>
-      <Stack
-        direction="row"
-        sx={{ alignItems: "center", justifyContent: "space-between" }}
+  const control = (
+    <Switch
+      checked={set}
+      onChange={(e) => onSet(e.target.checked)}
+      disabled={blocked !== undefined}
+    />
+  );
+  return blocked ? (
+    <Tooltip title={blocked} arrow describeChild>
+      <Box
+        component="span"
+        tabIndex={0}
+        aria-label={`${label}: ${blocked}`}
+        sx={{ alignSelf: "flex-start" }}
       >
-        <FormLabel id={title} component="span">
-          {label}
-        </FormLabel>
-        <Switch
-          checked={set}
-          onChange={(e) => onSet(e.target.checked)}
-          disabled={blocked !== undefined}
-          slotProps={{
-            input: {
-              "aria-label": "Set",
-              "aria-describedby": blocked ? hint : undefined,
-            },
-          }}
-        />
-      </Stack>
-      <FormHelperText id={hint} sx={{ mt: 0, minHeight: "1.66em" }}>
-        {blocked ?? ""}
-      </FormHelperText>
-      <Stack spacing={2} sx={{ mt: 1 }}>
-        {children}
-      </Stack>
-    </FormControl>
+        <FormControlLabel control={control} label={label} disabled />
+      </Box>
+    </Tooltip>
+  ) : (
+    <FormControlLabel control={control} label={label} />
   );
 }
 
-export function EditGatewayIdentityDialog({
+const blockedBy = (set: boolean, count: number, kind: string) =>
+  set && count > 0
+    ? `Delete this operator's ${kind}s before you remove this identity.`
+    : undefined;
+
+export function EditENBIdentityDialog({
   operator,
   onClose,
 }: {
   operator: Operator;
   onClose: () => void;
 }) {
-  const enb = operator.global_enb_id ?? undefined;
-  const gnb = operator.global_gnb_id ?? undefined;
+  const enb = operator.global_enb_id;
   const options = operator.plmns.map(formatPLMN);
-  const initialPLMN = (plmn?: PLMN) =>
-    plmn ? formatPLMN(plmn) : (options[0] ?? "");
 
-  const [enbSet, setEnbSet] = useState(enb !== undefined);
-  const [enbPLMN, setEnbPLMN] = useState(initialPLMN(enb?.plmn));
-  const [enbType, setEnbType] = useState<ENBIDType>(
-    enb?.enb_id_type ?? "macro",
+  const [set, setSet] = useState(enb !== undefined);
+  const [plmn, setPLMN] = useState(
+    enb ? formatPLMN(enb.plmn) : (options[0] ?? ""),
   );
-  const [enbId, setEnbId] = useState(enb ? String(enb.enb_id) : "");
-
-  const [gnbSet, setGnbSet] = useState(gnb !== undefined);
-  const [gnbPLMN, setGnbPLMN] = useState(initialPLMN(gnb?.plmn));
-  const [gnbId, setGnbId] = useState(gnb ? String(gnb.gnb_id) : "");
-  const [gnbLength, setGnbLength] = useState(
-    String(gnb?.gnb_id_length ?? MIN_GNB_ID_LENGTH),
-  );
+  const [type, setType] = useState<ENBIDType>(enb?.enb_id_type ?? "macro");
+  const [id, setId] = useState(enb ? String(enb.enb_id) : "");
 
   const mutation = useOperatorUpdate(
     operator,
-    "Gateway identity saved successfully.",
+    "4G gateway identity saved successfully.",
     onClose,
   );
 
   const { touch, shown } = useTouched();
-  const enbError = enbIdError(enbType, enbId);
-  const enbIdShown = shown("enb.id", requiredError(enbId, enbError));
-  const enbValid =
-    !enbSet ||
-    (options.includes(enbPLMN) && enbId !== "" && enbError === undefined);
-
-  const gnbMax = maxGNBID(gnbLength);
-  const gnbValid =
-    !gnbSet ||
-    (options.includes(gnbPLMN) &&
-      gnbId !== "" &&
-      gnbIdLengthError(gnbLength) === undefined &&
-      gnbIdError(gnbId, gnbLength) === undefined);
-  const gnbLengthShown = shown(
-    "gnb.length",
-    requiredError(gnbLength, gnbIdLengthError(gnbLength)),
-  );
-  const gnbIdShown = shown(
-    "gnb.id",
-    requiredError(gnbId, gnbIdError(gnbId, gnbLength)),
-  );
-
-  const blocked = (set: boolean, count: number, kind: string) =>
-    set && count > 0 ? `Delete the ${kind}s first` : undefined;
+  const error = enbIdError(type, id);
+  const idShown = shown("enb.id", requiredError(id, error));
+  const valid = set
+    ? options.includes(plmn) && id !== "" && error === undefined
+    : enb !== undefined;
 
   return (
     <EditDialog
-      title="Edit Gateway Identity"
+      title="Edit 4G Gateway Identity"
       submitLabel="Save"
       pendingLabel="Saving…"
-      failure="Could not save the gateway identity"
-      valid={enbValid && gnbValid}
+      failure="Could not save the 4G gateway identity"
+      valid={valid}
       pending={mutation.isPending}
       error={mutation.error}
       onSubmit={() =>
         mutation.mutate({
-          global_enb_id: enbSet
+          global_enb_id: set
             ? {
-                plmn: parsePLMN(enbPLMN),
-                enb_id_type: enbType,
-                enb_id: Number(enbId),
+                plmn: parsePLMN(plmn),
+                enb_id_type: type,
+                enb_id: Number(id),
               }
-            : null,
-          global_gnb_id: gnbSet
-            ? {
-                plmn: parsePLMN(gnbPLMN),
-                gnb_id: Number(gnbId),
-                gnb_id_length: Number(gnbLength),
-              }
-            : null,
+            : undefined,
         })
       }
       onClose={onClose}
     >
-      <IdentityPart
-        label={ENB_IDENTITY_LABEL}
-        set={enbSet}
-        blocked={blocked(enbSet, operator.mmes?.length ?? 0, "MME")}
-        onSet={setEnbSet}
+      <IdentitySwitch
+        label="Set a Global eNB ID"
+        set={set}
+        blocked={blockedBy(set, operator.mmes.length, "MME")}
+        onSet={setSet}
+      />
+      <PLMNSelect
+        value={plmn}
+        options={options}
+        onChange={setPLMN}
+        disabled={!set}
+      />
+      <TextField
+        select
+        label="eNB ID type"
+        value={type}
+        onChange={(e) => setType(e.target.value as ENBIDType)}
+        disabled={!set}
+        required
       >
-        <PLMNSelect
-          value={enbPLMN}
-          options={options}
-          onChange={setEnbPLMN}
-          disabled={!enbSet}
-        />
-        <TextField
-          select
-          label="eNB ID type"
-          value={enbType}
-          onChange={(e) => setEnbType(e.target.value as ENBIDType)}
-          disabled={!enbSet}
-          required
-        >
-          {ENB_ID_TYPES.map((t) => (
-            <MenuItem key={t} value={t}>
-              {`${ENB_ID_TYPE_LABELS[t]} (${ENB_ID_BITS[t]} bits)`}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField
-          label="eNB ID"
-          value={enbId}
-          onChange={(e) => setEnbId(e.target.value.trim())}
-          onBlur={touch("enb.id")}
-          disabled={!enbSet}
-          error={enbSet && enbIdShown !== undefined}
-          helperText={(enbSet && enbIdShown) || `0 to ${maxENBID(enbType)}`}
-          required
-          slotProps={numeric}
-        />
-      </IdentityPart>
-      <IdentityPart
-        label={GNB_IDENTITY_LABEL}
-        set={gnbSet}
-        blocked={blocked(gnbSet, operator.amfs?.length ?? 0, "AMF")}
-        onSet={setGnbSet}
-      >
-        <PLMNSelect
-          value={gnbPLMN}
-          options={options}
-          onChange={setGnbPLMN}
-          disabled={!gnbSet}
-        />
-        <TextField
-          label="gNB ID"
-          value={gnbId}
-          onChange={(e) => setGnbId(e.target.value.trim())}
-          onBlur={touch("gnb.id")}
-          disabled={!gnbSet}
-          error={gnbSet && gnbIdShown !== undefined}
-          helperText={
-            (gnbSet && gnbIdShown) ||
-            (gnbMax === undefined ? " " : `0 to ${gnbMax}`)
-          }
-          required
-          slotProps={numeric}
-        />
-        <TextField
-          label="gNB ID length"
-          value={gnbLength}
-          onChange={(e) => setGnbLength(e.target.value.trim())}
-          onBlur={touch("gnb.length")}
-          disabled={!gnbSet}
-          error={gnbSet && gnbLengthShown !== undefined}
-          helperText={
-            (gnbSet && gnbLengthShown) ||
-            `${MIN_GNB_ID_LENGTH} to ${MAX_GNB_ID_LENGTH} bits`
-          }
-          required
-          slotProps={numeric}
-        />
-      </IdentityPart>
+        {OPERATOR_ENB_ID_TYPES.map((t) => (
+          <MenuItem key={t} value={t}>
+            {`${ENB_ID_TYPE_LABELS[t]} (${ENB_ID_BITS[t]} bits)`}
+          </MenuItem>
+        ))}
+      </TextField>
+      <TextField
+        label="eNB ID"
+        value={id}
+        onChange={(e) => setId(e.target.value.trim())}
+        onBlur={touch("enb.id")}
+        disabled={!set}
+        error={set && idShown !== undefined}
+        helperText={(set && idShown) || `0 to ${maxENBID(type)}`}
+        required
+        slotProps={numeric}
+      />
     </EditDialog>
   );
 }
 
-const NODE_IDENTITY_MISSING: Record<CoreNodeKind, string> = {
-  MME: "Set the 4G gateway identity (Global eNB ID) first",
-  AMF: "Set the 5G gateway identity (Global gNB ID) first",
+export function EditGNBIdentityDialog({
+  operator,
+  onClose,
+}: {
+  operator: Operator;
+  onClose: () => void;
+}) {
+  const gnb = operator.global_gnb_id;
+  const options = operator.plmns.map(formatPLMN);
+
+  const [set, setSet] = useState(gnb !== undefined);
+  const [plmn, setPLMN] = useState(
+    gnb ? formatPLMN(gnb.plmn) : (options[0] ?? ""),
+  );
+  const [id, setId] = useState(gnb ? String(gnb.gnb_id) : "");
+  const [bitLength, setBitLength] = useState(
+    String(gnb?.bit_length ?? MIN_GNB_ID_BIT_LENGTH),
+  );
+
+  const mutation = useOperatorUpdate(
+    operator,
+    "5G gateway identity saved successfully.",
+    onClose,
+  );
+
+  const { touch, shown } = useTouched();
+  const max = maxGNBID(bitLength);
+  const valid = set
+    ? options.includes(plmn) &&
+      id !== "" &&
+      gnbIdBitLengthError(bitLength) === undefined &&
+      gnbIdError(id, bitLength) === undefined
+    : gnb !== undefined;
+  const bitLengthShown = shown(
+    "gnb.bit_length",
+    requiredError(bitLength, gnbIdBitLengthError(bitLength)),
+  );
+  const idShown = shown("gnb.id", requiredError(id, gnbIdError(id, bitLength)));
+
+  return (
+    <EditDialog
+      title="Edit 5G Gateway Identity"
+      submitLabel="Save"
+      pendingLabel="Saving…"
+      failure="Could not save the 5G gateway identity"
+      valid={valid}
+      pending={mutation.isPending}
+      error={mutation.error}
+      onSubmit={() =>
+        mutation.mutate({
+          global_gnb_id: set
+            ? {
+                plmn: parsePLMN(plmn),
+                gnb_id: Number(id),
+                bit_length: Number(bitLength),
+              }
+            : undefined,
+        })
+      }
+      onClose={onClose}
+    >
+      <IdentitySwitch
+        label="Set a Global gNB ID"
+        set={set}
+        blocked={blockedBy(set, operator.amfs.length, "AMF")}
+        onSet={setSet}
+      />
+      <PLMNSelect
+        value={plmn}
+        options={options}
+        onChange={setPLMN}
+        disabled={!set}
+      />
+      <TextField
+        label="gNB ID"
+        value={id}
+        onChange={(e) => setId(e.target.value.trim())}
+        onBlur={touch("gnb.id")}
+        disabled={!set}
+        error={set && idShown !== undefined}
+        helperText={
+          (set && idShown) || (max === undefined ? " " : `0 to ${max}`)
+        }
+        required
+        slotProps={numeric}
+      />
+      <TextField
+        label="gNB ID length"
+        value={bitLength}
+        onChange={(e) => setBitLength(e.target.value.trim())}
+        onBlur={touch("gnb.bit_length")}
+        disabled={!set}
+        error={set && bitLengthShown !== undefined}
+        helperText={
+          (set && bitLengthShown) ||
+          `${MIN_GNB_ID_BIT_LENGTH} to ${MAX_GNB_ID_BIT_LENGTH} bits`
+        }
+        required
+        slotProps={numeric}
+      />
+    </EditDialog>
+  );
+}
+
+export const NODE_IDENTITY_MISSING: Record<CoreNodeKind, string> = {
+  MME: "Set the 4G gateway identity (Global eNB ID) first.",
+  AMF: "Set the 5G gateway identity (Global gNB ID) first.",
 };
 
 function CoreNodeKindField({
@@ -569,7 +586,7 @@ function CoreNodeKindField({
             <FormControlLabel
               value={kind}
               control={<Radio />}
-              label={kind}
+              label={CORE_NODE_KIND_LABELS[kind]}
               disabled={!available[kind]}
             />
           </Tooltip>
@@ -582,12 +599,12 @@ function CoreNodeKindField({
 export function CoreNodeDialog({
   operator,
   kind: editedKind,
-  index,
+  node: editing,
   onClose,
 }: {
   operator: Operator;
   kind?: CoreNodeKind;
-  index?: number;
+  node?: CoreNode;
   onClose: () => void;
 }) {
   const available: Record<CoreNodeKind, boolean> = {
@@ -598,12 +615,12 @@ export function CoreNodeDialog({
     available.MME ? "MME" : "AMF",
   );
   const kind = editedKind ?? chosenKind;
-  const nodes = (kind === "MME" ? operator.mmes : operator.amfs) ?? [];
-  const editing = index === undefined ? undefined : nodes[index];
+  const nodes: CoreNode[] = kind === "MME" ? operator.mmes : operator.amfs;
   const [rows, setRows] = useState<AddressRow[]>(() =>
     editing ? editing.tnl_addresses.map(addressRow) : [addressRow()],
   );
-  const existing = nodes.filter((_, i) => i !== index);
+  const editedKey = editing && coreNodeKey(editing);
+  const existing = nodes.filter((n) => coreNodeKey(n) !== editedKey);
   const mutation = useOperatorUpdate(
     operator,
     editing ? `${kind} updated successfully.` : `${kind} added successfully.`,
@@ -616,16 +633,16 @@ export function CoreNodeDialog({
     setRows(rows.map((row, j) => (j === i ? { ...row, address } : row)));
   const node = { tnl_addresses: rows.map((row) => row.address.trim()) };
   const next =
-    index === undefined
+    editedKey === undefined
       ? [...nodes, node]
-      : nodes.map((n, i) => (i === index ? node : n));
+      : nodes.map((n) => (coreNodeKey(n) === editedKey ? node : n));
   const unchanged =
     editing !== undefined &&
     editing.tnl_addresses.join("\n") === node.tnl_addresses.join("\n");
 
   return (
     <EditDialog
-      title={editing ? `Edit ${kind}` : "Add Core Network Node"}
+      title={editing ? `Edit ${kind}` : "Add Core Node"}
       {...(editing ? {} : { submitLabel: "Add", pendingLabel: "Adding…" })}
       failure={`Could not ${editing ? "update" : "add"} the ${kind}`}
       valid={!unchanged && available[kind] && isValidAddresses(rows, existing)}
@@ -645,7 +662,7 @@ export function CoreNodeDialog({
       )}
       <FormControl component="fieldset" sx={fieldsetSx}>
         <FormLabel component="legend" sx={{ mb: 1 }}>
-          TNL addresses
+          Addresses
         </FormLabel>
         <Stack spacing={1.5}>
           {rows.map((row, i) => {
@@ -739,6 +756,7 @@ export function DeleteDialog({
   description,
   change,
   message,
+  failure,
   onClose,
 }: {
   operator: Operator;
@@ -746,8 +764,10 @@ export function DeleteDialog({
   description: string;
   change: Partial<Operator>;
   message: string;
+  failure: string;
   onClose: () => void;
 }) {
+  const { showSnackbar } = useSnackbar();
   const mutation = useOperatorUpdate(operator, message, onClose);
 
   return (
@@ -757,14 +777,15 @@ export function DeleteDialog({
       confirmLabel="Delete"
       pendingLabel="Deleting…"
       pending={mutation.isPending}
-      onConfirm={() => mutation.mutate(change)}
+      onConfirm={() =>
+        mutation.mutate(change, {
+          onError: (error) => {
+            showSnackbar(`${failure}: ${errorMessage(error)}`, "error");
+            onClose();
+          },
+        })
+      }
       onClose={onClose}
-    >
-      {mutation.error && (
-        <Box sx={{ mt: 2 }}>
-          <DialogError error={mutation.error} prefix="Could not delete" />
-        </Box>
-      )}
-    </ConfirmDialog>
+    />
   );
 }

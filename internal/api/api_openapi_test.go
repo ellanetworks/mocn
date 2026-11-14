@@ -14,6 +14,8 @@ import (
 )
 
 func TestOpenAPISpec(t *testing.T) {
+	t.Parallel()
+
 	rec := httptest.NewRecorder()
 	NewHandler(Config{Logger: slog.New(slog.DiscardHandler)}).ServeHTTP(rec,
 		httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/openapi.yaml", nil))
@@ -63,6 +65,8 @@ func TestOpenAPISpec(t *testing.T) {
 }
 
 func TestOpenAPISpecCompositionIsOpen(t *testing.T) {
+	t.Parallel()
+
 	var spec map[string]any
 	if err := yaml.Unmarshal(openapiSpec, &spec); err != nil {
 		t.Fatalf("invalid YAML: %v", err)

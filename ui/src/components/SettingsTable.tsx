@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  Box,
   IconButton,
   Table,
   TableBody,
@@ -8,8 +9,15 @@ import {
   TableRow,
   Tooltip,
 } from "@mui/material";
-import { Edit as EditIcon } from "@mui/icons-material";
+import EditIcon from "@mui/icons-material/Edit";
 import { TABLE_CONTAINER_SX } from "@/utils/layout";
+
+const ELLIPSIS_SX = {
+  display: "block",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
 
 export interface SettingRow {
   label: string;
@@ -32,9 +40,11 @@ export default function SettingsTable({
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.label} sx={{ height: 63 }}>
-              <TableCell sx={{ fontWeight: 600, width: "35%" }}>
+              <TableCell sx={{ fontWeight: 600, width: "35%", maxWidth: 0 }}>
                 <Tooltip title={row.help} arrow describeChild>
-                  <span>{row.label}</span>
+                  <Box component="span" sx={ELLIPSIS_SX}>
+                    {row.label}
+                  </Box>
                 </Tooltip>
               </TableCell>
               <TableCell

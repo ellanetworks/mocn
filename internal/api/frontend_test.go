@@ -10,6 +10,8 @@ import (
 )
 
 func TestFrontend(t *testing.T) {
+	t.Parallel()
+
 	handler := api.Frontend(fstest.MapFS{
 		"index.html":         {Data: []byte("<html></html>")},
 		"assets/index-a1.js": {Data: []byte("console.log(1)")},
@@ -51,6 +53,8 @@ func TestFrontend(t *testing.T) {
 }
 
 func TestFrontendWithoutBuild(t *testing.T) {
+	t.Parallel()
+
 	handler := api.Frontend(fstest.MapFS{".gitkeep": {}})
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)

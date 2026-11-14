@@ -32,12 +32,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const OPERATORS = ["A", "B", "C"].map((name) => ({
+const OPERATORS = ["D", "A", "B", "C"].map((name) => ({
   name,
   pws_operator: false,
   plmns: [],
-  global_enb_id: null,
-  global_gnb_id: null,
   mmes: [],
   amfs: [],
 }));
@@ -95,7 +93,7 @@ describe("Dashboard", () => {
     renderDashboard();
 
     expect(
-      await within(await findPanel("UE connections")).findByText("7"),
+      await within(await findPanel("UE Connections")).findByText("7"),
     ).toBeVisible();
   });
 
@@ -110,10 +108,11 @@ describe("Dashboard", () => {
         Array.from(row.querySelectorAll("th, td"), (c) => c.textContent),
       );
     expect(rows).toEqual([
-      ["Operator", "Core nodes up", "UE connections"],
+      ["Operator", "Core Network Nodes Up", "UE Connections"],
       ["A", "2 / 3", "4"],
       ["B", "1 / 2", "3"],
       ["C", "0 / 0", "0"],
+      ["D", "0 / 0", "0"],
       ["Total", "3 / 5", "7"],
     ]);
     expect(within(table).getByRole("link", { name: "A" })).toHaveAttribute(
@@ -125,10 +124,9 @@ describe("Dashboard", () => {
       "/operators/C",
     );
     expect(
-      within(await findPanel("Core nodes and UE connections")).getByRole(
-        "link",
-        { name: "Core nodes and UE connections" },
-      ),
+      within(
+        await findPanel("Core Network Nodes and UE Connections"),
+      ).getByRole("link", { name: "Core Network Nodes and UE Connections" }),
     ).toHaveAttribute("href", "/operators");
   });
 
@@ -137,7 +135,7 @@ describe("Dashboard", () => {
     renderDashboard();
 
     const card = await findPanel("Operators");
-    expect(await within(card).findByText("3")).toBeVisible();
+    expect(await within(card).findByText("4")).toBeVisible();
     expect(card.closest("a") ?? within(card).getByRole("link")).toHaveAttribute(
       "href",
       "/operators",
@@ -153,14 +151,18 @@ ellamocn_radio_associations{interface="s1",state="up"} 0
 `,
           { status: 200 },
         ),
+      () =>
+        new Response(JSON.stringify({ result: { items: [] } }), {
+          status: 200,
+        }),
     );
     renderDashboard();
 
-    const operators = await findPanel("Core nodes and UE connections");
+    const operators = await findPanel("Core Network Nodes and UE Connections");
     expect(await within(operators).findByText("No operators.")).toBeVisible();
     expect(within(operators).queryByRole("table")).not.toBeInTheDocument();
     expect(
-      within(await findPanel("UE connections")).getByText("0"),
+      within(await findPanel("UE Connections")).getByText("0"),
     ).toBeVisible();
   });
 
@@ -179,8 +181,8 @@ ellamocn_radio_associations{interface="s1",state="up"} 0
     ).toEqual([
       "Operators",
       "Radios",
-      "UE connections",
-      "Core nodes and UE connections",
+      "UE Connections",
+      "Core Network Nodes and UE Connections",
     ]);
   });
 
@@ -191,7 +193,7 @@ ellamocn_radio_associations{interface="s1",state="up"} 0
     fireEvent.mouseOver(await findPanel("Radios"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "Radios that completed S1 Setup with Ella MOCN.",
+        name: "4G and 5G radios connected to Ella MOCN and ready (S1 Setup or NG Setup done).",
       }),
     ).toBeInTheDocument();
   });
@@ -200,10 +202,10 @@ ellamocn_radio_associations{interface="s1",state="up"} 0
     serve(() => new Response(METRICS, { status: 200 }));
     renderDashboard();
 
-    fireEvent.mouseOver(await findPanel("UE connections"));
+    fireEvent.mouseOver(await findPanel("UE Connections"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "UE-associated logical S1-connections that Ella MOCN relays, across every operator: one per connected UE.",
+        name: "Devices connected through Ella MOCN, across every operator: one per active phone, over 4G (S1) or 5G (NG).",
       }),
     ).toBeInTheDocument();
   });
@@ -218,13 +220,19 @@ ellamocn_radio_associations{interface="s1",state="up"} 0
       within(await findPanel("Radios")).getByText("N/A"),
     ).toBeInTheDocument();
     expect(
-      within(await findPanel("UE connections")).getByText("N/A"),
+      within(await findPanel("UE Connections")).getByText("N/A"),
     ).toBeInTheDocument();
+    const operators = within(
+      await findPanel("Core Network Nodes and UE Connections"),
+    );
     expect(
-      within(await findPanel("Core nodes and UE connections")).getByText(
-        "No operators.",
-      ),
-    ).toBeInTheDocument();
+      operators
+        .getAllByRole("row")
+        .map((row) =>
+          Array.from(row.querySelectorAll("th, td"), (c) => c.textContent),
+        )
+        .slice(1, 2),
+    ).toEqual([["A", "0 / 0", "0"]]);
   });
 
   it("says when the metrics fail to load", async () => {

@@ -35,7 +35,7 @@ func newMetrics() metrics {
 		}, []string{"pool"}),
 		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "ellamocn_database_query_errors_total",
-			Help: "Database calls that failed, by connection pool. A record not found or in conflict is a result, not a failure.",
+			Help: "Database calls that failed, by connection pool. A record not found, in conflict or rejected as invalid is a result, not a failure.",
 		}, []string{"pool"}),
 	}
 
@@ -80,7 +80,10 @@ func failed(err error) bool {
 	return err != nil && !slices.ContainsFunc(outcomes, func(o error) bool { return errors.Is(err, o) })
 }
 
-var outcomes = []error{ErrNotFound, ErrDuplicate, ErrLastPasswordAdmin, ErrTooManyUsers, ErrNoPassword}
+var outcomes = []error{
+	ErrNotFound, ErrDuplicate, ErrLastPasswordAdmin, ErrTooManyUsers, ErrNoPassword, ErrForeignPLMN, ErrTooManyPLMNs,
+	ErrInvalid, ErrConstraintCheck,
+}
 
 func (d *DB) Collectors() []prometheus.Collector {
 	return []prometheus.Collector{d.metrics.duration, d.metrics.errors, storageCollector{path: d.path}}

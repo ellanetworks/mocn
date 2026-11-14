@@ -3,6 +3,7 @@ package s1_test
 import (
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -94,12 +95,27 @@ func setUpMME(t *testing.T, mme *peer, wantTAs s1ap.SupportedTAs, wantDRX s1ap.P
 	}
 
 	assertTAs(t, req.SupportedTAs, wantTAs)
+	assertNodeName(t, req.ENBName)
 
 	if req.DefaultPagingDRX == nil || *req.DefaultPagingDRX != wantDRX {
 		t.Fatalf("Default Paging DRX = %v, want %v", req.DefaultPagingDRX, wantDRX)
 	}
 
-	mme.send(t, resp)
+	mme.Send(t, resp)
+}
+
+func assertNodeName(t *testing.T, name *string) {
+	t.Helper()
+
+	if name == nil || *name != "Ella MOCN" || len(*name) < 1 || len(*name) > 150 {
+		t.Fatalf("name = %v, want Ella MOCN", name)
+	}
+
+	for _, r := range *name {
+		if !strings.ContainsRune("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 '()+,-./:=?", r) {
+			t.Fatalf("name %q is not a PrintableString", *name)
+		}
+	}
 }
 
 func assertTAs(t *testing.T, got, want s1ap.SupportedTAs) {
@@ -119,18 +135,20 @@ func assertTAs(t *testing.T, got, want s1ap.SupportedTAs) {
 func setUpENB(t *testing.T, enb *peer, req *s1ap.S1SetupRequest) {
 	t.Helper()
 
-	enb.send(t, req)
+	enb.Send(t, req)
 	expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
 }
 
 func TestS1SetupBothWays(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	mmeListener := listenMME(t, "127.0.0.2")
-	h := startGateway(t, mmeListener.port(), operatorA("127.0.0.2"))
-	mme := mmeListener.accept(t)
+	h := startGateway(t, mmeListener.Port(), operatorA("127.0.0.2"))
+	mme := mmeListener.Accept(t)
 
-	mme.quiet(t, 300*time.Millisecond)
+	mme.Quiet(t, 300*time.Millisecond)
 
 	h.eventually(t, "MME connected", func() bool {
 		st, ok := h.gw.MMEStatus(1, []string{"127.0.0.2"})
@@ -138,13 +156,15 @@ func TestS1SetupBothWays(t *testing.T) {
 	})
 
 	enb := h.connectENB(t)
-	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv128, ta(t, 1, "00101", "00199")))
+	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv128, ta(t, 1, "00101", "00199")))
 
 	setUpMME(t, mme, s1ap.SupportedTAs{ta(t, 1, "00101")}, s1ap.PagingDRXv128, &s1ap.S1SetupResponse{
 		MMEName: s1ap.Ptr("mme1"), ServedGUMMEIs: served(t, 0x8001, 1), RelativeMMECapacity: s1ap.Ptr(uint8(10)),
 	})
 
 	resp := expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
+	assertNodeName(t, resp.MMEName)
+
 	if resp.RelativeMMECapacity == nil || *resp.RelativeMMECapacity != 255 {
 		t.Fatalf("Relative MME Capacity = %v, want 255", resp.RelativeMMECapacity)
 	}
@@ -177,9 +197,11 @@ func TestS1SetupBothWays(t *testing.T) {
 		t.Fatalf("Default Paging DRX = %v, want v256", upd.DefaultPagingDRX)
 	}
 
-	mme.send(t, &s1ap.ENBConfigurationUpdateAcknowledge{})
+	assertNodeName(t, upd.ENBName)
 
-	enb2.send(t, &s1ap.ENBConfigurationUpdate{SupportedTAs: s1ap.SupportedTAs{ta(t, 3, "00101")}})
+	mme.Send(t, &s1ap.ENBConfigurationUpdateAcknowledge{})
+
+	enb2.Send(t, &s1ap.ENBConfigurationUpdate{SupportedTAs: s1ap.SupportedTAs{ta(t, 3, "00101")}})
 	expect(t, enb2, "successful", s1ap.ProcENBConfigurationUpdate, s1ap.ParseENBConfigurationUpdateAcknowledge)
 
 	upd = expect(t, mme, "initiating", s1ap.ProcENBConfigurationUpdate, s1ap.ParseENBConfigurationUpdate)
@@ -189,9 +211,9 @@ func TestS1SetupBothWays(t *testing.T) {
 		t.Fatalf("Default Paging DRX = %v, want absent", *upd.DefaultPagingDRX)
 	}
 
-	mme.send(t, &s1ap.ENBConfigurationUpdateAcknowledge{})
+	mme.Send(t, &s1ap.ENBConfigurationUpdateAcknowledge{})
 
-	_ = enb2.conn.Abort()
+	_ = enb2.Conn.Abort()
 
 	upd = expect(t, mme, "initiating", s1ap.ProcENBConfigurationUpdate, s1ap.ParseENBConfigurationUpdate)
 	assertTAs(t, upd.SupportedTAs, s1ap.SupportedTAs{ta(t, 1, "00101")})
@@ -200,34 +222,36 @@ func TestS1SetupBothWays(t *testing.T) {
 		t.Fatalf("Default Paging DRX = %v, want v128", upd.DefaultPagingDRX)
 	}
 
-	mme.send(t, &s1ap.ENBConfigurationUpdateAcknowledge{})
+	mme.Send(t, &s1ap.ENBConfigurationUpdateAcknowledge{})
 
-	mme.send(t, &s1ap.MMEConfigurationUpdate{ServedGUMMEIs: served(t, 0x8001, 1, 2)})
+	mme.Send(t, &s1ap.MMEConfigurationUpdate{ServedGUMMEIs: served(t, 0x8001, 1, 2)})
 	expect(t, mme, "successful", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdateAcknowledge)
 
 	mcu := expect(t, enb, "initiating", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdate)
+	assertNodeName(t, mcu.MMEName)
+
 	if !reflect.DeepEqual(mcu.ServedGUMMEIs, served(t, 0x8001, 1, 2)) {
 		t.Fatalf("Served GUMMEIs = %+v", mcu.ServedGUMMEIs)
 	}
 
-	enb.send(t, &s1ap.MMEConfigurationUpdateAcknowledge{})
+	enb.Send(t, &s1ap.MMEConfigurationUpdateAcknowledge{})
 
 	h.eventually(t, "one RAN node", func() bool { return len(h.gw.RANNodes()) == 1 })
 
 	registry := prometheus.NewPedanticRegistry()
-	registry.MustRegister(h.gw.Collectors()...)
+	registry.MustRegister(h.metrics.Collectors(h.gw)...)
 
 	want := `
-# HELP ellamocn_core_associations Core (MME) associations of the configured MMEs, by interface (s1), operator and state (disconnected: no SCTP association; connected: SCTP association up, S1 Setup not done; up: S1 Setup succeeded; setup_failed: the MME rejected S1 Setup).
+# HELP ellamocn_core_associations Core (MME, AMF) associations of the configured MMEs and AMFs, by interface (s1, ng), operator and state (disconnected: no SCTP association; connected: SCTP association up, S1 or NG Setup not done; up: S1 or NG Setup succeeded; setup_failed: the MME or AMF rejected the setup).
 # TYPE ellamocn_core_associations gauge
 ellamocn_core_associations{interface="s1",operator="A",state="connected"} 0
 ellamocn_core_associations{interface="s1",operator="A",state="disconnected"} 0
 ellamocn_core_associations{interface="s1",operator="A",state="setup_failed"} 0
 ellamocn_core_associations{interface="s1",operator="A",state="up"} 1
-# HELP ellamocn_core_overloaded Core (MME) associations of the configured MMEs with an ongoing overload action (TS 36.413 clause 8.7.6), by interface (s1) and operator.
+# HELP ellamocn_core_overloaded Core (MME, AMF) associations of the configured MMEs and AMFs with an ongoing overload action (TS 36.413 clause 8.7.6, TS 38.413 clause 8.7.7), by interface (s1, ng) and operator.
 # TYPE ellamocn_core_overloaded gauge
 ellamocn_core_overloaded{interface="s1",operator="A"} 0
-# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1) and result (relayed: sent to an MME; unknown_plmn: no operator serves the PLMN; no_mme: no selectable MME of the operator; rejected: reuses an allocated eNB UE S1AP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME).
+# HELP ellamocn_initial_ue_messages_total INITIAL UE MESSAGEs received from radios, by interface (s1, ng) and result (relayed: sent to an MME or AMF; unknown_plmn: no operator serves the PLMN; no_mme, no_amf: no selectable MME or AMF of the operator; rejected: reuses an allocated eNB UE S1AP ID or RAN UE NGAP ID, an Error Indication is sent; invalid: undecodable or missing a mandatory IE; error: internal failure or failed send to the MME or AMF).
 # TYPE ellamocn_initial_ue_messages_total counter
 ellamocn_initial_ue_messages_total{interface="s1",result="error"} 0
 ellamocn_initial_ue_messages_total{interface="s1",result="invalid"} 0
@@ -235,7 +259,7 @@ ellamocn_initial_ue_messages_total{interface="s1",result="no_mme"} 0
 ellamocn_initial_ue_messages_total{interface="s1",result="rejected"} 0
 ellamocn_initial_ue_messages_total{interface="s1",result="relayed"} 0
 ellamocn_initial_ue_messages_total{interface="s1",result="unknown_plmn"} 0
-# HELP ellamocn_overload_messages_total OVERLOAD START and OVERLOAD STOP messages received from MMEs, by interface (s1), procedure (overload_start, overload_stop) and result (relayed: sent to the radios that broadcast one of the operator's PLMNs, including the replay of an ongoing OVERLOAD START to a radio after its S1 Setup; no_radio: no such radio is up; ignored: OVERLOAD STOP for GUMMEIs with no ongoing overload action; invalid: undecodable or with an invalid GUMMEI).
+# HELP ellamocn_overload_messages_total OVERLOAD START and OVERLOAD STOP messages received from MMEs and AMFs, by interface (s1, ng), procedure (overload_start, overload_stop) and result (relayed: sent to the radios that broadcast one of the operator's PLMNs, including the replay of an ongoing OVERLOAD START to a radio after its S1 or NG Setup; no_radio: no such radio is up; ignored: OVERLOAD STOP for GUMMEIs or GUAMIs with no ongoing overload action; invalid: undecodable or with an invalid GUMMEI or GUAMI).
 # TYPE ellamocn_overload_messages_total counter
 ellamocn_overload_messages_total{interface="s1",procedure="overload_start",result="invalid"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_start",result="no_radio"} 0
@@ -244,16 +268,16 @@ ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="invalid"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="no_radio"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="relayed"} 0
-# HELP ellamocn_paging_messages_total PAGING messages received from MMEs, by interface (s1) and result (relayed: sent to the radios that serve a TAI of the List of TAIs in one of the operator's PLMNs; no_radio: no radio that is up serves such a TAI; invalid: undecodable).
+# HELP ellamocn_paging_messages_total PAGING messages received from MMEs and AMFs, by interface (s1, ng) and result (relayed: sent to the radios that serve a TAI of the list in one of the operator's PLMNs; no_radio: no radio that is up serves such a TAI; invalid: undecodable).
 # TYPE ellamocn_paging_messages_total counter
 ellamocn_paging_messages_total{interface="s1",result="invalid"} 0
 ellamocn_paging_messages_total{interface="s1",result="no_radio"} 0
 ellamocn_paging_messages_total{interface="s1",result="relayed"} 0
-# HELP ellamocn_radio_associations Radio (eNodeB) associations, by interface (s1) and state (connected: SCTP association up, no successful S1 Setup; up: S1 Setup succeeded).
+# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded).
 # TYPE ellamocn_radio_associations gauge
 ellamocn_radio_associations{interface="s1",state="connected"} 0
 ellamocn_radio_associations{interface="s1",state="up"} 1
-# HELP ellamocn_setup_attempts_total Setup procedures (S1 Setup), by interface (s1), side and result. side=radio: received from radios; result success, invalid (undecodable or invalid request), unknown_plmn (no operator serves a broadcast PLMN), no_mme (no MME of the serving operators is up), mme_failure (the serving operators' MMEs rejected S1 Setup), error (the response could not be built or sent, or the radio left before the answer). side=core: sent to MMEs; result success, failure (the MME rejected the request or answered with an invalid response), timeout (no answer from the MME), error (the request could not be built or sent, or the association dropped before the answer).
+# HELP ellamocn_setup_attempts_total Setup procedures (S1 Setup, NG Setup), by interface (s1, ng), side and result. side=radio: received from radios; result success, invalid (undecodable or invalid request), unknown_plmn (no operator serves a broadcast PLMN), no_mme, no_amf (no MME or AMF of the serving operators is up), mme_failure, amf_failure (the serving operators' MMEs or AMFs rejected the setup), error (the response could not be built or sent, or the radio left before the answer). side=core: sent to MMEs and AMFs; result success, failure (the MME or AMF rejected the request or answered with an invalid response), timeout (no answer from the MME or AMF), error (the request could not be built or sent, or the association dropped before the answer).
 # TYPE ellamocn_setup_attempts_total counter
 ellamocn_setup_attempts_total{interface="s1",result="error",side="core"} 0
 ellamocn_setup_attempts_total{interface="s1",result="error",side="radio"} 0
@@ -265,7 +289,7 @@ ellamocn_setup_attempts_total{interface="s1",result="success",side="core"} 1
 ellamocn_setup_attempts_total{interface="s1",result="success",side="radio"} 2
 ellamocn_setup_attempts_total{interface="s1",result="timeout",side="core"} 0
 ellamocn_setup_attempts_total{interface="s1",result="unknown_plmn",side="radio"} 0
-# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) relayed, by interface (s1) and operator.
+# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) and NG-connections relayed, by interface (s1, ng) and operator.
 # TYPE ellamocn_ue_connections gauge
 ellamocn_ue_connections{interface="s1",operator="A"} 0
 `
@@ -273,7 +297,7 @@ ellamocn_ue_connections{interface="s1",operator="A"} 0
 		t.Fatal(err)
 	}
 
-	for _, c := range h.gw.Collectors() {
+	for _, c := range h.metrics.Collectors(h.gw) {
 		if problems, err := testutil.CollectAndLint(c); err != nil || len(problems) > 0 {
 			t.Fatalf("lint: %v %v", problems, err)
 		}
@@ -281,23 +305,30 @@ ellamocn_ue_connections{interface="s1",operator="A"} 0
 }
 
 func TestS1SetupFailures(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
+	var elapsed atomic.Int64
+
 	mmeListener := listenMME(t, "127.0.0.3")
-	h := startGateway(t, mmeListener.port(), operatorA("127.0.0.3"), operatorB("127.0.0.4"))
-	mme := mmeListener.accept(t)
+	h := startGatewayWith(t, s1.Config{
+		CorePort: mmeListener.Port(),
+		Now:      func() time.Time { return time.Now().Add(time.Duration(elapsed.Load())) },
+	}, operatorA("127.0.0.3"), operatorB("127.0.0.4"))
+	mme := mmeListener.Accept(t)
 
 	enb := h.connectENB(t)
-	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00301")))
+	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00301")))
 
 	fail := expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
 	if fail.Cause == nil || fail.Cause.Group != s1ap.CauseGroupMisc || fail.Cause.Value != s1ap.CauseMiscUnknownPLMN {
 		t.Fatalf("cause = %v, want unknown PLMN", fail.Cause)
 	}
 
-	mme.quiet(t, 200*time.Millisecond)
+	mme.Quiet(t, 200*time.Millisecond)
 
-	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "002002")))
+	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "002002")))
 
 	fail = expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
 	if fail.Cause == nil || fail.Cause.Group != s1ap.CauseGroupTransport ||
@@ -305,10 +336,10 @@ func TestS1SetupFailures(t *testing.T) {
 		t.Fatalf("failure = %+v, want transport resource unavailable with a Time to Wait", fail)
 	}
 
-	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00101")))
+	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00101")))
 
 	expect(t, mme, "initiating", s1ap.ProcS1Setup, s1ap.ParseS1SetupRequest)
-	mme.send(t, &s1ap.S1SetupFailure{
+	mme.Send(t, &s1ap.S1SetupFailure{
 		Cause:      &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnknownPLMN},
 		TimeToWait: s1ap.Ptr(s1ap.TimeToWaitV1s),
 	})
@@ -329,21 +360,21 @@ func TestS1SetupFailures(t *testing.T) {
 		t.Fatalf("RAN nodes = %+v", nodes)
 	}
 
-	enb.send(t, &s1ap.ENBConfigurationUpdate{ENBName: s1ap.Ptr("x")})
+	enb.Send(t, &s1ap.ENBConfigurationUpdate{ENBName: s1ap.Ptr("x")})
 
 	upd := expect(t, enb, "unsuccessful", s1ap.ProcENBConfigurationUpdate, s1ap.ParseENBConfigurationUpdateFailure)
 	if upd.Cause == nil || upd.Cause.Group != s1ap.CauseGroupProtocol {
 		t.Fatalf("cause = %v, want a protocol cause", upd.Cause)
 	}
 
-	time.Sleep(time.Second)
-	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00101")))
+	elapsed.Add(int64(time.Second))
+	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00101")))
 	setUpMME(t, mme, s1ap.SupportedTAs{ta(t, 1, "00101")}, s1ap.PagingDRXv64, &s1ap.S1SetupResponse{
 		ServedGUMMEIs: served(t, 1, 1), RelativeMMECapacity: s1ap.Ptr(uint8(1)),
 	})
 	expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
 
-	enb.send(t, &s1ap.ENBConfigurationUpdate{SupportedTAs: s1ap.SupportedTAs{ta(t, 9, "00301")}})
+	enb.Send(t, &s1ap.ENBConfigurationUpdate{SupportedTAs: s1ap.SupportedTAs{ta(t, 9, "00301")}})
 
 	upd = expect(t, enb, "unsuccessful", s1ap.ProcENBConfigurationUpdate, s1ap.ParseENBConfigurationUpdateFailure)
 	if upd.Cause == nil || upd.Cause.Value != s1ap.CauseMiscUnknownPLMN {
@@ -354,9 +385,9 @@ func TestS1SetupFailures(t *testing.T) {
 		t.Fatalf("rejected update changed the TAs: %+v", nodes[0].SupportedTAs)
 	}
 
-	mme.quiet(t, 200*time.Millisecond)
+	mme.Quiet(t, 200*time.Millisecond)
 
-	enb.send(t, rawPDU{&s1ap.InitiatingMessage{
+	enb.Send(t, rawPDU{&s1ap.InitiatingMessage{
 		ProcedureCode: s1ap.ProcS1Setup, Criticality: s1ap.CriticalityReject, Value: []byte{0, 0, 0},
 	}})
 	expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
@@ -368,20 +399,22 @@ func TestS1SetupFailures(t *testing.T) {
 }
 
 func TestS1SetupTimeout(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
-	mmeListener := listenMME(t, "127.0.0.3")
-	h := startGateway(t, mmeListener.port(), operatorA("127.0.0.3"))
-	mme := mmeListener.accept(t)
+	mmeListener := listenMME(t, "127.0.0.38")
+	h := startGateway(t, mmeListener.Port(), operatorA("127.0.0.38"))
+	mme := mmeListener.Accept(t)
 
 	enb := h.connectENB(t)
-	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00101")))
+	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00101")))
 
 	expect(t, mme, "initiating", s1ap.ProcS1Setup, s1ap.ParseS1SetupRequest)
 	expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
 
 	h.eventually(t, "the MME association to drop", func() bool {
-		st, _ := h.gw.MMEStatus(1, []string{"127.0.0.3"})
+		st, _ := h.gw.MMEStatus(1, []string{"127.0.0.38"})
 		return st.State == s1.MMEDisconnected
 	})
 
@@ -392,7 +425,7 @@ func assertSetupAttempts(t *testing.T, h *harness, want map[string]float64) {
 	t.Helper()
 
 	registry := prometheus.NewPedanticRegistry()
-	registry.MustRegister(h.gw.Collectors()...)
+	registry.MustRegister(h.metrics.Collectors(h.gw)...)
 
 	families, err := registry.Gather()
 	if err != nil {
@@ -428,43 +461,47 @@ func assertSetupAttempts(t *testing.T, h *harness, want map[string]float64) {
 }
 
 func TestMMEReconnectsAndFollowsConfig(t *testing.T) {
+	t.Parallel()
+
 	skipWithoutSCTP(t)
 
 	mmeListener := listenMME(t, "127.0.0.5")
-	h := startGateway(t, mmeListener.port(), operatorA("127.0.0.5"))
-	mme := mmeListener.accept(t)
+	h := startGateway(t, mmeListener.Port(), operatorA("127.0.0.5"))
+	mme := mmeListener.Accept(t)
 
 	enb := h.connectENB(t)
-	enb.send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv32, ta(t, 1, "00101")))
+	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv32, ta(t, 1, "00101")))
 	setUpMME(t, mme, s1ap.SupportedTAs{ta(t, 1, "00101")}, s1ap.PagingDRXv32, &s1ap.S1SetupResponse{
 		ServedGUMMEIs: served(t, 1, 1), RelativeMMECapacity: s1ap.Ptr(uint8(1)),
 	})
 	expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
 
-	_ = mme.conn.Abort()
+	_ = mme.Conn.Abort()
 
 	h.eventually(t, "MME down", func() bool {
 		st, _ := h.gw.MMEStatus(1, []string{"127.0.0.5"})
 		return st.State != s1.MMEUp
 	})
 
-	mme = mmeListener.accept(t)
+	mme = mmeListener.Accept(t)
 	setUpMME(t, mme, s1ap.SupportedTAs{ta(t, 1, "00101")}, s1ap.PagingDRXv32, &s1ap.S1SetupResponse{
 		ServedGUMMEIs: served(t, 1, 2), RelativeMMECapacity: s1ap.Ptr(uint8(1)),
 	})
 
 	mcu := expect(t, enb, "initiating", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdate)
+	assertNodeName(t, mcu.MMEName)
+
 	if !reflect.DeepEqual(mcu.ServedGUMMEIs, served(t, 1, 2)) {
 		t.Fatalf("Served GUMMEIs = %+v", mcu.ServedGUMMEIs)
 	}
 
-	h.ops.set()
+	h.Ops.Set()
 
 	if err := h.gw.Reconcile(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 
-	mme.closed(t)
+	mme.Closed(t)
 
 	if _, ok := h.gw.MMEStatus(1, []string{"127.0.0.5"}); ok {
 		t.Fatal("removed MME still has a status")

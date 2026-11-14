@@ -9,19 +9,18 @@ import (
 	"net/netip"
 	"os"
 
+	"github.com/ellanetworks/mocn/internal/ports"
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	defaultAPIPort = 5030
-	defaultS1Port  = 36412
-)
+const defaultAPIPort = 5030
 
 type Config struct {
 	Logging   Logging   `yaml:"logging"`
 	DB        DB        `yaml:"db"`
 	API       API       `yaml:"api"`
-	S1        S1        `yaml:"s1"`
+	S1        Endpoint  `yaml:"s1"`
+	NG        Endpoint  `yaml:"ng"`
 	Telemetry Telemetry `yaml:"telemetry"`
 }
 
@@ -71,9 +70,9 @@ func (t *TLS) validate(prefix string) error {
 		return fmt.Errorf("%s.tls.cert and %s.tls.key must both be set", prefix, prefix)
 	}
 
-	for name, path := range map[string]string{prefix + ".tls.cert": t.Cert, prefix + ".tls.key": t.Key} {
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+	for _, f := range []struct{ name, path string }{{prefix + ".tls.cert", t.Cert}, {prefix + ".tls.key", t.Key}} {
+		if _, err := os.Stat(f.path); err != nil {
+			return fmt.Errorf("%s: %w", f.name, err)
 		}
 	}
 
@@ -84,7 +83,7 @@ func (a API) ListenAddress() string {
 	return netip.AddrPortFrom(a.Address, uint16(a.Port)).String()
 }
 
-type S1 struct {
+type Endpoint struct {
 	Address netip.Addr `yaml:"address"`
 	Port    int        `yaml:"port"`
 }
@@ -116,7 +115,15 @@ func Load(path string) (Config, error) {
 	}
 
 	if cfg.S1.Port == 0 {
-		cfg.S1.Port = defaultS1Port
+		cfg.S1.Port = ports.S1
+	}
+
+	if !cfg.NG.Address.IsValid() {
+		cfg.NG.Address = netip.IPv4Unspecified()
+	}
+
+	if cfg.NG.Port == 0 {
+		cfg.NG.Port = ports.NG
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -136,6 +143,10 @@ func (c Config) validate() error {
 		return errors.New("s1.port must be between 1 and 65535")
 	case c.S1.Address.Zone() != "":
 		return errors.New("s1.address must not have a zone")
+	case c.NG.Port < 1 || c.NG.Port > 65535:
+		return errors.New("ng.port must be between 1 and 65535")
+	case c.NG.Address.Zone() != "":
+		return errors.New("ng.address must not have a zone")
 	case c.Telemetry.Enabled && c.Telemetry.OTLPEndpoint == "":
 		return errors.New("telemetry.otlp_endpoint is required when telemetry.enabled is true")
 	}

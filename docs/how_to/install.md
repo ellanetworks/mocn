@@ -74,6 +74,9 @@ Choose one of the installation methods below.
           s1:
             address: 0.0.0.0
             port: 36412
+          ng:
+            address: 0.0.0.0
+            port: 38412
 
     services:
       ella-mocn:
@@ -120,7 +123,7 @@ Choose one of the installation methods below.
     kubectl port-forward -n ella svc/ella-mocn 5030:5030
     ```
 
-    S1 is at `ella-mocn-s1.ella.svc.cluster.local:36412`.
+    S1 is at `ella-mocn-s1.ella.svc.cluster.local:36412` and NG at `ella-mocn-ng.ella.svc.cluster.local:38412`.
 
 Ella MOCN's UI and API are at `http://<host-ip>:5030`. Open the UI and create the first user.
 

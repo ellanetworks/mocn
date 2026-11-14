@@ -38,9 +38,10 @@ for (const { name, session } of SESSIONS) {
       await expect(grid).toContainText("No radios.");
       await expect(grid.getByRole("columnheader")).toHaveText([
         "Name",
-        "Global eNB ID",
+        "Type",
+        "Global RAN Node ID",
         "Addresses",
-        "UE connections",
+        "UE Connections",
         "Status",
       ]);
       await expect(
@@ -68,7 +69,6 @@ test.describe("MME status", () => {
           enb_id_type: "macro",
           enb_id: 1,
         },
-        global_gnb_id: null,
         mmes: [{ tnl_addresses: [UNREACHABLE_MME] }],
         amfs: [],
       },
@@ -85,7 +85,7 @@ test.describe("MME status", () => {
   }) => {
     await page.goto(`/operators/${encodeURIComponent(OPERATOR)}`);
 
-    const mmes = page.getByRole("grid", { name: /^Core network nodes/ });
+    const mmes = page.getByRole("grid", { name: /^Core Network Nodes/ });
     const row = mmes.getByRole("row").filter({
       has: page.getByRole("gridcell", { name: UNREACHABLE_MME, exact: true }),
     });
@@ -98,22 +98,29 @@ test.describe("MME status", () => {
       "Addresses",
       "Type",
       "Name",
-      "Served IDs",
-      "UE connections",
-      "Overload",
+      "UE Connections",
       "Status",
       "Actions",
     ]);
+    await row
+      .getByRole("button", { name: `View MME ${UNREACHABLE_MME}` })
+      .click();
+    const details = page.getByRole("dialog", {
+      name: `MME ${UNREACHABLE_MME}`,
+    });
     await expect(
-      row.getByRole("gridcell", { name: "None", exact: true }),
-    ).toBeVisible();
+      details.getByRole("row").filter({ hasText: "Overload" }),
+    ).toContainText("None");
+    await assertNoA11yViolations(page, "MME details dialog");
+    await details.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     const connections = page.getByRole("grid", {
-      name: "UE connections by radio",
+      name: "UE Connections by Radio",
     });
     await expect(connections).toContainText("No radios.");
     await expect(connections.getByRole("columnheader")).toHaveText([
       "Radio",
-      "UE connections",
+      "UE Connections",
     ]);
     await assertNoA11yViolations(page, "Operator MME status");
 
@@ -141,6 +148,6 @@ test.describe("MME status", () => {
         `/api/v1/ue-connections?operator=${encodeURIComponent(OPERATOR)}`,
         { token },
       ),
-    ).toEqual({ items: [] });
+    ).toEqual({ items: [], page: 1, per_page: 25, total_count: 0 });
   });
 });

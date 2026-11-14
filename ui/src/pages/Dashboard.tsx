@@ -202,18 +202,11 @@ interface OperatorFigures {
   ueConnections: number;
 }
 
-const operatorFigures = (samples: Sample[]): OperatorFigures[] => {
-  const names = new Set(
-    samples
-      .filter(
-        (s) =>
-          (s.name === "ellamocn_core_associations" ||
-            s.name === "ellamocn_ue_connections") &&
-          s.labels.operator !== undefined,
-      )
-      .map((s) => s.labels.operator),
-  );
-  return [...names]
+const operatorFigures = (
+  names: string[],
+  samples: Sample[],
+): OperatorFigures[] =>
+  [...names]
     .sort((a, b) => a.localeCompare(b))
     .map((name) => ({
       name,
@@ -227,7 +220,6 @@ const operatorFigures = (samples: Sample[]): OperatorFigures[] => {
       ueConnections:
         sumOf(samples, "ellamocn_ue_connections", { operator: name }) ?? 0,
     }));
-};
 
 function OperatorsTable({ operators }: { operators: OperatorFigures[] }) {
   const navigate = useNavigate();
@@ -256,10 +248,10 @@ function OperatorsTable({ operators }: { operators: OperatorFigures[] }) {
           <TableRow>
             <TableCell sx={headSx}>Operator</TableCell>
             <TableCell sx={headSx} align="right">
-              Core nodes up
+              Core Network Nodes Up
             </TableCell>
             <TableCell sx={headSx} align="right">
-              UE connections
+              UE Connections
             </TableCell>
           </TableRow>
         </TableHead>
@@ -324,7 +316,10 @@ export default function Dashboard() {
   const ueConnections =
     sumOf(samples, "ellamocn_ue_connections") ??
     (radios === undefined ? undefined : 0);
-  const operators = operatorFigures(samples);
+  const operators = operatorFigures(
+    (operatorList.data ?? []).map((o) => o.name),
+    samples,
+  );
   const metricCard = {
     loading: metrics.isPending,
     error: failedToLoad(metrics),
@@ -350,7 +345,7 @@ export default function Dashboard() {
         <Grid size={THIRD}>
           <KpiCard
             title="Radios"
-            hint="Radios that completed S1 Setup with Ella MOCN."
+            hint="4G and 5G radios connected to Ella MOCN and ready (S1 Setup or NG Setup done)."
             to="/radios"
             {...metricCard}
             value={count(radios)}
@@ -358,17 +353,18 @@ export default function Dashboard() {
         </Grid>
         <Grid size={THIRD}>
           <KpiCard
-            title="UE connections"
-            hint="UE-associated logical S1-connections that Ella MOCN relays, across every operator: one per connected UE."
+            title="UE Connections"
+            hint="Devices connected through Ella MOCN, across every operator: one per active phone, over 4G (S1) or 5G (NG)."
             {...metricCard}
             value={count(ueConnections)}
           />
         </Grid>
         <Grid size={12}>
           <Panel
-            title="Core nodes and UE connections"
+            title="Core Network Nodes and UE Connections"
             to="/operators"
-            {...metricCard}
+            loading={metrics.isPending || operatorList.isPending}
+            error={failedToLoad(metrics) || failedToLoad(operatorList)}
             alignTop
           >
             <OperatorsTable operators={operators} />
