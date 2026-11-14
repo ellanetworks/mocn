@@ -4,7 +4,7 @@ RUN apt-get update \
     ca-certificates git ccache cmake make gcc g++ pkg-config \
     libfftw3-dev libmbedtls-dev libsctp-dev libyaml-cpp-dev libzmq3-dev \
  && rm -rf /var/lib/apt/lists/*
-ARG OCUDU_COMMIT
+ARG OCUDU_COMMIT=690d1c25fc32053fec330b2c382571a95b66524f
 ARG MARCH=x86-64-v3
 WORKDIR /src
 RUN git init -q . \

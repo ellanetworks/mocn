@@ -3,6 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+OCUDU_TAG=$(./ocudu/tag.sh)
+export OCUDU_TAG
 export E2E_API_PORT=${E2E_API_PORT:-5032}
 export E2E_API=http://127.0.0.1:$E2E_API_PORT
 artifacts=${E2E_ARTIFACTS:-$PWD/.artifacts}
@@ -52,7 +54,7 @@ pull=$!
 { go vet -tags e2e . && go test -tags e2e -c -o "$artifacts/e2e.test" .; } &
 compile=$!
 
-docker compose build mocn gnb
+docker compose build mocn
 wait "$pull"
 docker compose up -d --wait mocn open5gs open5gs-b open5gs-5g open5gs-5g-b
 docker compose exec -d mocn tcpdump -i any -U -w /data/sctp.pcap sctp

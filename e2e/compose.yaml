@@ -257,11 +257,7 @@ services:
         ipv4_address: 10.90.2.5
 
   gnb:
-    image: ella-mocn-e2e/ocudu:690d1c25
-    build: &ocudu
-      context: ocudu
-      args:
-        OCUDU_COMMIT: 690d1c25fc32053fec330b2c382571a95b66524f
+    image: ghcr.io/ellanetworks/ella-mocn-e2e-ocudu:${OCUDU_TAG:?run through run.sh or set OCUDU_TAG}
     privileged: true
     restart: unless-stopped
     depends_on: [mocn]
@@ -301,8 +297,7 @@ services:
         ipv4_address: 10.90.2.7
 
   gnb-b:
-    image: ella-mocn-e2e/ocudu:690d1c25
-    build: *ocudu
+    image: ghcr.io/ellanetworks/ella-mocn-e2e-ocudu:${OCUDU_TAG:?run through run.sh or set OCUDU_TAG}
     privileged: true
     restart: unless-stopped
     depends_on: [mocn]
@@ -342,8 +337,7 @@ services:
         ipv4_address: 10.90.2.9
 
   gnb-c:
-    image: ella-mocn-e2e/ocudu:690d1c25
-    build: *ocudu
+    image: ghcr.io/ellanetworks/ella-mocn-e2e-ocudu:${OCUDU_TAG:?run through run.sh or set OCUDU_TAG}
     privileged: true
     restart: unless-stopped
     depends_on: [mocn]

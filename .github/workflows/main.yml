@@ -31,6 +31,9 @@ jobs:
   ui-e2e:
     uses: ./.github/workflows/ui-e2e.yaml
   e2e-s1:
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/e2e-s1.yaml
   image-build:
     uses: ./.github/workflows/image-build.yaml
