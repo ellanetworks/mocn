@@ -451,6 +451,9 @@ describe("OperatorDetail", () => {
       ).toBeEnabled(),
     );
     expect(dialog.queryAllByRole("textbox")).toEqual([]);
+    expect(
+      dialog.getByText(/sees Ella MOCN's address instead of the radios'/),
+    ).toBeInTheDocument();
     toggle("User-plane aggregation");
     submit("Save");
 
@@ -800,6 +803,9 @@ describe("OperatorDetail", () => {
     await click("Edit PWS Operator");
 
     const dialog = screen.getByRole("dialog", { name: "Edit PWS Operator" });
+    expect(
+      within(dialog).getByText(/broadcasts public warnings/),
+    ).toBeInTheDocument();
     const pws = within(dialog).getByRole("switch", { name: "PWS operator" });
     expect(pws).not.toBeChecked();
     const update = within(dialog).getByRole("button", { name: "Update" });

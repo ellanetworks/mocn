@@ -731,6 +731,7 @@ export function EditPWSOperatorDialog({
   return (
     <EditDialog
       title="Edit PWS Operator"
+      description="Ella MOCN broadcasts public warnings, such as emergency alerts, only from the PWS operator, on every radio in the warning area."
       failure="Could not update the PWS operator"
       valid={checked !== operator.pws_operator}
       pending={mutation.isPending}
@@ -775,6 +776,7 @@ export function EditUserPlaneDialog({
   return (
     <EditDialog
       title="Edit User Plane"
+      description="With user-plane aggregation, this operator's subscriber traffic goes through Ella MOCN, so the operator sees Ella MOCN's address instead of the radios'."
       submitLabel="Save"
       pendingLabel="Saving…"
       failure="Could not save the user plane"

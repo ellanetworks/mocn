@@ -40,13 +40,21 @@ cleanup() {
   [ -n "${S1_PID}" ] && kill "${S1_PID}" 2>/dev/null || true
   if [ "${status}" -ne 0 ]; then
     echo "== Diagnostics"
-    k get all,pvc,network-attachment-definitions -o wide || true
+    k get all,pvc -o wide || true
+    k describe statefulset ella-mocn || true
     for pod in $(k get pods -o name 2>/dev/null); do
       k describe "${pod}" || true
+      echo "== Logs of ${pod}"
       k logs "${pod}" --tail=100 || true
-      k logs "${pod}" --previous --tail=100 2>/dev/null || true
+      echo "== Previous logs of ${pod}"
+      k logs "${pod}" --previous --tail=100 || true
     done
-    kubectl -n kube-system logs -l app=multus --tail=50 || true
+    echo "== Events"
+    k get events --sort-by=.lastTimestamp || true
+    if [ "${MODE}" = multus ]; then
+      k get network-attachment-definitions -o yaml || true
+      kubectl -n kube-system logs -l app=multus --tail=50 || true
+    fi
   fi
   if [ -z "${KEEP:-}" ]; then
     kind delete cluster --name "${CLUSTER}" >/dev/null 2>&1 || true

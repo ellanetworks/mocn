@@ -23,6 +23,10 @@ spec:
       terminationGracePeriodSeconds: 30
       automountServiceAccountToken: false
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -35,7 +39,6 @@ spec:
           readOnlyRootFilesystem: true
           capabilities:
             drop: ["ALL"]
-            add: ["BPF", "PERFMON", "NET_ADMIN", "NET_RAW"]
         ports:
         - name: http
           containerPort: 5030
@@ -45,9 +48,6 @@ spec:
         - name: ng
           containerPort: 38412
           protocol: SCTP
-        - name: gtpu
-          containerPort: 2152
-          protocol: UDP
         startupProbe:
           httpGet:
             path: /api/v1/livez

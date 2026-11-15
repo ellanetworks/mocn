@@ -25,7 +25,7 @@ When a phone connects, it picks one of the networks the radio broadcasts, and El
 
 ## What Ella MOCN does not touch
 
-- **Subscriber signalling:** the messages between a phone and its operator's core are protected with keys only the two of them have. Ella MOCN passes them through unchanged, so the neutral host never learns who the subscribers are.
+- **Subscriber signalling:** the messages between a phone and its operator's core are protected with keys only the two of them have. Ella MOCN passes them through unchanged, without decoding them.
 - **User traffic:** per operator, data goes either directly between the radio and the operator's gateways, or through Ella MOCN so the operator sees only Ella MOCN's addresses (see [User-Plane Aggregation](user_plane_aggregation_with_ebpf.md)). Ella MOCN never reads or changes what the traffic carries.
 - **Transport security:** each operator is reached through an IPsec tunnel set up on the host, as agreed with that operator (see [Connect an Operator over IPsec](../how_to/connect_an_operator_over_ipsec.md)).
 
