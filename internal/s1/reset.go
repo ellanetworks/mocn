@@ -22,10 +22,10 @@ func (r *relay) resetFromRAN(ctx context.Context, n *ranAssoc, log *slog.Logger,
 
 	var gone []*ueContext
 
-	if reset.ResetType.All {
+	if reset.ResetType.S1Interface != nil {
 		gone = r.ues.Remove(r.ues.Where(func(u *ueContext) bool { return u.RAN == n })...)
 	} else {
-		for _, item := range reset.ResetType.Part {
+		for _, item := range assoc.Items(reset.ResetType.PartOfS1Interface) {
 			gone = append(gone, r.ues.Remove(r.ues.OnRAN(n, item.MMEUES1APID, item.ENBUES1APID)...)...)
 		}
 	}
@@ -48,10 +48,10 @@ func (r *relay) resetFromMME(ctx context.Context, a *mmeAssoc, log *slog.Logger,
 
 	var gone []*ueContext
 
-	if reset.ResetType.All {
+	if reset.ResetType.S1Interface != nil {
 		gone = r.ues.Remove(r.ues.Where(func(u *ueContext) bool { return u.Core == a })...)
 	} else {
-		for _, item := range reset.ResetType.Part {
+		for _, item := range assoc.Items(reset.ResetType.PartOfS1Interface) {
 			gone = append(gone, r.ues.Remove(r.ues.OnCore(a, item.MMEUES1APID, item.ENBUES1APID)...)...)
 		}
 	}
@@ -134,7 +134,9 @@ func sendResets(ctx context.Context, peer assoc.Sender, log *slog.Logger, to str
 	items []s1ap.UEAssociatedLogicalS1ConnectionItem,
 ) {
 	for chunk := range slices.Chunk(items, maxnoofIndividualS1ConnectionsToReset) {
-		out, err := (&s1ap.Reset{Cause: &cause, ResetType: s1ap.ResetType{Part: chunk}}).Marshal()
+		part := s1ap.UEAssociatedLogicalS1ConnectionListRes(chunk)
+
+		out, err := (&s1ap.Reset{Cause: &cause, ResetType: s1ap.ResetType{PartOfS1Interface: &part}}).Marshal()
 		if err != nil {
 			log.ErrorContext(ctx, "failed to marshal Reset", slog.Any("error", err))
 			return
@@ -166,7 +168,7 @@ func parseReset(ctx context.Context, peer assoc.Sender, from string, log *slog.L
 // TS 36.413 clause 8.7.1
 func acknowledgeReset(ctx context.Context, peer assoc.Sender, from string, log *slog.Logger, reset *s1ap.Reset) {
 	out, err := (&s1ap.ResetAcknowledge{
-		ConnectionList:         reset.ResetType.Part,
+		ConnectionList:         assoc.Items(reset.ResetType.PartOfS1Interface),
 		CriticalityDiagnostics: responseDiagnostics(s1ap.ProcReset, reset.Diagnostics()),
 	}).Marshal()
 	if err != nil {
@@ -180,5 +182,5 @@ func acknowledgeReset(ctx context.Context, peer assoc.Sender, from string, log *
 	}
 
 	log.InfoContext(ctx, "Reset from "+from+" acknowledged", slog.String("cause", causeText(reset.Cause)),
-		slog.Bool("all", reset.ResetType.All), slog.Int("connections", len(reset.ResetType.Part)))
+		slog.Bool("all", reset.ResetType.S1Interface != nil), slog.Int("connections", len(assoc.Items(reset.ResetType.PartOfS1Interface))))
 }

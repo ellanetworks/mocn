@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/ellanetworks/mocn/internal/s1"
 	"github.com/ellanetworks/mocn/internal/tracing"
@@ -25,6 +26,8 @@ type Config struct {
 	Requests       *RequestMetrics
 	Auth           authStore
 	Operators      operatorStore
+	UserPlane      bool
+	Plane          PlaneView
 	S1             S1View
 	NG             NGView
 	JWTSecret      func() []byte
@@ -33,6 +36,10 @@ type Config struct {
 	TracerProvider trace.TracerProvider
 	Now            func() time.Time
 	Logger         *slog.Logger
+}
+
+type PlaneView interface {
+	Status(operatorID int64) (gtpu.Status, bool)
 }
 
 type S1View interface {

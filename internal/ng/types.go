@@ -19,9 +19,16 @@ const (
 type RANNodeState = assoc.RadioState
 
 const (
-	RANNodeConnected = assoc.RadioConnected
-	RANNodeUp        = assoc.RadioUp
+	RANNodeConnected   = assoc.RadioConnected
+	RANNodeUp          = assoc.RadioUp
+	RANNodeSetupFailed = assoc.RadioSetupFailed
 )
+
+type SetupFailure struct {
+	Cause  string
+	Reason string
+	At     time.Time
+}
 
 // TS 38.413 clause 9.3.3.3
 type GUAMI struct {
@@ -100,4 +107,5 @@ type RANNode struct {
 	State            RANNodeState
 	ConnectedSince   time.Time
 	TNLAddresses     []string
+	SetupFailure     *SetupFailure
 }

@@ -4,31 +4,39 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/sctptest"
 )
 
 const testPPID = 18
 
 type (
-	testSetup  struct{}
+	testSetup struct {
+		ref   string
+		plmns []db.PLMN
+	}
 	testRadio  struct{}
 	testCore   struct{}
 	testInfo   struct{}
 	testClient = Client[testInfo, testCore]
 )
 
-func (testSetup) Ref() string { return "" }
+func (s testSetup) Ref() string { return s.ref }
 
-func (testSetup) Broadcasts([]db.PLMN) bool { return false }
+func (s testSetup) Broadcasts(plmns []db.PLMN) bool {
+	return slices.ContainsFunc(s.plmns, func(p db.PLMN) bool { return slices.Contains(plmns, p) })
+}
 
-func (testSetup) Serves(TAI) bool { return false }
+func (s testSetup) Serves(tai TAI) bool { return slices.Contains(s.plmns, tai.PLMN) }
 
 func (testRadio) Equal(testRadio) bool { return true }
 
@@ -59,7 +67,9 @@ func (testProtocol) Nodes(o db.Operator) []Node[testCore] {
 	return nodes
 }
 
-func (testProtocol) CoreConfig([]db.PLMN, []testSetup) (testCore, bool) { return testCore{}, false }
+func (testProtocol) CoreConfig(_ []db.PLMN, setups []testSetup) (testCore, bool) {
+	return testCore{}, len(setups) > 0
+}
 
 func (testProtocol) ConfigurationUpdate(testCore, testCore) ([]byte, error) { return nil, nil }
 
@@ -102,7 +112,9 @@ type harness struct {
 	gw *Gateway[testSetup, testRadio, testInfo, testCore]
 }
 
-func start(t *testing.T, port int, operators func(ctx context.Context) ([]db.Operator, error)) *harness {
+func start(t *testing.T, port int, operators func(ctx context.Context) ([]db.Operator, error),
+	plane *gtpu.Plane,
+) *harness {
 	t.Helper()
 
 	src := &sctptest.Operators{}
@@ -113,7 +125,7 @@ func start(t *testing.T, port int, operators func(ctx context.Context) ([]db.Ope
 	ln := sctptest.Listen(t)
 	gw := New(Config{
 		Listener: ln, Operators: operators, Logger: sctptest.Logger(), CorePort: port,
-		ReconnectMin: 100 * time.Millisecond, ReconnectMax: 200 * time.Millisecond,
+		ReconnectMin: 100 * time.Millisecond, ReconnectMax: 200 * time.Millisecond, Plane: plane,
 	}, Names{Core: "MME", CoreAttr: "mme", PPID: testPPID, Protocol: "s1ap", CoreStreams: 2}, nil,
 		Protocol[testSetup, testRadio, testInfo, testCore](testProtocol{}))
 
@@ -159,7 +171,7 @@ func TestReconcileIsSerialized(t *testing.T) {
 		}
 
 		return ops, err
-	})
+	}, nil)
 
 	sctptest.Eventually(t, "first MME configured", func() bool { return h.configured("127.0.0.10") })
 
@@ -241,7 +253,7 @@ func TestNewAssociationWaitsForTheOldOne(t *testing.T) {
 	sctptest.SkipWithoutSCTP(t)
 
 	mme := sctptest.ListenCore(t, codec, "127.0.0.12", 0)
-	h := start(t, mme.Port(), nil)
+	h := start(t, mme.Port(), nil, nil)
 
 	release := h.hold("127.0.0.12")
 
@@ -279,7 +291,7 @@ func TestReconcileAfterStopStartsNoAssociation(t *testing.T) {
 
 	sctptest.SkipWithoutSCTP(t)
 
-	h := start(t, 1, nil)
+	h := start(t, 1, nil, nil)
 	h.Stop()
 
 	h.Ops.Set(operatorA("127.0.0.13"))
@@ -291,4 +303,44 @@ func TestReconcileAfterStopStartsNoAssociation(t *testing.T) {
 	if h.configured("127.0.0.13") {
 		t.Fatal("MME association started after the gateway stopped")
 	}
+}
+
+func TestAssociationBindsTheRouteSourceAddressAndAnchorsTheUserPlane(t *testing.T) {
+	t.Parallel()
+
+	sctptest.SkipWithoutSCTP(t)
+
+	mme := sctptest.ListenCore(t, codec, "127.0.0.13", 0)
+	op := operatorA("127.0.0.13")
+
+	plane := gtpu.New(gtpu.Config{})
+	if err := plane.SetOperators([]gtpu.Operator{{ID: op.ID, Name: op.Name, Aggregated: true}}); err != nil {
+		t.Fatal(err)
+	}
+
+	h := start(t, mme.Port(), nil, plane)
+	h.Ops.Set(op)
+
+	if err := h.gw.Reconcile(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := addresses(mme.Accept(t).Conn.RemoteAddr()); !slices.Equal(got, []string{"127.0.0.1"}) {
+		t.Fatalf("association from %v, want only the source address of the route to the MME", got)
+	}
+
+	for range 200 {
+		st, _ := plane.Status(op.ID)
+		if st.State == gtpu.StateReady {
+			if st.Interface != "lo" || !slices.Equal(st.Addresses, []netip.Addr{netip.MustParseAddr("127.0.0.1")}) {
+				t.Fatalf("user plane = %+v, want lo and 127.0.0.1", st)
+			}
+
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("user plane not anchored to the association")
 }

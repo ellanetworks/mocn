@@ -78,9 +78,9 @@ func TestNonUEProceduresTerminatedLocally(t *testing.T) {
 	h := startGateway(t, mmeListener.Port(), operatorA("127.0.0.7"))
 	enb, mme := upAndRunning(t, h, mmeListener)
 
-	cause := &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscOMIntervention}
+	cause := s1ap.Ptr(s1ap.CauseMiscOMIntervention.Cause())
 
-	enb.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{All: true}})
+	enb.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{S1Interface: s1ap.Ptr(s1ap.ResetAllResetAll)}})
 
 	ack := expect(t, enb, "successful", s1ap.ProcReset, s1ap.ParseResetAcknowledge)
 	if len(ack.ConnectionList) != 0 {
@@ -92,14 +92,14 @@ func TestNonUEProceduresTerminatedLocally(t *testing.T) {
 		{ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(1))},
 	}
 
-	enb.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{Part: part}})
+	enb.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{PartOfS1Interface: s1ap.Ptr(s1ap.UEAssociatedLogicalS1ConnectionListRes(part))}})
 
 	ack = expect(t, enb, "successful", s1ap.ProcReset, s1ap.ParseResetAcknowledge)
 	if !reflect.DeepEqual(ack.ConnectionList, part) {
 		t.Fatalf("Reset Acknowledge list = %+v, want %+v", ack.ConnectionList, part)
 	}
 
-	mme.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{All: true}})
+	mme.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{S1Interface: s1ap.Ptr(s1ap.ResetAllResetAll)}})
 	expect(t, mme, "successful", s1ap.ProcReset, s1ap.ParseResetAcknowledge)
 
 	b, err := (&s1ap.ErrorIndication{Cause: cause}).Marshal()
@@ -122,7 +122,7 @@ func TestNonUEProceduresTerminatedLocally(t *testing.T) {
 	enb.Quiet(t, 200*time.Millisecond)
 
 	if ind := expect(t, mme, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication); ind.Cause == nil ||
-		ind.Cause.Group != s1ap.CauseGroupProtocol || ind.CriticalityDiagnostics == nil {
+		ind.Cause.Protocol == nil || ind.CriticalityDiagnostics == nil {
 		t.Fatalf("Error Indication = %+v, want a protocol cause with diagnostics", ind)
 	}
 
@@ -134,7 +134,7 @@ func TestNonUEProceduresTerminatedLocally(t *testing.T) {
 	}})
 
 	errInd := expect(t, enb, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication)
-	if errInd.Cause == nil || errInd.Cause.Group != s1ap.CauseGroupProtocol || errInd.CriticalityDiagnostics == nil {
+	if errInd.Cause == nil || errInd.Cause.Protocol == nil || errInd.CriticalityDiagnostics == nil {
 		t.Fatalf("Error Indication = %+v, want a protocol cause with diagnostics", errInd)
 	}
 

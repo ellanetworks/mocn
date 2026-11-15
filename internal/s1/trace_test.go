@@ -180,7 +180,7 @@ func TestS1APSpans(t *testing.T) {
 
 	resp := &s1ap.InitialContextSetupResponse{
 		MMEUES1APID: s1ap.Ptr(ue.ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(7)),
-		ERABSetup: []s1ap.ERABSetupItemCtxtSURes{{ERABID: 5, TransportLayerAddress: s1ap.TransportLayerAddress{10, 90, 1, 21}, GTPTEID: 1}},
+		ERABSetup: []s1ap.ERABSetupItemCtxtSURes{{ERABID: 5, TransportLayerAddress: tlaOf("10.90.1.21"), GTPTEID: 1}},
 	}
 	enb.Send(t, resp)
 	expectRaw(t, mme, "successful", s1ap.ProcInitialContextSetup)
@@ -240,7 +240,7 @@ func TestS1APSpanErrors(t *testing.T) {
 	unknown := initialUE(t, 3)
 	unknown.TAI.PLMNIdentity = plmnID(t, "009", "09")
 	enb.Send(t, unknown)
-	expectReleaseCommand(t, enb, 3, s1ap.CauseGroupMisc, s1ap.CauseMiscUnknownPLMN)
+	expectReleaseCommand(t, enb, 3, s1ap.CauseMiscUnknownPLMN.Cause())
 	assertError(t, sp.wait(t, "s1ap/receive", "radio", "InitialUEMessage", nil), "unknown_plmn")
 
 	enb.Send(t, uplinkNAS(t, 4242, 9))
@@ -254,7 +254,7 @@ func TestS1APSpanErrors(t *testing.T) {
 
 	h.gw.CloseMMESends()
 	enb.Send(t, initialUE(t, 4))
-	expectReleaseCommand(t, enb, 4, s1ap.CauseGroupTransport, s1ap.CauseTransportResourceUnavailable)
+	expectReleaseCommand(t, enb, 4, s1ap.CauseTransportResourceUnavailable.Cause())
 
 	recv := sp.wait(t, "s1ap/receive", "radio", "InitialUEMessage", func(s sdktrace.ReadOnlySpan) bool {
 		return attr(s, "s1ap.enb_ue_s1ap_id").AsInt64() == 4
@@ -266,7 +266,7 @@ func TestS1APSpanErrors(t *testing.T) {
 func traceActivation(id s1ap.EUTRANTraceID) *s1ap.TraceActivation {
 	return &s1ap.TraceActivation{
 		EUTRANTraceID: id, InterfacesToTrace: s1ap.InterfaceToTraceS1MME, TraceDepth: s1ap.TraceDepthMinimum,
-		TraceCollectionEntityIPAddress: s1ap.TransportLayerAddress{10, 0, 0, 9},
+		TraceCollectionEntityIPAddress: tlaOf("10.0.0.9"),
 	}
 }
 
@@ -330,7 +330,7 @@ func deactivateTrace(t *testing.T, mmeID s1ap.MMEUES1APID, enbID s1ap.ENBUES1API
 		t.Fatal(err)
 	}
 
-	i := p.Index(s1ap.IDTraceActivation)
+	i := indexOf(t, p, s1ap.IDTraceActivation)
 	if err := p.Remove(i); err != nil {
 		t.Fatal(err)
 	}
@@ -426,8 +426,8 @@ func TestRANTraceCorrelation(t *testing.T) {
 	}
 
 	mme.Send(t, &s1ap.UEContextReleaseCommand{
-		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: ue.mmeUEID, ENBUES1APID: ue.mmeENBID, Pair: true},
-		Cause:     &s1ap.Cause{Group: s1ap.CauseGroupNAS, Value: 0},
+		UES1APIDs: s1ap.UES1APIDs{UES1APIDPair: &s1ap.UES1APIDPair{MMEUES1APID: ue.mmeUEID, ENBUES1APID: ue.mmeENBID}},
+		Cause:     s1ap.Ptr(s1ap.CauseNASNormalRelease.Cause()),
 	})
 	expectRaw(t, enb, "initiating", s1ap.ProcUEContextRelease)
 	enb.Send(t, &s1ap.UEContextReleaseComplete{MMEUES1APID: s1ap.Ptr(ue.ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(7))})

@@ -1,0 +1,32 @@
+name: BPF Generate
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+
+jobs:
+  bpf-generate:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: "go.mod"
+
+      - name: Install clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-21 llvm-21
+
+      - name: Clang version
+        run: clang-21 --version
+
+      - name: Generated BPF objects are up to date
+        run: |
+          go generate ./internal/gtpu
+          git diff --exit-code
+        env:
+          BPF2GO_CC: clang-21

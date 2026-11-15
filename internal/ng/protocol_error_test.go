@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ellanetworks/core/ngap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/ng"
 )
 
@@ -47,11 +48,11 @@ func initiating(proc ngap.ProcedureCode, crit ngap.Criticality, value []byte) ra
 	return rawPDU{&ngap.InitiatingMessage{ProcedureCode: proc, Criticality: crit, Value: value}}
 }
 
-func expectProtocolError(t *testing.T, p *peer, cause int) *ngap.ErrorIndication {
+func expectProtocolError(t *testing.T, p *peer, cause ngap.CauseProtocol) *ngap.ErrorIndication {
 	t.Helper()
 
 	ind := expect(t, p, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Group != ngap.CauseGroupProtocol || ind.Cause.Value != cause {
+	if ind.Cause == nil || !ind.Cause.Equal(cause.Cause()) {
 		t.Fatalf("Error Indication cause = %v, want protocol %d", ind.Cause, cause)
 	}
 
@@ -75,12 +76,12 @@ func expectReset(t *testing.T, p *peer, want ...ngap.UEAssociatedLogicalNGConnec
 	t.Helper()
 
 	reset := expect(t, p, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
-	if reset.ResetType.All || len(reset.ResetType.Part) != len(want) {
+	if reset.ResetType.NGInterface != nil || len(assoc.Items(reset.ResetType.PartOfNGInterface)) != len(want) {
 		t.Fatalf("NG Reset = %+v, want a partial reset of %d connections", reset.ResetType, len(want))
 	}
 
 	for i, w := range want {
-		got := reset.ResetType.Part[i]
+		got := assoc.Items(reset.ResetType.PartOfNGInterface)[i]
 		if (got.AMFUENGAPID == nil) != (w.AMFUENGAPID == nil) || (got.RANUENGAPID == nil) != (w.RANUENGAPID == nil) ||
 			(w.AMFUENGAPID != nil && *got.AMFUENGAPID != *w.AMFUENGAPID) ||
 			(w.RANUENGAPID != nil && *got.RANUENGAPID != *w.RANUENGAPID) {
@@ -236,14 +237,14 @@ func TestMessagesBeforeNGSetup(t *testing.T) {
 	gnb.Send(t, initiating(ngap.ProcHandoverPreparation, ngap.CriticalityReject, bodyOf(t, uplinkNAS(t, 11, 7))))
 
 	fail := expect(t, gnb, "unsuccessful", ngap.ProcHandoverPreparation, ngap.ParseHandoverPreparationFailure)
-	if fail.Cause == nil || fail.Cause.Value != ngap.CauseProtocolMessageNotCompatible || *fail.AMFUENGAPID != 11 ||
+	if fail.Cause == nil || !fail.Cause.Equal(ngap.CauseProtocolMessageNotCompatible.Cause()) || *fail.AMFUENGAPID != 11 ||
 		*fail.RANUENGAPID != 7 {
 		t.Fatalf("Handover Preparation Failure = %+v", fail)
 	}
 
 	amf.Send(t, &ngap.Paging{
-		FiveGSTMSI:       &ngap.FiveGSTMSI{AMFSetID: 1, FiveGTMSI: 0xdeadbeef},
-		TAIListForPaging: []ngap.TAI{{PLMNIdentity: plmnID(t, "001", "01"), TAC: 1}},
+		UEPagingIdentity: &ngap.UEPagingIdentity{FiveGSTMSI: &ngap.FiveGSTMSI{AMFSetID: 1, FiveGTMSI: 0xdeadbeef}},
+		TAIListForPaging: ngap.TAIListForPaging{{TAI: ngap.TAI{PLMNIdentity: plmnID(t, "001", "01"), TAC: 1}}},
 	})
 	assertDiagnostics(t, expectProtocolError(t, amf, ngap.CauseProtocolMessageNotCompatible).CriticalityDiagnostics,
 		ngap.ProcPaging, nil)
@@ -251,7 +252,7 @@ func TestMessagesBeforeNGSetup(t *testing.T) {
 	amf.Send(t, contextSetup(t, attached{amfID: 5, amfRANID: 6}))
 
 	ics := expect(t, amf, "unsuccessful", ngap.ProcInitialContextSetup, ngap.ParseInitialContextSetupFailure)
-	if ics.Cause == nil || ics.Cause.Value != ngap.CauseProtocolMessageNotCompatible || *ics.AMFUENGAPID != 5 ||
+	if ics.Cause == nil || !ics.Cause.Equal(ngap.CauseProtocolMessageNotCompatible.Cause()) || *ics.AMFUENGAPID != 5 ||
 		*ics.RANUENGAPID != 6 {
 		t.Fatalf("Initial Context Setup Failure = %+v", ics)
 	}
@@ -285,7 +286,7 @@ func TestInitialUEMessageWithoutNASPDU(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := p.Remove(p.Index(ngap.IDNASPDU)); err != nil {
+	if err := p.Remove(index(t, p, ngap.IDNASPDU)); err != nil {
 		t.Fatal(err)
 	}
 

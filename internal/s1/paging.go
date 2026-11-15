@@ -27,8 +27,8 @@ func (r *relay) paging(ctx context.Context, a *mmeAssoc, log *slog.Logger, value
 	tais := make([]assoc.TAI, 0, len(p.TAIList))
 
 	for _, t := range p.TAIList {
-		if id, err := plmnid.Decode(t.PLMNIdentity); err == nil {
-			tais = append(tais, assoc.TAI{PLMN: id, TAC: uint32(t.TAC)})
+		if id, err := plmnid.Decode(t.TAI.PLMNIdentity); err == nil {
+			tais = append(tais, assoc.TAI{PLMN: id, TAC: uint32(t.TAI.TAC)})
 		}
 	}
 

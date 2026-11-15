@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 )
 
 type operatorStore interface {
@@ -26,8 +28,22 @@ type Operator struct {
 	GlobalGNBID          *GlobalGNBID         `json:"global_gnb_id,omitempty"`
 	MMEs                 []MME                `json:"mmes"`
 	AMFs                 []AMF                `json:"amfs"`
+	UserPlane            *UserPlane           `json:"user_plane,omitempty"`
 	UEConnections        *int                 `json:"ue_connections,omitempty"`
 	UEConnectionsByRadio []RadioUEConnections `json:"ue_connections_by_radio,omitzero"`
+}
+
+type UserPlane struct {
+	Aggregation *bool            `json:"aggregation,omitempty"`
+	Status      *UserPlaneStatus `json:"status,omitempty"`
+}
+
+type UserPlaneStatus struct {
+	State     gtpu.State  `json:"state"`
+	Reason    gtpu.Reason `json:"reason,omitempty"`
+	Interface string      `json:"interface,omitempty"`
+	Addresses []string    `json:"addresses"`
+	Since     time.Time   `json:"since"`
 }
 
 type MME struct {
@@ -56,7 +72,7 @@ func listOperators(cfg Config) http.Handler {
 
 		resp := ListOperatorsResponse{Items: make([]Operator, 0, len(ops))}
 		for _, o := range ops {
-			resp.Items = append(resp.Items, withStatus(cfg, o, operatorResponse(o), ues))
+			resp.Items = append(resp.Items, withStatus(cfg, o, operatorResponse(cfg, o), ues))
 		}
 
 		writeResponse(r.Context(), w, resp, http.StatusOK, cfg.Logger)
@@ -192,10 +208,12 @@ func writeOperatorError(w http.ResponseWriter, r *http.Request, cfg Config, err 
 	}
 }
 
-func operatorResponse(o db.Operator) Operator {
+func operatorResponse(cfg Config, o db.Operator) Operator {
+	aggregation := o.UserPlane.Aggregation && cfg.UserPlane
 	resp := Operator{
 		Name: o.Name, PWSOperator: o.PWSOperator, PLMNs: plmnsOfDB(o.PLMNs),
 		MMEs: make([]MME, 0, len(o.MMEs)), AMFs: make([]AMF, 0, len(o.AMFs)),
+		UserPlane: &UserPlane{Aggregation: &aggregation},
 	}
 
 	for _, m := range o.MMEs {
@@ -219,7 +237,7 @@ func operatorResponse(o db.Operator) Operator {
 
 func operatorDetail(cfg Config, o db.Operator) Operator {
 	ues := ueConnections(cfg)
-	resp := withStatus(cfg, o, operatorResponse(o), ues)
+	resp := withStatus(cfg, o, operatorResponse(cfg, o), ues)
 
 	if cfg.S1 != nil || cfg.NG != nil {
 		resp.UEConnectionsByRadio = ueConnectionsByRadio(o, radios(cfg, ues), ues)

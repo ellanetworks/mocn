@@ -98,11 +98,11 @@ func TestPWSThroughTheGateway(t *testing.T) {
 		t.Fatalf("Broadcast Completed Area List = %+v, want none", l)
 	}
 
-	byCell := writeReplaceWarning(2, &ngap.WarningAreaList{NRCGIs: []ngap.NRCGI{nrcgi(t, 2)}})
+	byCell := writeReplaceWarning(2, &ngap.WarningAreaList{NRCGIListForWarning: &ngap.NRCGIListForWarning{nrcgi(t, 2)}})
 	amfA.Send(t, byCell)
 	expectSame(t, gnb2, byCell)
 
-	completed := &ngap.BroadcastCompletedAreaList{CellIDBroadcastNR: []ngap.CellIDBroadcastNRItem{{NRCGI: nrcgi(t, 2)}}}
+	completed := &ngap.BroadcastCompletedAreaList{CellIDBroadcastNR: &ngap.CellIDBroadcastNR{{NRCGI: nrcgi(t, 2)}}}
 	gnb2.Send(t, &ngap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 2, BroadcastCompletedAreaList: completed})
 
 	if got := expectWarningResponse(t, amfA, 2); !reflect.DeepEqual(got, completed) {
@@ -118,7 +118,7 @@ func TestPWSThroughTheGateway(t *testing.T) {
 
 	gnb1.Send(t, &ngap.PWSCancelResponse{
 		MessageIdentifier: 4370, SerialNumber: 2,
-		BroadcastCancelledAreaList: &ngap.BroadcastCancelledAreaList{TAICancelledNR: []ngap.TAICancelledNRItem{{
+		BroadcastCancelledAreaList: &ngap.BroadcastCancelledAreaList{TAICancelledNR: &ngap.TAICancelledNR{{
 			TAI:                 nrTAI(t, "00101"),
 			CancelledCellsInTAI: []ngap.CancelledCellsInTAINRItem{{NRCGI: nrcgi(t, 1), NumberOfBroadcasts: 2}},
 		}}},
@@ -126,14 +126,14 @@ func TestPWSThroughTheGateway(t *testing.T) {
 	amfA.Quiet(t, 100*time.Millisecond)
 	gnb2.Send(t, &ngap.PWSCancelResponse{
 		MessageIdentifier: 4370, SerialNumber: 2,
-		BroadcastCancelledAreaList: &ngap.BroadcastCancelledAreaList{EmergencyAreaIDCancelledNR: []ngap.EmergencyAreaIDCancelledNRItem{{
+		BroadcastCancelledAreaList: &ngap.BroadcastCancelledAreaList{EmergencyAreaIDCancelledNR: &ngap.EmergencyAreaIDCancelledNR{{
 			EmergencyAreaID:     ngap.EmergencyAreaID{0, 0, 1},
 			CancelledCellsInEAI: []ngap.CancelledCellsInEAINRItem{{NRCGI: nrcgi(t, 2), NumberOfBroadcasts: 1}},
 		}}},
 	})
 
 	cancelled := expect(t, amfA, "successful", ngap.ProcPWSCancel, ngap.ParsePWSCancelResponse)
-	want := &ngap.BroadcastCancelledAreaList{CellIDCancelledNR: []ngap.CellIDCancelledNRItem{
+	want := &ngap.BroadcastCancelledAreaList{CellIDCancelledNR: &ngap.CellIDCancelledNR{
 		{NRCGI: nrcgi(t, 1), NumberOfBroadcasts: 2}, {NRCGI: nrcgi(t, 2), NumberOfBroadcasts: 1},
 	}}
 
@@ -142,7 +142,7 @@ func TestPWSThroughTheGateway(t *testing.T) {
 		t.Fatalf("PWS Cancel Response = %+v, want %+v", cancelled, want)
 	}
 
-	byEAI := writeReplaceWarning(4, &ngap.WarningAreaList{EmergencyAreaIDs: []ngap.EmergencyAreaID{{0, 0, 1}}})
+	byEAI := writeReplaceWarning(4, &ngap.WarningAreaList{EmergencyAreaIDList: &ngap.EmergencyAreaIDList{{0, 0, 1}}})
 	amfA.Send(t, byEAI)
 	expectSame(t, gnb1, byEAI)
 	expectSame(t, gnb2, byEAI)
@@ -153,7 +153,7 @@ func TestPWSThroughTheGateway(t *testing.T) {
 		t.Fatalf("Broadcast Completed Area List = %+v, want none", l)
 	}
 
-	amfA.Send(t, writeReplaceWarning(3, &ngap.WarningAreaList{EUTRACGIs: []ngap.EUTRACGI{{
+	amfA.Send(t, writeReplaceWarning(3, &ngap.WarningAreaList{EUTRACGIListForWarning: &ngap.EUTRACGIListForWarning{{
 		PLMNIdentity: plmnID(t, "001", "01"), EUTRACellIdentity: 1<<8 | 1,
 	}}}))
 
@@ -161,10 +161,10 @@ func TestPWSThroughTheGateway(t *testing.T) {
 		t.Fatalf("Broadcast Completed Area List = %+v, want none", l)
 	}
 
-	radio := ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: 1, Bits: 24}
+	radio := gnbNodeID(plmnID(t, "001", "01"), 1, 24)
 	restart := func(id ngap.GlobalRANNodeID) *ngap.PWSRestartIndication {
 		return &ngap.PWSRestartIndication{
-			CellIDListForRestart:          ngap.CellIDListForRestart{NRCGIs: []ngap.NRCGI{nrcgi(t, 1)}},
+			CellIDListForRestart:          ngap.CellIDListForRestart{NRCGIListforRestart: &ngap.NRCGIList{nrcgi(t, 1)}},
 			GlobalRANNodeID:               id,
 			TAIListForRestart:             ngap.TAIListForRestart{nrTAI(t, "00101"), nrTAI(t, "002002")},
 			EmergencyAreaIDListForRestart: ngap.EmergencyAreaIDListForRestart{{0, 0, 1}},
@@ -172,17 +172,15 @@ func TestPWSThroughTheGateway(t *testing.T) {
 	}
 
 	gnb1.Send(t, restart(radio))
-	expectSame(t, amfA, restart(ngap.GlobalRANNodeID{
-		Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: 0xabcde, Bits: 22,
-	}))
+	expectSame(t, amfA, restart(gnbNodeID(plmnID(t, "001", "01"), 0xabcde, 22)))
 
 	gnb2.Send(t, &ngap.PWSFailureIndication{
-		PWSFailedCellIDList: ngap.PWSFailedCellIDList{NRCGIs: []ngap.NRCGI{nrcgi(t, 2)}}, GlobalRANNodeID: radio,
+		PWSFailedCellIDList: ngap.PWSFailedCellIDList{NRCGIPWSFailedList: &ngap.NRCGIList{nrcgi(t, 2)}}, GlobalRANNodeID: radio,
 	})
 
 	ind := expect(t, amfA, "initiating", ngap.ProcPWSFailureIndication, ngap.ParsePWSFailureIndication)
-	if ind.GlobalRANNodeID.Value != 0xabcde || ind.GlobalRANNodeID.Bits != 22 ||
-		!reflect.DeepEqual(ind.PWSFailedCellIDList.NRCGIs, []ngap.NRCGI{nrcgi(t, 2)}) {
+	if gnbValue(ind.GlobalRANNodeID) != (ngap.GNBIDValue{Value: 0xabcde, Bits: 22}) ||
+		!reflect.DeepEqual(ind.PWSFailedCellIDList.NRCGIPWSFailedList, &ngap.NRCGIList{nrcgi(t, 2)}) {
 		t.Fatalf("PWS Failure Indication = %+v", ind)
 	}
 
@@ -249,13 +247,13 @@ func TestNGPWSRestartIndicationKeptUntilAnAMFIsUp(t *testing.T) {
 
 	restart := func(id ngap.GlobalRANNodeID) *ngap.PWSRestartIndication {
 		return &ngap.PWSRestartIndication{
-			CellIDListForRestart: ngap.CellIDListForRestart{NRCGIs: []ngap.NRCGI{nrcgi(t, 1)}},
+			CellIDListForRestart: ngap.CellIDListForRestart{NRCGIListforRestart: &ngap.NRCGIList{nrcgi(t, 1)}},
 			GlobalRANNodeID:      id,
 			TAIListForRestart:    ngap.TAIListForRestart{nrTAI(t, "00101")},
 		}
 	}
 
-	gnb.Send(t, restart(ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: 1, Bits: 24}))
+	gnb.Send(t, restart(gnbNodeID(plmnID(t, "001", "01"), 1, 24)))
 
 	h.eventually(t, "PWS Restart Indication kept", func() bool {
 		return testutil.ToFloat64(h.metrics.PWS.WithLabelValues("ng", "pws_restart_indication", "no_amf")) == 1
@@ -271,9 +269,7 @@ func TestNGPWSRestartIndicationKeptUntilAnAMFIsUp(t *testing.T) {
 	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
 
 	amf, _ = setupAMF(t, amfs, setupResponse(t, "amf1", 255, "00101", guami(t, "00101", 2, 1, 0)))
-	expectSame(t, amf, restart(ngap.GlobalRANNodeID{
-		Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: 0xabcde, Bits: 22,
-	}))
+	expectSame(t, amf, restart(gnbNodeID(plmnID(t, "001", "01"), 0xabcde, 22)))
 	expect(t, gnb, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
 	amf.Quiet(t, 300*time.Millisecond)
 }

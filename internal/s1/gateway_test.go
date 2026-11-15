@@ -50,7 +50,7 @@ func setupRequest(t *testing.T, enbID uint32, name string, drx s1ap.PagingDRX, t
 
 	return &s1ap.S1SetupRequest{
 		GlobalENBID: s1ap.GlobalENBID{
-			PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{Kind: s1ap.ENBIDMacro, Value: enbID},
+			PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{MacroENBID: s1ap.Ptr(s1ap.MacroENBID(enbID))},
 		},
 		ENBName: &name, SupportedTAs: tas, DefaultPagingDRX: &drx,
 	}
@@ -88,9 +88,9 @@ func setUpMME(t *testing.T, mme *peer, wantTAs s1ap.SupportedTAs, wantDRX s1ap.P
 	req := expect(t, mme, "initiating", s1ap.ProcS1Setup, s1ap.ParseS1SetupRequest)
 
 	want := s1ap.GlobalENBID{
-		PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{Kind: s1ap.ENBIDMacro, Value: 0xabcde},
+		PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{MacroENBID: s1ap.Ptr(s1ap.MacroENBID(0xabcde))},
 	}
-	if req.GlobalENBID.PLMNIdentity != want.PLMNIdentity || req.GlobalENBID.ENBID != want.ENBID {
+	if req.GlobalENBID.PLMNIdentity != want.PLMNIdentity || !req.GlobalENBID.ENBID.Equal(want.ENBID) {
 		t.Fatalf("Global eNB ID = %+v, want %+v", req.GlobalENBID, want)
 	}
 
@@ -303,9 +303,10 @@ ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",res
 ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",result="not_pws_operator"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",result="relayed"} 0
 ellamocn_pws_messages_total{interface="s1",procedure="write_replace_warning",result="timeout"} 0
-# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded).
+# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded; setup_failed: SCTP association up, Ella MOCN rejected the last S1 or NG Setup).
 # TYPE ellamocn_radio_associations gauge
 ellamocn_radio_associations{interface="s1",state="connected"} 0
+ellamocn_radio_associations{interface="s1",state="setup_failed"} 0
 ellamocn_radio_associations{interface="s1",state="up"} 1
 # HELP ellamocn_setup_attempts_total Setup procedures (S1 Setup, NG Setup), by interface (s1, ng), side and result. side=radio: received from radios; result success, invalid (undecodable or invalid request), unknown_plmn (no operator serves a broadcast PLMN), no_mme, no_amf (no MME or AMF of the serving operators is up), mme_failure, amf_failure (the serving operators' MMEs or AMFs rejected the setup), error (the response could not be built or sent, or the radio left before the answer). side=core: sent to MMEs and AMFs; result success, failure (the MME or AMF rejected the request or answered with an invalid response), timeout (no answer from the MME or AMF), error (the request could not be built or sent, or the association dropped before the answer).
 # TYPE ellamocn_setup_attempts_total counter
@@ -352,8 +353,18 @@ func TestS1SetupFailures(t *testing.T) {
 	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "00301")))
 
 	fail := expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
-	if fail.Cause == nil || fail.Cause.Group != s1ap.CauseGroupMisc || fail.Cause.Value != s1ap.CauseMiscUnknownPLMN {
+	if fail.Cause == nil || !fail.Cause.Equal(s1ap.CauseMiscUnknownPLMN.Cause()) {
 		t.Fatalf("cause = %v, want unknown PLMN", fail.Cause)
+	}
+
+	nodes := h.gw.RANNodes()
+	if len(nodes) != 1 || nodes[0].State != s1.RANNodeSetupFailed || nodes[0].SetupFailure == nil ||
+		nodes[0].SetupFailure.Cause != "Unknown PLMN" ||
+		nodes[0].SetupFailure.Reason != "no operator serves a broadcast PLMN" || nodes[0].SetupFailure.At.IsZero() ||
+		nodes[0].GlobalENBID == nil || nodes[0].GlobalENBID.ID != 1 || nodes[0].Name != "enb1" ||
+		nodes[0].DefaultPagingDRX != 64 || len(nodes[0].SupportedTAs) != 1 ||
+		nodes[0].SupportedTAs[0].BroadcastPLMNs[0].String() != "003-01" {
+		t.Fatalf("RAN nodes = %+v, want the rejected S1 Setup Request kept", nodes)
 	}
 
 	mme.Quiet(t, 200*time.Millisecond)
@@ -361,8 +372,7 @@ func TestS1SetupFailures(t *testing.T) {
 	enb.Send(t, setupRequest(t, 1, "enb1", s1ap.PagingDRXv64, ta(t, 1, "002002")))
 
 	fail = expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
-	if fail.Cause == nil || fail.Cause.Group != s1ap.CauseGroupTransport ||
-		fail.Cause.Value != s1ap.CauseTransportResourceUnavailable || fail.TimeToWait == nil {
+	if fail.Cause == nil || !fail.Cause.Equal(s1ap.CauseTransportResourceUnavailable.Cause()) || fail.TimeToWait == nil {
 		t.Fatalf("failure = %+v, want transport resource unavailable with a Time to Wait", fail)
 	}
 
@@ -370,12 +380,12 @@ func TestS1SetupFailures(t *testing.T) {
 
 	expect(t, mme, "initiating", s1ap.ProcS1Setup, s1ap.ParseS1SetupRequest)
 	mme.Send(t, &s1ap.S1SetupFailure{
-		Cause:      &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnknownPLMN},
+		Cause:      s1ap.Ptr(s1ap.CauseMiscUnknownPLMN.Cause()),
 		TimeToWait: s1ap.Ptr(s1ap.TimeToWaitV1s),
 	})
 
 	fail = expect(t, enb, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
-	if fail.Cause == nil || fail.Cause.Value != s1ap.CauseMiscUnknownPLMN || fail.TimeToWait == nil ||
+	if fail.Cause == nil || !fail.Cause.Equal(s1ap.CauseMiscUnknownPLMN.Cause()) || fail.TimeToWait == nil ||
 		*fail.TimeToWait != s1ap.TimeToWaitV1s {
 		t.Fatalf("failure = %+v, want the MME's cause and Time to Wait", fail)
 	}
@@ -385,15 +395,18 @@ func TestS1SetupFailures(t *testing.T) {
 		t.Fatalf("MME status = %+v", st)
 	}
 
-	nodes := h.gw.RANNodes()
-	if len(nodes) != 1 || nodes[0].State != s1.RANNodeConnected || nodes[0].GlobalENBID != nil {
-		t.Fatalf("RAN nodes = %+v", nodes)
+	nodes = h.gw.RANNodes()
+	if len(nodes) != 1 || nodes[0].State != s1.RANNodeSetupFailed || nodes[0].SetupFailure == nil ||
+		nodes[0].SetupFailure.Cause != "Unknown PLMN" ||
+		nodes[0].SetupFailure.Reason != "the operator's MMEs refused the setup: Unknown PLMN" ||
+		nodes[0].GlobalENBID == nil || nodes[0].SupportedTAs[0].BroadcastPLMNs[0].String() != "001-01" {
+		t.Fatalf("RAN nodes = %+v, want the latest rejection", nodes)
 	}
 
 	enb.Send(t, &s1ap.ENBConfigurationUpdate{ENBName: s1ap.Ptr("x")})
 
 	upd := expect(t, enb, "unsuccessful", s1ap.ProcENBConfigurationUpdate, s1ap.ParseENBConfigurationUpdateFailure)
-	if upd.Cause == nil || upd.Cause.Group != s1ap.CauseGroupProtocol {
+	if upd.Cause == nil || upd.Cause.Protocol == nil {
 		t.Fatalf("cause = %v, want a protocol cause", upd.Cause)
 	}
 
@@ -404,10 +417,14 @@ func TestS1SetupFailures(t *testing.T) {
 	})
 	expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
 
+	if nodes := h.gw.RANNodes(); nodes[0].State != s1.RANNodeUp || nodes[0].SetupFailure != nil {
+		t.Fatalf("RAN nodes = %+v, want up without a setup failure", nodes)
+	}
+
 	enb.Send(t, &s1ap.ENBConfigurationUpdate{SupportedTAs: s1ap.SupportedTAs{ta(t, 9, "00301")}})
 
 	upd = expect(t, enb, "unsuccessful", s1ap.ProcENBConfigurationUpdate, s1ap.ParseENBConfigurationUpdateFailure)
-	if upd.Cause == nil || upd.Cause.Value != s1ap.CauseMiscUnknownPLMN {
+	if upd.Cause == nil || !upd.Cause.Equal(s1ap.CauseMiscUnknownPLMN.Cause()) {
 		t.Fatalf("cause = %v, want unknown PLMN", upd.Cause)
 	}
 

@@ -438,6 +438,77 @@ describe("OperatorDetail", () => {
     );
   });
 
+  it("edits the user plane", async () => {
+    const requests = serve();
+
+    renderAt("/operators/Operator%20A");
+    await click("Edit User-Plane Aggregation");
+
+    const dialog = within(screen.getByRole("dialog"));
+    await waitFor(() =>
+      expect(
+        dialog.getByRole("switch", { name: "User-plane aggregation" }),
+      ).toBeEnabled(),
+    );
+    expect(dialog.queryAllByRole("textbox")).toEqual([]);
+    toggle("User-plane aggregation");
+    submit("Save");
+
+    await saved("User plane saved successfully.");
+    expect(requests).toEqual([
+      put("Operator A", { ...operatorA(), user_plane: { aggregation: false } }),
+    ]);
+  });
+
+  it("shows the user-plane status the host routing gives", async () => {
+    serve({ operators: [operatorWithStatus()] });
+
+    renderAt("/operators/Operator%20A", readOnlyAuth);
+
+    const userPlane = within(
+      await screen.findByRole("table", { name: "User Plane" }),
+    );
+    const value = async (label: string) =>
+      (await userPlane.findByText(label))
+        .closest("tr")!
+        .querySelectorAll("td")[1].textContent;
+    expect(await value("User-Plane Aggregation")).toBe("On");
+    expect(await value("Status")).toBe(
+      "UnavailableThe route to the operator's MMEs or AMFs changed",
+    );
+    expect(await value("Interface")).toBe("xfrm-a");
+    expect(await value("Addresses")).toBe("10.9.0.1, 2001:db8::1");
+  });
+
+  it("keeps user-plane aggregation off when Ella MOCN does not enable it", async () => {
+    const requests = serve({ userPlane: false });
+
+    renderAt("/operators/Operator%20A");
+    await click("Edit User-Plane Aggregation");
+
+    const dialog = within(screen.getByRole("dialog"));
+    const aggregation = dialog.getByRole("switch", {
+      name: "User-plane aggregation",
+    });
+    expect(aggregation).toBeDisabled();
+    expect(aggregation).not.toBeChecked();
+    fireEvent.mouseOver(aggregation.closest("span") as HTMLElement);
+    expect(
+      await screen.findByText(
+        "User-plane aggregation is not enabled on this Ella MOCN.",
+      ),
+    ).toBeInTheDocument();
+    submit("Save");
+
+    await saved("User plane saved successfully.");
+    expect(requests).toEqual([
+      put("Operator A", {
+        ...operatorA(),
+        user_plane: { aggregation: false },
+      }),
+    ]);
+  });
+
   it("edits the Global gNB ID", async () => {
     const requests = serve();
 
@@ -878,11 +949,11 @@ describe("OperatorDetail", () => {
     );
   });
 
-  it("opens the details of an AMF from its name", async () => {
+  it("shows the details of an AMF in a dialog", async () => {
     serve({ operators: [operatorWithStatus()] });
 
     renderAt("/operators/Operator%20A", readOnlyAuth);
-    await click("amf0");
+    await click("View AMF 10.0.1.1");
 
     const details = within(screen.getByRole("dialog", { name: "amf0" }));
     const value = (label: string) =>
@@ -1036,6 +1107,7 @@ describe("OperatorDetail", () => {
           { tnl_addresses: ["10.0.0.4"] },
           { tnl_addresses: ["10.0.0.5"] },
         ],
+        user_plane: { aggregation: true },
       }),
     ]);
   });

@@ -86,6 +86,10 @@ const MaxAMFPLMNs = 12
 // TS 36.413 clause 9.1.8.5
 const MaxMMEPLMNs = 32
 
+type UserPlane struct {
+	Aggregation bool
+}
+
 // TS 23.501 clause 5.18.1
 type Operator struct {
 	ID          int64
@@ -96,6 +100,7 @@ type Operator struct {
 	GlobalGNBID *GlobalGNBID
 	MMEs        []CoreNode
 	AMFs        []CoreNode
+	UserPlane   UserPlane
 }
 
 func (d *DB) CreateOperator(ctx context.Context, o Operator) (id int64, err error) {
@@ -106,7 +111,9 @@ func (d *DB) CreateOperator(ctx context.Context, o Operator) (id int64, err erro
 }
 
 func createOperator(ctx context.Context, tx querier, o Operator) (int64, error) {
-	res, err := tx.ExecContext(ctx, `INSERT INTO operators (name, pws_operator) VALUES (?, ?)`, o.Name, o.PWSOperator)
+	res, err := tx.ExecContext(ctx,
+		`INSERT INTO operators (name, pws_operator, user_plane_aggregation) VALUES (?, ?, ?)`,
+		o.Name, o.PWSOperator, o.UserPlane.Aggregation)
 	if err != nil {
 		return 0, operatorRowError(err, o)
 	}
@@ -127,8 +134,9 @@ func (d *DB) UpdateOperator(ctx context.Context, o Operator) (err error) {
 }
 
 func updateOperator(ctx context.Context, tx querier, o Operator) error {
-	res, err := tx.ExecContext(ctx, `UPDATE operators SET name = ?, pws_operator = ? WHERE id = ?`, o.Name, o.PWSOperator,
-		o.ID)
+	res, err := tx.ExecContext(ctx,
+		`UPDATE operators SET name = ?, pws_operator = ?, user_plane_aggregation = ? WHERE id = ?`,
+		o.Name, o.PWSOperator, o.UserPlane.Aggregation, o.ID)
 	if err != nil {
 		return operatorRowError(err, o)
 	}
@@ -307,7 +315,7 @@ func (d *DB) GetOperator(ctx context.Context, name string) (_ Operator, err erro
 	ctx, done := d.observe(ctx, "GetOperator", poolRead)
 	defer done(&err)
 
-	ops, err := d.readOperators(ctx, `SELECT id, name, pws_operator FROM operators WHERE name = ?`, name)
+	ops, err := d.readOperators(ctx, `SELECT id, name, pws_operator, user_plane_aggregation FROM operators WHERE name = ?`, name)
 	if err != nil {
 		return Operator{}, fmt.Errorf("get operator: %w", err)
 	}
@@ -323,7 +331,7 @@ func (d *DB) ListOperators(ctx context.Context) (_ []Operator, err error) {
 	ctx, done := d.observe(ctx, "ListOperators", poolRead)
 	defer done(&err)
 
-	ops, err := d.readOperators(ctx, `SELECT id, name, pws_operator FROM operators ORDER BY name`)
+	ops, err := d.readOperators(ctx, `SELECT id, name, pws_operator, user_plane_aggregation FROM operators ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list operators: %w", err)
 	}
@@ -345,7 +353,7 @@ func (d *DB) readOperators(ctx context.Context, query string, args ...any) ([]Op
 
 	if err := each(ctx, tx, query, func(s scanner) error {
 		var o Operator
-		if err := s.Scan(&o.ID, &o.Name, &o.PWSOperator); err != nil {
+		if err := s.Scan(&o.ID, &o.Name, &o.PWSOperator, &o.UserPlane.Aggregation); err != nil {
 			return err
 		}
 

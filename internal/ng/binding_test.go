@@ -176,7 +176,7 @@ func TestDownlinkFromAnotherAMFSetRejected(t *testing.T) {
 	x.amf2.Send(t, &ngap.DownlinkNASTransport{AMFUENGAPID: 2, RANUENGAPID: ue.amfRANID, NASPDU: nas})
 
 	ind := expect(t, x.amf2, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Value != ngap.CauseRadioNetworkUnknownLocalUENGAPID {
+	if ind.Cause == nil || !ind.Cause.Equal(ngap.CauseRadioNetworkUnknownLocalUENGAPID.Cause()) {
 		t.Fatalf("Error Indication = %+v", ind)
 	}
 
@@ -194,7 +194,7 @@ func TestUEContextReleaseCommandFromAnotherAMFOfTheSet(t *testing.T) {
 	ue := attach(t, x.gnb, x.amf1, 1, 10)
 
 	x.amf2.Send(t, &ngap.UEContextReleaseCommand{
-		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: ue.amfID}, Cause: &causeUnknownLocal,
+		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: new(ue.amfID)}, Cause: &causeUnknownLocal,
 	})
 
 	expectRaw(t, x.gnb, "initiating", ngap.ProcUEContextRelease)
@@ -215,7 +215,7 @@ func TestOverloadReplayedAndClearedOnAMFLoss(t *testing.T) {
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	amf.Send(t, &ngap.OverloadStart{
-		AMFOverloadResponse: &ngap.OverloadResponse{OverloadAction: ngap.OverloadActionPermitEmergencySessionsAndMTServicesOnly},
+		AMFOverloadResponse: &ngap.OverloadResponse{OverloadAction: new(ngap.OverloadActionPermitEmergencySessionsAndMTServicesOnly)},
 	})
 
 	want := ngap.GUAMIList{{GUAMI: guami(t, "00101", 2, 1, 0)}}
@@ -232,7 +232,7 @@ func TestOverloadReplayedAndClearedOnAMFLoss(t *testing.T) {
 
 		start := expect(t, g, "initiating", ngap.ProcOverloadStart, ngap.ParseOverloadStart)
 		if len(start.GUAMIList) != 1 || start.GUAMIList[0].GUAMI != want[0].GUAMI || start.AMFOverloadResponse == nil ||
-			start.AMFOverloadResponse.OverloadAction != ngap.OverloadActionPermitEmergencySessionsAndMTServicesOnly {
+			*start.AMFOverloadResponse.OverloadAction != ngap.OverloadActionPermitEmergencySessionsAndMTServicesOnly {
 			t.Fatalf("Overload Start = %+v", start)
 		}
 	}

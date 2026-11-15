@@ -63,7 +63,7 @@ func TestUnsupportedProceduresRejected(t *testing.T) {
 
 	reject := s1ap.CriticalityReject
 	ueBody := bodyOf(t, uplinkNAS(t, 11, 7))
-	nonUEBody := bodyOf(t, &s1ap.ErrorIndication{Cause: &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified}})
+	nonUEBody := bodyOf(t, &s1ap.ErrorIndication{Cause: s1ap.Ptr(s1ap.CauseMiscUnspecified.Cause())})
 
 	enb.Send(t, initiating(s1ap.ProcPathSwitchRequest, reject, ueBody))
 
@@ -135,7 +135,7 @@ func TestGWContextReleaseIndicationReleasesTheUE(t *testing.T) {
 	expectErrorIndication(t, enb, s1ap.CauseRadioNetworkUnknownMMEUES1APID, &ue.ranMMEID, &ue.enbUEID)
 }
 
-var causeUserInactivity = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUserInactivity}
+var causeUserInactivity = s1ap.CauseRadioNetworkUserInactivity.Cause()
 
 func TestErrorIndicationWithOnlyTheENBUEID(t *testing.T) {
 	t.Parallel()
@@ -147,7 +147,7 @@ func TestErrorIndicationWithOnlyTheENBUEID(t *testing.T) {
 	enb, mme := upAndRunning(t, h, mmeListener)
 	ue := attach(t, enb, mme, 3, 77)
 
-	cause := s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownENBUES1APID}
+	cause := s1ap.CauseRadioNetworkUnknownENBUES1APID.Cause()
 	mme.Send(t, &s1ap.ErrorIndication{ENBUES1APID: &ue.mmeENBID, Cause: &cause})
 
 	expectReset(t, enb, item(ue.ranMMEID, ue.enbUEID))
@@ -199,7 +199,7 @@ func TestMessagesBeforeS1Setup(t *testing.T) {
 	enb.Send(t, uplinkNAS(t, 11, 7))
 
 	ind := expect(t, enb, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Group != s1ap.CauseGroupProtocol || ind.Cause.Value != s1ap.CauseProtocolMessageNotCompatible {
+	if ind.Cause == nil || !ind.Cause.Equal(s1ap.CauseProtocolMessageNotCompatible.Cause()) {
 		t.Fatalf("Error Indication cause = %v, want message not compatible with receiver state", ind.Cause)
 	}
 
@@ -212,7 +212,7 @@ func TestMessagesBeforeS1Setup(t *testing.T) {
 	enb.Send(t, initiating(s1ap.ProcHandoverPreparation, s1ap.CriticalityReject, bodyOf(t, uplinkNAS(t, 11, 7))))
 
 	fail := expect(t, enb, "unsuccessful", s1ap.ProcHandoverPreparation, s1ap.ParseHandoverPreparationFailure)
-	if fail.Cause == nil || fail.Cause.Value != s1ap.CauseProtocolMessageNotCompatible || *fail.MMEUES1APID != 11 ||
+	if fail.Cause == nil || !fail.Cause.Equal(s1ap.CauseProtocolMessageNotCompatible.Cause()) || *fail.MMEUES1APID != 11 ||
 		*fail.ENBUES1APID != 7 {
 		t.Fatalf("Handover Preparation Failure = %+v", fail)
 	}
@@ -224,7 +224,7 @@ func TestMessagesBeforeS1Setup(t *testing.T) {
 	mme.Send(t, contextSetup(attached{enbUEID: 6, ranMMEID: 5}, false))
 
 	ics := expect(t, mme, "unsuccessful", s1ap.ProcInitialContextSetup, s1ap.ParseInitialContextSetupFailure)
-	if ics.Cause == nil || ics.Cause.Value != s1ap.CauseProtocolMessageNotCompatible || *ics.MMEUES1APID != 5 {
+	if ics.Cause == nil || !ics.Cause.Equal(s1ap.CauseProtocolMessageNotCompatible.Cause()) || *ics.MMEUES1APID != 5 {
 		t.Fatalf("Initial Context Setup Failure = %+v", ics)
 	}
 
@@ -254,7 +254,7 @@ func TestInitialUEMessageWithoutNASPDU(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := p.Remove(p.Index(s1ap.IDNASPDU)); err != nil {
+	if err := p.Remove(indexOf(t, p, s1ap.IDNASPDU)); err != nil {
 		t.Fatal(err)
 	}
 

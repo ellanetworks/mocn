@@ -130,6 +130,29 @@ export interface AMF extends CoreNode {
   status?: AMFStatus;
 }
 
+export type UserPlaneState = "ready" | "unavailable" | "off";
+
+export type UserPlaneReason =
+  | "not_connected"
+  | "no_route"
+  | "route_mismatch"
+  | "no_address"
+  | "interface_error"
+  | "too_many_operators";
+
+export interface UserPlaneStatus {
+  state: UserPlaneState;
+  reason?: UserPlaneReason;
+  interface?: string;
+  addresses: string[];
+  since: string;
+}
+
+export interface UserPlane {
+  aggregation?: boolean;
+  status?: UserPlaneStatus;
+}
+
 export interface Operator {
   name: string;
   pws_operator: boolean;
@@ -138,6 +161,7 @@ export interface Operator {
   global_gnb_id?: GlobalGNBID;
   mmes: MME[];
   amfs: AMF[];
+  user_plane?: UserPlane;
   ue_connections?: number;
   ue_connections_by_radio?: RadioUEConnections[];
 }

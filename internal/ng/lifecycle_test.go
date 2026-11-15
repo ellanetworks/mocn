@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ellanetworks/core/ngap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 )
 
 func TestRepeatedNGSetupReinitialisesUEContexts(t *testing.T) {
@@ -20,8 +21,8 @@ func TestRepeatedNGSetupReinitialisesUEContexts(t *testing.T) {
 	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv128, ta(t, 1, "00101")))
 
 	reset := expect(t, amf, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
-	if len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].RANUENGAPID != ue.amfRANID ||
-		reset.Cause.Value != ngap.CauseRadioNetworkReleaseDueToNGRANGeneratedReason {
+	if len(assoc.Items(reset.ResetType.PartOfNGInterface)) != 1 || *assoc.Items(reset.ResetType.PartOfNGInterface)[0].RANUENGAPID != ue.amfRANID ||
+		!reset.Cause.Equal(ngap.CauseRadioNetworkReleaseDueToNGRANGeneratedReason.Cause()) {
 		t.Fatalf("NG Reset = %+v", reset)
 	}
 

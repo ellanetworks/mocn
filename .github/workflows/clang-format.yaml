@@ -1,0 +1,22 @@
+name: Clang Format
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+
+jobs:
+  format:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-21
+
+      - name: Check code formatting
+        run: find internal/gtpu/bpf -path internal/gtpu/bpf/include -prune -o -name '*.[ch]' -print | xargs clang-format-21 --dry-run --Werror --verbose

@@ -53,15 +53,6 @@ This path ends the user's sessions, except the one of the session cookie the req
 | `current_password` | string | Yes      | Current password. |
 | `password`         | string | Yes      | New password, 8 to 72 bytes. |
 
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `400` | Wrong current password, or invalid new password. |
-| `409` | The user has no password. |
-| `429` | 100 wrong passwords in an hour for the account, counting failed logins. |
-| `503` | The request was cancelled while waiting to check the password. |
-
 ### Sample Request
 
 ```json
@@ -148,14 +139,6 @@ At most 50 users.
 | `role_id`     | int     | Yes      | `1` to `3`. See [roles](index.md#roles). |
 | `role_pinned` | boolean | No       | Default `false`. |
 
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `201` | Created. |
-| `400` | Invalid field, or 50 users exist. |
-| `409` | A user has the email, in any case. |
-
 ### Sample Request
 
 ```json
@@ -213,13 +196,6 @@ This path sets the role of a user. A role change ends the user's sessions. An Ad
 | `role_id`     | int     | Yes      | `1` to `3`. |
 | `role_pinned` | boolean | No       | Without it, the current value is kept. |
 
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `403` | The user is the Admin of the token. |
-| `409` | The user is the last Admin with a password. |
-
 ### Sample Request
 
 ```json
@@ -252,12 +228,6 @@ This path ends the user's sessions. An Admin cannot update its own password here
 | ---------- | ------ | -------- | ----------- |
 | `password` | string | Yes      | 8 to 72 bytes. |
 
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `403` | The user is the Admin of the token. |
-
 ### Sample Response
 
 ```json
@@ -276,13 +246,6 @@ This path removes the password of a user, who then cannot log in. It ends the us
 | ------ | -------------------------------- |
 | DELETE | `/api/v1/users/{email}/password` |
 
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `403` | The user is the Admin of the token. |
-| `409` | The user has no password, or is the last Admin with a password. |
-
 ### Sample Response
 
 ```json
@@ -300,13 +263,6 @@ This path deletes the user with its sessions and API tokens. An Admin cannot del
 | Method | Path                    |
 | ------ | ----------------------- |
 | DELETE | `/api/v1/users/{email}` |
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `403` | The user is the Admin of the token. |
-| `409` | The user is the last Admin with a password. |
 
 ### Sample Response
 
@@ -339,14 +295,6 @@ This path returns the token, the only time it is shown. At most 12 per user. Req
 | Field   | Type   | Description |
 | ------- | ------ | ----------- |
 | `token` | string | `ellamocn_`, the token identifier, `_` and the secret. |
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `201` | Created. |
-| `400` | Invalid field, or 12 tokens exist. |
-| `409` | The user has a token of that name. |
 
 ### Sample Request
 
@@ -420,12 +368,6 @@ This path returns the user's API tokens, oldest first.
 | ------ | --------------------------------------- |
 | DELETE | `/api/v1/users/me/api-tokens/{id}`      |
 | DELETE | `/api/v1/users/{email}/api-tokens/{id}` |
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `404` | The user has no token with that identifier. |
 
 ### Sample Response
 

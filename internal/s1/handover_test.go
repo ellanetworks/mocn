@@ -13,11 +13,11 @@ func pathSwitchRequest(t *testing.T, enbID s1ap.ENBUES1APID, sourceMMEID s1ap.MM
 	return &s1ap.PathSwitchRequest{
 		ENBUES1APID: enbID, SourceMMEUES1APID: sourceMMEID,
 		ERABToBeSwitchedDL: []s1ap.ERABToBeSwitchedDLItem{{
-			ERABID: 5, TransportLayerAddress: s1ap.TransportLayerAddress{10, 0, 0, 2}, GTPTEID: 7,
+			ERABID: 5, TransportLayerAddress: tlaOf("10.0.0.2"), GTPTEID: 7,
 		}},
 		EUTRANCGI:              &s1ap.EUTRANCGI{PLMNIdentity: plmnID(t, "001", "01"), CellID: 0x2ab01},
 		TAI:                    &s1ap.TAI{PLMNIdentity: plmnID(t, "001", "01"), TAC: 1},
-		UESecurityCapabilities: &s1ap.UESecurityCapabilities{EncryptionAlgorithms: 0x8000, IntegrityProtectionAlgorithms: 0xc000},
+		UESecurityCapabilities: &s1ap.UESecurityCapabilities{EncryptionAlgorithms: s1ap.SecurityAlgorithms{Value: 0x8000}, IntegrityProtectionAlgorithms: s1ap.SecurityAlgorithms{Value: 0xc000}},
 		SourceMMEGUMMEI:        g,
 	}
 }
@@ -41,8 +41,8 @@ func withMMEUES1APID2(t *testing.T, got frame, want s1ap.MMEUES1APID) frame {
 		t.Fatal(err)
 	}
 
-	i := p.Index(s1ap.IDMMEUES1APID2)
-	if i != p.Index(s1ap.IDSecurityContext)+1 {
+	i := indexOf(t, p, s1ap.IDMMEUES1APID2)
+	if i != indexOf(t, p, s1ap.IDSecurityContext)+1 {
 		t.Fatalf("MME UE S1AP ID 2 at %d, want right after the Security Context", i)
 	}
 
@@ -76,9 +76,9 @@ func TestHandoverOutOfTheGateway(t *testing.T) {
 
 	required := &s1ap.HandoverRequired{
 		MMEUES1APID: ue.ranMMEID, ENBUES1APID: ue.enbUEID, HandoverType: s1ap.HandoverTypeIntraLTE,
-		Cause: &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkHandoverDesirableForRadio},
-		TargetID: s1ap.TargetID{TargeteNBID: s1ap.TargeteNBID{
-			GlobalENBID: s1ap.GlobalENBID{PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{Kind: s1ap.ENBIDMacro, Value: 0x77}},
+		Cause: s1ap.Ptr(s1ap.CauseRadioNetworkHandoverDesirableForRadio.Cause()),
+		TargetID: s1ap.TargetID{TargeteNBID: &s1ap.TargeteNBID{
+			GlobalENBID: s1ap.GlobalENBID{PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{MacroENBID: s1ap.Ptr(s1ap.MacroENBID(0x77))}},
 			SelectedTAI: s1ap.TAI{PLMNIdentity: plmnID(t, "001", "01"), TAC: 9},
 		}},
 		SourceToTarget: s1ap.TransparentContainer{0x01, 0x02},
@@ -112,8 +112,8 @@ func TestHandoverOutOfTheGateway(t *testing.T) {
 	assertRelayed(t, status, f)
 
 	release := &s1ap.UEContextReleaseCommand{
-		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: ue.mmeUEID, ENBUES1APID: ue.mmeENBID, Pair: true},
-		Cause:     &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkSuccessfulHandover},
+		UES1APIDs: s1ap.UES1APIDs{UES1APIDPair: &s1ap.UES1APIDPair{MMEUES1APID: ue.mmeUEID, ENBUES1APID: ue.mmeENBID}},
+		Cause:     s1ap.Ptr(s1ap.CauseRadioNetworkSuccessfulHandover.Cause()),
 	}
 	mme.Send(t, release)
 	expectRaw(t, enb, "initiating", s1ap.ProcUEContextRelease)
@@ -136,7 +136,7 @@ func TestHandoverCancelled(t *testing.T) {
 
 	cancel := &s1ap.HandoverCancel{
 		MMEUES1APID: ue.ranMMEID, ENBUES1APID: ue.enbUEID,
-		Cause: &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkHandoverCancelled},
+		Cause: s1ap.Ptr(s1ap.CauseRadioNetworkHandoverCancelled.Cause()),
 	}
 	enb.Send(t, cancel)
 
@@ -159,7 +159,7 @@ func handoverRequest(t *testing.T, mmeID s1ap.MMEUES1APID, cellID uint32) *s1ap.
 
 	container, err := (&s1ap.SourceeNBToTargeteNBTransparentContainer{
 		RRCContainer:         s1ap.RRCContainer{0x80},
-		TargetCellID:         s1ap.EUTRANCGI{PLMNIdentity: plmnID(t, "001", "01"), CellID: cellID},
+		TargetCellID:         s1ap.EUTRANCGI{PLMNIdentity: plmnID(t, "001", "01"), CellID: s1ap.CellIdentity(cellID)},
 		UEHistoryInformation: s1ap.UEHistoryInformation{{UTRANCell: new(s1ap.LastVisitedUTRANCellInformation{0x01})}},
 	}).Marshal()
 	if err != nil {
@@ -168,17 +168,17 @@ func handoverRequest(t *testing.T, mmeID s1ap.MMEUES1APID, cellID uint32) *s1ap.
 
 	return &s1ap.HandoverRequest{
 		MMEUES1APID: mmeID, HandoverType: s1ap.HandoverTypeIntraLTE,
-		Cause:  &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkHandoverDesirableForRadio},
+		Cause:  s1ap.Ptr(s1ap.CauseRadioNetworkHandoverDesirableForRadio.Cause()),
 		UEAMBR: s1ap.UEAggregateMaximumBitRate{DL: 1000000000, UL: 500000000},
 		ERABToBeSetup: []s1ap.ERABToBeSetupItemHOReq{{
-			ERABID: 5, TransportLayerAddress: s1ap.TransportLayerAddress{10, 45, 0, 1}, GTPTEID: 0x1234,
+			ERABID: 5, TransportLayerAddress: tlaOf("10.45.0.1"), GTPTEID: 0x1234,
 			QoS: s1ap.ERABLevelQoSParameters{QCI: 9, ARP: s1ap.AllocationAndRetentionPriority{
 				PriorityLevel: 15, PreemptionCapability: s1ap.PreemptionShallNotTrigger,
 				PreemptionVulnerability: s1ap.PreemptionNotPreemptable,
 			}},
 		}},
 		SourceToTarget:         container,
-		UESecurityCapabilities: s1ap.UESecurityCapabilities{EncryptionAlgorithms: 0x8000, IntegrityProtectionAlgorithms: 0xc000},
+		UESecurityCapabilities: s1ap.UESecurityCapabilities{EncryptionAlgorithms: s1ap.SecurityAlgorithms{Value: 0x8000}, IntegrityProtectionAlgorithms: s1ap.SecurityAlgorithms{Value: 0xc000}},
 		SecurityContext:        s1ap.SecurityContext{NextHopChainingCount: 1, NextHopParameter: securityKey()},
 	}
 }
@@ -213,7 +213,7 @@ func TestHandoverBetweenRadiosOfTheGateway(t *testing.T) {
 
 	ack := &s1ap.HandoverRequestAcknowledge{
 		MMEUES1APID: &targetMMEID, ENBUES1APID: new(s1ap.ENBUES1APID(21)),
-		ERABAdmitted:   []s1ap.ERABAdmittedItem{{ERABID: 5, TransportLayerAddress: s1ap.TransportLayerAddress{10, 0, 0, 2}, GTPTEID: 9}},
+		ERABAdmitted:   []s1ap.ERABAdmittedItem{{ERABID: 5, TransportLayerAddress: tlaOf("10.0.0.2"), GTPTEID: 9}},
 		TargetToSource: s1ap.TransparentContainer{0xcc},
 	}
 	enb2.Send(t, ack)
@@ -266,7 +266,7 @@ func TestHandoverFailureFromTheTargetRadio(t *testing.T) {
 
 	fail := &s1ap.HandoverFailure{
 		MMEUES1APID: &targetMMEID,
-		Cause:       &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkNoRadioResourcesInTargetCell},
+		Cause:       s1ap.Ptr(s1ap.CauseRadioNetworkNoRadioResourcesInTargetCell.Cause()),
 	}
 	enb.Send(t, fail)
 
@@ -297,7 +297,7 @@ func TestHandoverRequestWithoutATargetRadioRejected(t *testing.T) {
 
 		fail := expect(t, mme, "unsuccessful", s1ap.ProcHandoverResourceAllocation, s1ap.ParseHandoverFailure)
 		if fail.MMEUES1APID == nil || *fail.MMEUES1APID != 11 || fail.Cause == nil ||
-			fail.Cause.Group != s1ap.CauseGroupRadioNetwork || fail.Cause.Value != s1ap.CauseRadioNetworkUnknownTargetID {
+			!fail.Cause.Equal(s1ap.CauseRadioNetworkUnknownTargetID.Cause()) {
 			t.Fatalf("Handover Failure = %+v", fail)
 		}
 	}
@@ -351,8 +351,8 @@ func TestPathSwitchBetweenRadiosOfTheGateway(t *testing.T) {
 	}
 
 	release := expect(t, enb1, "initiating", s1ap.ProcUEContextRelease, s1ap.ParseUEContextReleaseCommand)
-	if ids := release.UES1APIDs; !ids.Pair || ids.MMEUES1APID != ue.ranMMEID || ids.ENBUES1APID != ue.enbUEID ||
-		release.Cause == nil || release.Cause.Value != s1ap.CauseRadioNetworkSuccessfulHandover {
+	if ids := release.UES1APIDs; ids.UES1APIDPair == nil || ids.UES1APIDPair.MMEUES1APID != ue.ranMMEID || ids.UES1APIDPair.ENBUES1APID != ue.enbUEID ||
+		release.Cause == nil || !release.Cause.Equal(s1ap.CauseRadioNetworkSuccessfulHandover.Cause()) {
 		t.Fatalf("UE Context Release Command to the source = %+v", release)
 	}
 
@@ -362,7 +362,7 @@ func TestPathSwitchBetweenRadiosOfTheGateway(t *testing.T) {
 
 	enb1.Send(t, &s1ap.UEContextReleaseRequest{
 		MMEUES1APID: ue.ranMMEID, ENBUES1APID: ue.enbUEID,
-		Cause:                      &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkSuccessfulHandover},
+		Cause:                      s1ap.Ptr(s1ap.CauseRadioNetworkSuccessfulHandover.Cause()),
 		GWContextReleaseIndication: new(s1ap.GWContextReleaseIndicationTrue),
 	})
 	enb1.Send(t, &s1ap.UEContextReleaseComplete{MMEUES1APID: &ue.ranMMEID, ENBUES1APID: &ue.enbUEID})
@@ -370,14 +370,14 @@ func TestPathSwitchBetweenRadiosOfTheGateway(t *testing.T) {
 	mme.Quiet(t, 200*time.Millisecond)
 
 	mme.Send(t, &s1ap.UEContextReleaseCommand{
-		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: ue.mmeUEID},
-		Cause:     &s1ap.Cause{Group: s1ap.CauseGroupNAS, Value: s1ap.CauseNASNormalRelease},
+		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: s1ap.Ptr(ue.mmeUEID)},
+		Cause:     s1ap.Ptr(s1ap.CauseNASNormalRelease.Cause()),
 	})
 
 	_, raw = expectRaw(t, enb2, "initiating", s1ap.ProcUEContextRelease)
 
 	got, _, err := raw.UES1APIDs()
-	if err != nil || got.MMEUES1APID != ranMMEID {
+	if err != nil || mmeIDOf(got) != ranMMEID {
 		t.Fatalf("UE Context Release Command IDs = %+v, %v", got, err)
 	}
 
@@ -400,7 +400,7 @@ func TestPathSwitchRequestFailureReleasesTheNewConnection(t *testing.T) {
 
 	fail := &s1ap.PathSwitchRequestFailure{
 		MMEUES1APID: new(s1ap.MMEUES1APID(4000)), ENBUES1APID: &mmeENBID,
-		Cause: &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownMMEUES1APID},
+		Cause: s1ap.Ptr(s1ap.CauseRadioNetworkUnknownMMEUES1APID.Cause()),
 	}
 	mme.Send(t, fail)
 
@@ -428,8 +428,7 @@ func TestPathSwitchRequestWithoutAServingMMERejected(t *testing.T) {
 
 		psf := expect(t, enb, "unsuccessful", s1ap.ProcPathSwitchRequest, s1ap.ParsePathSwitchRequestFailure)
 		if psf.MMEUES1APID == nil || *psf.MMEUES1APID != 33 || psf.ENBUES1APID == nil || *psf.ENBUES1APID != 9 ||
-			psf.Cause == nil || psf.Cause.Group != s1ap.CauseGroupTransport ||
-			psf.Cause.Value != s1ap.CauseTransportResourceUnavailable {
+			psf.Cause == nil || !psf.Cause.Equal(s1ap.CauseTransportResourceUnavailable.Cause()) {
 			t.Fatalf("Path Switch Request Failure = %+v", psf)
 		}
 	}

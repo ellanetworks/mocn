@@ -1,6 +1,7 @@
 package ng_test
 
 import (
+	"net/netip"
 	"testing"
 	"time"
 
@@ -98,9 +99,9 @@ func TestNGAPSpans(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	value, err := per.Marshal(ngap.TraceActivation{
+	value, err := per.Marshal(&ngap.TraceActivation{
 		NGRANTraceID: ngap.NGRANTraceID{1, 2, 3, 4, 5, 6, 0, 1}, InterfacesToTrace: 0x80,
-		TraceCollectionEntityIPAddress: ngap.TransportLayerAddress{10, 0, 0, 1},
+		TraceCollectionEntityIPAddress: tla(netip.MustParseAddr("10.0.0.1")),
 	}, per.Aligned)
 	if err != nil {
 		t.Fatal(err)

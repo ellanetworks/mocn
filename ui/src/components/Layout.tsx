@@ -91,16 +91,16 @@ const navSections: { title?: string; items: NavItem[] }[] = [
         permission: "user:self",
       },
       {
-        to: "/operators",
-        label: "Operators",
-        icon: <HubIcon color="primary" />,
-        permission: "operator:read",
-      },
-      {
         to: "/radios",
         label: "Radios",
         icon: <SettingsInputAntennaIcon color="primary" />,
         permission: "radio:read",
+      },
+      {
+        to: "/operators",
+        label: "Operators",
+        icon: <HubIcon color="primary" />,
+        permission: "operator:read",
       },
     ],
   },

@@ -50,6 +50,7 @@ type Table[R, A comparable, N, C ID, X any] struct {
 	nextCoreID  C
 	nextRANID   N
 	errFull     error
+	onRemove    func(*UE[R, A, N, C, X])
 }
 
 func New[R, A comparable, N, C ID, X any](maxRANID N, maxCoreID C, errFull error) *Table[R, A, N, C, X] {
@@ -62,6 +63,10 @@ func New[R, A comparable, N, C ID, X any](maxRANID N, maxCoreID C, errFull error
 		maxCoreID:   maxCoreID,
 		errFull:     errFull,
 	}
+}
+
+func (t *Table[R, A, N, C, X]) OnRemove(f func(*UE[R, A, N, C, X])) {
+	t.onRemove = f
 }
 
 func (t *Table[R, A, N, C, X]) Add(u *UE[R, A, N, C, X]) error {
@@ -181,6 +186,10 @@ func (t *Table[R, A, N, C, X]) Remove(us ...*UE[R, A, N, C, X]) []*UE[R, A, N, C
 
 		u.TraceID = tracing.RANTraceID{}
 		t.dropCoreID(u)
+
+		if t.onRemove != nil {
+			t.onRemove(u)
+		}
 
 		out = append(out, u)
 	}

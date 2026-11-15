@@ -27,13 +27,13 @@ This path returns the radios, oldest association first.
 
 | Field                              | Type   | Description |
 | ---------------------------------- | ------ | ----------- |
-| `ref`                              | string | Radio identity, and the path segment that addresses it: `<type>:<mcc>-<mnc>:<id>`, as Ella Core names radios. See [Radio Ref](#radio-ref). Absent while the radio has no Global eNB ID or Global gNB ID. |
+| `ref`                              | string | Radio identity, and the path segment that addresses it: `<type>:<mcc>-<mnc>:<id>`, as Ella Core names radios. See [Radio Ref](#radio-ref). Absent while the radio has no Global eNB ID or Global gNB ID, and in the `setup_failed` state. |
 | `type`                             | string | 3GPP node type: `eNB` over S1 or `gNB` over NG. |
-| `global_enb_id`                    | object | Global eNB ID from the S1 SETUP REQUEST. Absent for a gNB, before the radio sends one, or after it is rejected. |
+| `global_enb_id`                    | object | Global eNB ID from the S1 SETUP REQUEST. Absent for a gNB, before the radio sends one, or when Ella MOCN cannot decode it. |
 | `global_enb_id.plmn`               | object | PLMN, with `mcc` and `mnc`. |
 | `global_enb_id.enb_id_type`        | string | `macro`, `home`, `short_macro` or `long_macro`. |
 | `global_enb_id.enb_id`             | int    | eNB ID: 20 bits for `macro`, 28 for `home`, 18 for `short_macro`, 21 for `long_macro`. |
-| `global_gnb_id`                    | object | Global gNB ID from the NG SETUP REQUEST. Absent for an eNB, before the radio sends one, or after it is rejected. |
+| `global_gnb_id`                    | object | Global gNB ID from the NG SETUP REQUEST. Absent for an eNB, before the radio sends one, or when Ella MOCN cannot decode it. |
 | `global_gnb_id.plmn`               | object | PLMN, with `mcc` and `mnc`. |
 | `global_gnb_id.gnb_id`             | int    | gNB ID, less than 2^`bit_length`. |
 | `global_gnb_id.bit_length`         | int    | gNB ID length, in bits: `22` to `32`. |
@@ -44,10 +44,16 @@ This path returns the radios, oldest association first.
 | `supported_tas[].broadcast_plmns[].plmn` | object | PLMN, with `mcc` and `mnc`. |
 | `supported_tas[].broadcast_plmns[].snssais` | array | NG only. TAI Slice Support List of the PLMN in the tracking area: S-NSSAIs, each with `sst` (`0` to `255`) and `sd` (6 hex digits, absent when none). Absent for an eNB. |
 | `default_paging_drx`               | int    | Default paging DRX, in radio frames: `32`, `64`, `128` or `256`. Absent before the setup. |
-| `state`                            | string | `connected`: SCTP association up, no successful S1 or NG Setup. `up`: S1 or NG Setup succeeded. |
+| `state`                            | string | `connected`: SCTP association up, no successful S1 or NG Setup. `up`: S1 or NG Setup succeeded. `setup_failed`: SCTP association up, Ella MOCN rejected the last S1 or NG Setup. |
+| `setup_failure`                    | object | Last S1 or NG Setup that Ella MOCN rejected. Present in the `setup_failed` state only. |
+| `setup_failure.cause`              | string | Cause of the S1 SETUP FAILURE or NG SETUP FAILURE, for example `Unknown PLMN`. |
+| `setup_failure.reason`             | string | Why Ella MOCN rejected the setup, for example `no operator serves a broadcast PLMN`. |
+| `setup_failure.at`                 | string | When Ella MOCN rejected the setup. |
 | `connected_at`                     | string | When the SCTP association was established. |
 | `tnl_addresses`                    | array  | Addresses of the radio. |
 | `ue_connections`                   | int    | UE-associated logical S1-connections or NG-connections from the radio. |
+
+In the `setup_failed` state, `global_enb_id`, `global_gnb_id`, `name`, `supported_tas` and `default_paging_drx` are those of the rejected S1 SETUP REQUEST or NG SETUP REQUEST, and `ue_connections` is `0`.
 
 ### Radio Ref
 
@@ -140,11 +146,41 @@ This path returns the radios, oldest association first.
                 "connected_at": "2026-11-13T16:31:55.645102117Z",
                 "tnl_addresses": ["127.0.0.1"],
                 "ue_connections": 1
+            },
+            {
+                "type": "gNB",
+                "global_gnb_id": {
+                    "plmn": {"mcc": "001", "mnc": "03"},
+                    "gnb_id": 2,
+                    "bit_length": 22
+                },
+                "name": "gnb-west",
+                "supported_tas": [
+                    {
+                        "tac": "000001",
+                        "broadcast_plmns": [
+                            {
+                                "plmn": {"mcc": "001", "mnc": "03"},
+                                "snssais": [{"sst": 1}]
+                            }
+                        ]
+                    }
+                ],
+                "default_paging_drx": 128,
+                "state": "setup_failed",
+                "setup_failure": {
+                    "cause": "Unknown PLMN or SNPN",
+                    "reason": "no operator serves a broadcast PLMN",
+                    "at": "2026-11-13T16:32:10.120934871Z"
+                },
+                "connected_at": "2026-11-13T16:32:10.118410254Z",
+                "tnl_addresses": ["127.0.0.2"],
+                "ue_connections": 0
             }
         ],
         "page": 1,
         "per_page": 25,
-        "total_count": 3
+        "total_count": 4
     }
 }
 ```
@@ -172,12 +208,6 @@ The fields of [List Radios](#list-radios), plus:
 | `ue_connections_by_operator`                  | array  | UE-associated logical S1-connections or NG-connections from the radio, by operator. Lists every operator that owns a PLMN the radio broadcasts, and every other operator with UE connections from the radio, sorted by operator name. Absent when empty. |
 | `ue_connections_by_operator[].operator`       | string | Operator name. |
 | `ue_connections_by_operator[].ue_connections` | int    | UE-associated logical S1-connections or NG-connections. |
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `404` | No radio has that `ref`. |
 
 ### Sample Response
 

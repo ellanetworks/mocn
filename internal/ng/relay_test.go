@@ -11,6 +11,7 @@ import (
 
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/core/per"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/ng"
 )
 
@@ -38,9 +39,9 @@ func uli(t *testing.T, plmn string, cell uint64) ngap.UserLocationInformation {
 
 	id := plmnID(t, plmn[:3], plmn[3:])
 
-	return ngap.UserLocationInformation{
-		Kind: ngap.UserLocationNR, PLMNIdentity: id, CellIdentity: cell, TAI: ngap.TAI{PLMNIdentity: id, TAC: 1},
-	}
+	return ngap.UserLocationInformation{NR: &ngap.UserLocationInformationNR{
+		NRCGI: ngap.NRCGI{PLMNIdentity: id, NRCellIdentity: ngap.NRCellIdentity(cell)}, TAI: ngap.TAI{PLMNIdentity: id, TAC: 1},
+	}}
 }
 
 func initialUE(t *testing.T, ranID ngap.RANUENGAPID, plmn string) *ngap.InitialUEMessage {
@@ -105,7 +106,7 @@ func contextSetup(t *testing.T, ue attached) *ngap.InitialContextSetupRequest {
 		AMFUENGAPID: ue.amfID, RANUENGAPID: ue.amfRANID,
 		GUAMI:                  guami(t, "00101", 2, 1, 0),
 		AllowedNSSAI:           ngap.AllowedNSSAI{{SNSSAI: slice.SNSSAI}},
-		UESecurityCapabilities: ngap.UESecurityCapabilities{NREncryptionAlgorithms: 0xe000, NRIntegrityProtectionAlgorithms: 0xe000},
+		UESecurityCapabilities: ngap.UESecurityCapabilities{NREncryptionAlgorithms: ngap.SecurityAlgorithmsFrom(0xe000), NRIntegrityProtectionAlgorithms: ngap.SecurityAlgorithmsFrom(0xe000)},
 		SecurityKey:            securityKey(),
 		NASPDU:                 &nas,
 	}
@@ -167,8 +168,8 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	expectRaw(t, amf, "successful", ngap.ProcInitialContextSetup)
 
 	cmd := &ngap.UEContextReleaseCommand{
-		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: ue.amfID, RANUENGAPID: ue.amfRANID, Pair: true},
-		Cause:     &ngap.Cause{Group: ngap.CauseGroupNAS, Value: 0},
+		UENGAPIDs: ngap.UENGAPIDs{UENGAPIDPair: &ngap.UENGAPIDPair{AMFUENGAPID: ue.amfID, RANUENGAPID: ue.amfRANID}},
+		Cause:     new(ngap.CauseNASNormalRelease.Cause()),
 	}
 	amf.Send(t, cmd)
 
@@ -176,7 +177,7 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	assertRelayed(t, cmd, f)
 
 	pair, _, err := raw.UENGAPIDs()
-	if err != nil || !pair.Pair || pair.AMFUENGAPID != ue.ranAMFID || pair.RANUENGAPID != 7 {
+	if err != nil || pair.UENGAPIDPair == nil || pair.UENGAPIDPair.AMFUENGAPID != ue.ranAMFID || pair.UENGAPIDPair.RANUENGAPID != 7 {
 		t.Fatalf("UE NGAP IDs = %+v, %v", pair, err)
 	}
 
@@ -208,14 +209,14 @@ func TestReleaseCommandWithAMFUEIDOnly(t *testing.T) {
 	ue := attach(t, gnb, amf, 9, 77)
 
 	amf.Send(t, &ngap.UEContextReleaseCommand{
-		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: 77},
-		Cause:     &ngap.Cause{Group: ngap.CauseGroupNAS, Value: 0},
+		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: new(ngap.AMFUENGAPID(77))},
+		Cause:     new(ngap.CauseNASNormalRelease.Cause()),
 	})
 
 	_, raw := expectRaw(t, gnb, "initiating", ngap.ProcUEContextRelease)
 
 	ids, _, err := raw.UENGAPIDs()
-	if err != nil || ids.Pair || ids.AMFUENGAPID != ue.ranAMFID {
+	if err != nil || ids.AMFUENGAPID == nil || *ids.AMFUENGAPID != ue.ranAMFID {
 		t.Fatalf("UE NGAP IDs = %+v, %v", ids, err)
 	}
 }
@@ -232,14 +233,14 @@ func TestUnknownUEIDs(t *testing.T) {
 	gnb.Send(t, &ngap.UplinkNASTransport{AMFUENGAPID: 999, RANUENGAPID: 1, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
 
 	ind := expect(t, gnb, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Value != ngap.CauseRadioNetworkUnknownLocalUENGAPID {
+	if ind.Cause == nil || !ind.Cause.Equal(ngap.CauseRadioNetworkUnknownLocalUENGAPID.Cause()) {
 		t.Fatalf("cause = %v", ind.Cause)
 	}
 
 	amf.Send(t, &ngap.DownlinkNASTransport{AMFUENGAPID: 5, RANUENGAPID: 12345, NASPDU: nas})
 
 	ind = expect(t, amf, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Value != ngap.CauseRadioNetworkUnknownLocalUENGAPID {
+	if ind.Cause == nil || !ind.Cause.Equal(ngap.CauseRadioNetworkUnknownLocalUENGAPID.Cause()) {
 		t.Fatalf("cause = %v", ind.Cause)
 	}
 
@@ -248,12 +249,12 @@ func TestUnknownUEIDs(t *testing.T) {
 	gnb.Send(t, &ngap.UplinkNASTransport{AMFUENGAPID: ue.ranAMFID, RANUENGAPID: 4, NASPDU: nas, UserLocationInformation: ngap.Ptr(uli(t, "00101", 1))})
 
 	ind = expect(t, gnb, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Value != ngap.CauseRadioNetworkInconsistentRemoteUEID {
+	if ind.Cause == nil || !ind.Cause.Equal(ngap.CauseRadioNetworkInconsistentRemoteUEID.Cause()) {
 		t.Fatalf("cause = %v", ind.Cause)
 	}
 
 	reset := expect(t, amf, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
-	if len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].RANUENGAPID != ue.amfRANID {
+	if len(assoc.Items(reset.ResetType.PartOfNGInterface)) != 1 || *assoc.Items(reset.ResetType.PartOfNGInterface)[0].RANUENGAPID != ue.amfRANID {
 		t.Fatalf("NG Reset = %+v", reset)
 	}
 
@@ -271,11 +272,11 @@ func TestErrorIndicationRelayed(t *testing.T) {
 
 	ue := attach(t, gnb, amf, 1, 10)
 
-	cause := ngap.Cause{Group: ngap.CauseGroupProtocol, Value: ngap.CauseProtocolSemanticError}
+	cause := ngap.CauseProtocolSemanticError.Cause()
 	gnb.Send(t, &ngap.ErrorIndication{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: &ue.ranID, Cause: &cause})
 
 	ind := expect(t, amf, "initiating", ngap.ProcErrorIndication, ngap.ParseErrorIndication)
-	if *ind.AMFUENGAPID != ue.amfID || *ind.RANUENGAPID != ue.amfRANID || ind.Cause.Value != cause.Value {
+	if *ind.AMFUENGAPID != ue.amfID || *ind.RANUENGAPID != ue.amfRANID || !ind.Cause.Equal(cause) {
 		t.Fatalf("Error Indication = %+v", ind)
 	}
 
@@ -289,7 +290,7 @@ func TestErrorIndicationRelayed(t *testing.T) {
 	h.eventually(t, "the UE context released", func() bool { return len(h.gw.UEs()) == 0 })
 }
 
-var causeUnknownLocal = ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkUnknownLocalUENGAPID}
+var causeUnknownLocal = ngap.CauseRadioNetworkUnknownLocalUENGAPID.Cause()
 
 func TestRadioLossResetsItsUEsTowardTheAMF(t *testing.T) {
 	t.Parallel()
@@ -305,8 +306,8 @@ func TestRadioLossResetsItsUEsTowardTheAMF(t *testing.T) {
 	_ = gnb.Conn.Abort()
 
 	reset := expect(t, amf, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
-	if reset.ResetType.All || len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].AMFUENGAPID != ue.amfID ||
-		*reset.ResetType.Part[0].RANUENGAPID != ue.amfRANID || reset.Cause.Group != ngap.CauseGroupTransport {
+	if reset.ResetType.NGInterface != nil || len(assoc.Items(reset.ResetType.PartOfNGInterface)) != 1 || *assoc.Items(reset.ResetType.PartOfNGInterface)[0].AMFUENGAPID != ue.amfID ||
+		*assoc.Items(reset.ResetType.PartOfNGInterface)[0].RANUENGAPID != ue.amfRANID || reset.Cause.Transport == nil {
 		t.Fatalf("NG Reset = %+v", reset)
 	}
 
@@ -354,8 +355,8 @@ func TestResetTranslation(t *testing.T) {
 	ue1 := attach(t, gnb, amf, 1, 10)
 	ue2 := attach(t, gnb, amf, 2, 20)
 
-	cause := ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscOMIntervention}
-	amf.Send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{Part: ngap.UEAssociatedLogicalNGConnectionList{
+	cause := ngap.CauseMiscOMIntervention.Cause()
+	amf.Send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{PartOfNGInterface: &ngap.UEAssociatedLogicalNGConnectionList{
 		{AMFUENGAPID: &ue1.amfID}, {RANUENGAPID: ngap.Ptr(ngap.RANUENGAPID(4242))},
 	}}})
 
@@ -365,19 +366,19 @@ func TestResetTranslation(t *testing.T) {
 	}
 
 	reset := expect(t, gnb, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
-	if len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].AMFUENGAPID != ue1.ranAMFID ||
-		*reset.ResetType.Part[0].RANUENGAPID != ue1.ranID || reset.Cause.Value != cause.Value {
+	if len(assoc.Items(reset.ResetType.PartOfNGInterface)) != 1 || *assoc.Items(reset.ResetType.PartOfNGInterface)[0].AMFUENGAPID != ue1.ranAMFID ||
+		*assoc.Items(reset.ResetType.PartOfNGInterface)[0].RANUENGAPID != ue1.ranID || !reset.Cause.Equal(cause) {
 		t.Fatalf("NG Reset = %+v", reset)
 	}
 
-	gnb.Send(t, &ngap.NGResetAcknowledge{ConnectionList: reset.ResetType.Part})
+	gnb.Send(t, &ngap.NGResetAcknowledge{ConnectionList: assoc.Items(reset.ResetType.PartOfNGInterface)})
 
-	gnb.Send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{All: true}})
+	gnb.Send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{NGInterface: new(ngap.ResetAllResetAll)}})
 	expect(t, gnb, "successful", ngap.ProcNGReset, ngap.ParseNGResetAcknowledge)
 
 	reset = expect(t, amf, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
-	if len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].AMFUENGAPID != ue2.amfID ||
-		*reset.ResetType.Part[0].RANUENGAPID != ue2.amfRANID {
+	if len(assoc.Items(reset.ResetType.PartOfNGInterface)) != 1 || *assoc.Items(reset.ResetType.PartOfNGInterface)[0].AMFUENGAPID != ue2.amfID ||
+		*assoc.Items(reset.ResetType.PartOfNGInterface)[0].RANUENGAPID != ue2.amfRANID {
 		t.Fatalf("NG Reset = %+v", reset)
 	}
 
@@ -396,11 +397,11 @@ func TestInitialUEMessageForAnUnknownPLMN(t *testing.T) {
 	gnb.Send(t, initialUE(t, 5, "00199"))
 
 	cmd := expect(t, gnb, "initiating", ngap.ProcUEContextRelease, ngap.ParseUEContextReleaseCommand)
-	if !cmd.UENGAPIDs.Pair || cmd.UENGAPIDs.RANUENGAPID != 5 || cmd.Cause.Value != ngap.CauseMiscUnknownPLMNOrSNPN {
+	if cmd.UENGAPIDs.UENGAPIDPair == nil || cmd.UENGAPIDs.UENGAPIDPair.RANUENGAPID != 5 || !cmd.Cause.Equal(ngap.CauseMiscUnknownPLMNOrSNPN.Cause()) {
 		t.Fatalf("UE Context Release Command = %+v", cmd)
 	}
 
-	gnb.Send(t, &ngap.UEContextReleaseComplete{AMFUENGAPID: &cmd.UENGAPIDs.AMFUENGAPID, RANUENGAPID: new(ngap.RANUENGAPID(5))})
+	gnb.Send(t, &ngap.UEContextReleaseComplete{AMFUENGAPID: &cmd.UENGAPIDs.UENGAPIDPair.AMFUENGAPID, RANUENGAPID: new(ngap.RANUENGAPID(5))})
 
 	amf.Quiet(t, 300*time.Millisecond)
 	gnb.Quiet(t, 100*time.Millisecond)

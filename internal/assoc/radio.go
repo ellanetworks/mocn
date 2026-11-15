@@ -29,9 +29,17 @@ type Radio[S, R any] struct {
 	tx          *Transport
 	ref         atomic.Pointer[string]
 
-	Setup *S
-	Up    bool
-	push  push[R]
+	Setup   *S
+	Up      bool
+	Failure *RadioSetupFailure[S]
+	push    push[R]
+}
+
+type RadioSetupFailure[S any] struct {
+	Request *S
+	Cause   string
+	Reason  string
+	At      time.Time
 }
 
 type push[R any] struct {
@@ -65,12 +73,31 @@ func (n *Radio[S, R]) ConnectedAt() time.Time {
 	return n.connectedAt
 }
 
+func (n *Radio[S, R]) Ref() string {
+	if ref := n.ref.Load(); ref != nil {
+		return *ref
+	}
+
+	return ""
+}
+
 func (n *Radio[S, R]) Logger(log *slog.Logger) *slog.Logger {
 	if ref := n.ref.Load(); ref != nil {
 		return log.With(slog.String("radio", *ref), slog.Any("tnl_addresses", n.addrs))
 	}
 
 	return log.With(slog.Any("tnl_addresses", n.addrs))
+}
+
+func (n *Radio[S, R]) StateLocked() RadioState {
+	switch {
+	case n.Up:
+		return RadioUp
+	case n.Setup == nil && n.Failure != nil:
+		return RadioSetupFailed
+	default:
+		return RadioConnected
+	}
 }
 
 func (n *Radio[S, R]) stopPush() {
@@ -248,7 +275,7 @@ func (g *Gateway[S, R, I, C]) BeginSetup(ctx context.Context, n *Radio[S, R], se
 		g.clearSetupLocked(n)
 	} else {
 		n.stopPush()
-		n.Setup, n.Up, n.push = &setup, false, push[R]{}
+		n.Setup, n.Up, n.Failure, n.push = &setup, false, nil, push[R]{}
 		n.ref.Store(&ref)
 
 		g.kickLocked()
@@ -422,13 +449,17 @@ func (g *Gateway[S, R, I, C]) clearSetupLocked(n *Radio[S, R]) {
 	}
 
 	n.stopPush()
-	n.Setup, n.Up, n.push = nil, false, push[R]{}
+	n.Setup, n.Up, n.Failure, n.push = nil, false, nil, push[R]{}
 	n.ref.Store(nil)
 }
 
-func (g *Gateway[S, R, I, C]) SetupRejected(ctx context.Context, n *Radio[S, R], result string) {
+func (g *Gateway[S, R, I, C]) SetupRejected(ctx context.Context, n *Radio[S, R], result string,
+	failure RadioSetupFailure[S],
+) {
 	g.mu.Lock()
 	g.clearSetupLocked(n)
+	failure.At = g.cfg.Now()
+	n.Failure = &failure
 	g.mu.Unlock()
 
 	g.countSetup(metrics.SideRadio, result)

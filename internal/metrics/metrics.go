@@ -1,6 +1,11 @@
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"strings"
+	"unicode"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 const (
 	InterfaceS1 = "s1"
@@ -12,7 +17,8 @@ const (
 var (
 	radioAssociationsDesc = prometheus.NewDesc("ellamocn_radio_associations",
 		"Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state "+
-			"(connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded).",
+			"(connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded; "+
+			"setup_failed: SCTP association up, Ella MOCN rejected the last S1 or NG Setup).",
 		[]string{"interface", "state"}, nil)
 	coreAssociationsDesc = prometheus.NewDesc("ellamocn_core_associations",
 		"Core (MME, AMF) associations of the configured MMEs and AMFs, by interface (s1, ng), operator and state "+
@@ -149,4 +155,21 @@ func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 			ch <- prometheus.MustNewConstMetric(ueConnectionsDesc, prometheus.GaugeValue, float64(n), s.Interface, name)
 		}
 	}
+}
+
+func ProcedureLabel(name string) string {
+	runes := []rune(name)
+
+	var b strings.Builder
+
+	for i, r := range runes {
+		if i > 0 && unicode.IsUpper(r) &&
+			(unicode.IsLower(runes[i-1]) || i+1 < len(runes) && unicode.IsLower(runes[i+1])) {
+			b.WriteByte('_')
+		}
+
+		b.WriteRune(unicode.ToLower(r))
+	}
+
+	return b.String()
 }

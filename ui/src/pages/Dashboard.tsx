@@ -20,10 +20,16 @@ import Grid from "@mui/material/Grid";
 import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
+import StateChip from "@/components/StateChip";
 import { getMetrics, type Sample, sumOf } from "@/queries/metrics";
-import { listOperators } from "@/queries/operators";
+import {
+  listOperators,
+  type Operator,
+  type UserPlaneStatus,
+} from "@/queries/operators";
+import { getStatus } from "@/queries/status";
 import { formatDateTime } from "@/utils/dates";
-import { operatorPath } from "@/utils/operators";
+import { operatorPath, USER_PLANE_REASONS } from "@/utils/operators";
 
 export const DASHBOARD_REFRESH_MS = 5000;
 
@@ -136,13 +142,23 @@ interface KpiCardProps {
   title: string;
   hint: string;
   value?: string;
+  detail?: string;
   loading?: boolean;
   error?: boolean;
   to?: string;
 }
 
-function KpiCard({ title, hint, value, to, ...state }: KpiCardProps) {
-  const content = <Typography variant="h4">{value}</Typography>;
+function KpiCard({ title, hint, value, detail, to, ...state }: KpiCardProps) {
+  const content = (
+    <Box sx={{ textAlign: "center" }}>
+      <Typography variant="h4">{value}</Typography>
+      {detail && (
+        <Typography variant="body2" color="textSecondary">
+          {detail}
+        </Typography>
+      )}
+    </Box>
+  );
 
   if (to) {
     return (
@@ -190,26 +206,28 @@ function Section({
   );
 }
 
-const THIRD = { xs: 12, md: 4 };
+const QUARTER = { xs: 12, sm: 6, md: 3 };
 
 const failedToLoad = (q: { error: Error | null; data: unknown }) =>
   !!q.error && q.data === undefined;
 
 interface OperatorFigures {
   name: string;
+  userPlane?: UserPlaneStatus;
   up: number;
   total: number;
   ueConnections: number;
 }
 
 const operatorFigures = (
-  names: string[],
+  operators: Operator[],
   samples: Sample[],
 ): OperatorFigures[] =>
-  [...names]
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => ({
+  [...operators]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(({ name, user_plane }) => ({
       name,
+      userPlane: user_plane?.status,
       up:
         sumOf(samples, "ellamocn_core_associations", {
           operator: name,
@@ -220,6 +238,12 @@ const operatorFigures = (
       ueConnections:
         sumOf(samples, "ellamocn_ue_connections", { operator: name }) ?? 0,
     }));
+
+const userPlaneHint = (status: UserPlaneStatus) => {
+  const since = `Since ${formatDateTime(status.since, { seconds: true })}`;
+  if (!status.reason) return since;
+  return `${USER_PLANE_REASONS[status.reason] ?? status.reason}. ${since}`;
+};
 
 function OperatorsTable({ operators }: { operators: OperatorFigures[] }) {
   const navigate = useNavigate();
@@ -247,6 +271,7 @@ function OperatorsTable({ operators }: { operators: OperatorFigures[] }) {
         <TableHead>
           <TableRow>
             <TableCell sx={headSx}>Operator</TableCell>
+            <TableCell sx={headSx}>User Plane</TableCell>
             <TableCell sx={headSx} align="right">
               Core Network Nodes Up
             </TableCell>
@@ -272,6 +297,16 @@ function OperatorsTable({ operators }: { operators: OperatorFigures[] }) {
                   {o.name}
                 </Box>
               </TableCell>
+              <TableCell>
+                {o.userPlane ? (
+                  <StateChip
+                    state={o.userPlane.state}
+                    hint={userPlaneHint(o.userPlane)}
+                  />
+                ) : (
+                  "N/A"
+                )}
+              </TableCell>
               <TableCell align="right">
                 {`${nf.format(o.up)} / ${nf.format(o.total)}`}
               </TableCell>
@@ -280,6 +315,7 @@ function OperatorsTable({ operators }: { operators: OperatorFigures[] }) {
           ))}
           <TableRow>
             <TableCell sx={{ fontWeight: 600 }}>Total</TableCell>
+            <TableCell />
             <TableCell align="right" sx={{ fontWeight: 600 }}>
               {`${nf.format(total.up)} / ${nf.format(total.total)}`}
             </TableCell>
@@ -306,20 +342,31 @@ export default function Dashboard() {
     refetchInterval: DASHBOARD_REFRESH_MS,
   });
 
+  const status = useQuery({
+    queryKey: ["status"],
+    queryFn: getStatus,
+    staleTime: Infinity,
+  });
+
   const samples = metrics.data ?? [];
   const memory = sumOf(samples, "process_resident_memory_bytes");
   const database = sumOf(samples, "ellamocn_database_storage_bytes");
   const startedAt = sumOf(samples, "process_start_time_seconds");
+  const datapathMemory = sumOf(
+    samples,
+    "ellamocn_user_plane_bpf_map_memory_bytes",
+  );
+  const aggregation = status.data?.user_plane_aggregation;
   const radios = sumOf(samples, "ellamocn_radio_associations", {
     state: "up",
+  });
+  const refusedRadios = sumOf(samples, "ellamocn_radio_associations", {
+    state: "setup_failed",
   });
   const ueConnections =
     sumOf(samples, "ellamocn_ue_connections") ??
     (radios === undefined ? undefined : 0);
-  const operators = operatorFigures(
-    (operatorList.data ?? []).map((o) => o.name),
-    samples,
-  );
+  const operators = operatorFigures(operatorList.data ?? [], samples);
   const metricCard = {
     loading: metrics.isPending,
     error: failedToLoad(metrics),
@@ -332,7 +379,21 @@ export default function Dashboard() {
       <PageHeader id="dashboard-title" title="Dashboard" />
 
       <Section title="Overview" first>
-        <Grid size={THIRD}>
+        <Grid size={QUARTER}>
+          <KpiCard
+            title="Radios"
+            hint="4G and 5G radios connected to Ella MOCN and ready (S1 Setup or NG Setup done). Radios whose setup Ella MOCN refused are counted apart."
+            to="/radios"
+            {...metricCard}
+            value={count(radios)}
+            detail={
+              refusedRadios
+                ? `${nf.format(refusedRadios)} setup failed`
+                : undefined
+            }
+          />
+        </Grid>
+        <Grid size={QUARTER}>
           <KpiCard
             title="Operators"
             hint="Operators configured in Ella MOCN."
@@ -342,21 +403,23 @@ export default function Dashboard() {
             value={count(operatorList.data?.length)}
           />
         </Grid>
-        <Grid size={THIRD}>
-          <KpiCard
-            title="Radios"
-            hint="4G and 5G radios connected to Ella MOCN and ready (S1 Setup or NG Setup done)."
-            to="/radios"
-            {...metricCard}
-            value={count(radios)}
-          />
-        </Grid>
-        <Grid size={THIRD}>
+        <Grid size={QUARTER}>
           <KpiCard
             title="UE Connections"
             hint="Devices connected through Ella MOCN, across every operator: one per active phone, over 4G (S1) or 5G (NG)."
             {...metricCard}
             value={count(ueConnections)}
+          />
+        </Grid>
+        <Grid size={QUARTER}>
+          <KpiCard
+            title="User-Plane Aggregation"
+            hint="Whether Ella MOCN can relay operators' user traffic (ran.user_plane.enabled in the configuration file). Each operator then turns it on or off."
+            loading={status.isPending}
+            error={failedToLoad(status)}
+            value={
+              aggregation === undefined ? "N/A" : aggregation ? "On" : "Off"
+            }
           />
         </Grid>
         <Grid size={12}>
@@ -373,7 +436,21 @@ export default function Dashboard() {
       </Section>
 
       <Section title="System">
-        <Grid size={THIRD}>
+        <Grid size={QUARTER}>
+          <KpiCard
+            title="Datapath Memory"
+            hint="Kernel memory held by the eBPF tables of the user-plane datapath. Off: user-plane aggregation is off, so the datapath is not loaded."
+            {...metricCard}
+            value={
+              aggregation === false
+                ? "Off"
+                : datapathMemory === undefined
+                  ? "N/A"
+                  : formatBytes(datapathMemory)
+            }
+          />
+        </Grid>
+        <Grid size={QUARTER}>
           <KpiCard
             title="Process Memory"
             hint="RAM used by the MOCN process (resident set size): what the operating system and a container memory limit count."
@@ -381,7 +458,7 @@ export default function Dashboard() {
             value={memory === undefined ? "N/A" : formatBytes(memory)}
           />
         </Grid>
-        <Grid size={THIRD}>
+        <Grid size={QUARTER}>
           <KpiCard
             title="Database Size"
             hint="Size of the database on disk, its write-ahead log included."
@@ -389,7 +466,7 @@ export default function Dashboard() {
             value={database === undefined ? "N/A" : formatBytes(database)}
           />
         </Grid>
-        <Grid size={THIRD}>
+        <Grid size={QUARTER}>
           <KpiCard
             title="Up Since"
             hint="Time when the MOCN process was started."

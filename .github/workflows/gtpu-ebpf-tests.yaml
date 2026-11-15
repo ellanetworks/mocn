@@ -1,0 +1,37 @@
+name: GTP-U eBPF Tests
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+
+jobs:
+  gtpu-ebpf-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: "go.mod"
+
+      - name: Kernel version
+        run: uname -a
+
+      - name: Write network namespace wrapper
+        run: |
+          cat > "$RUNNER_TEMP/netns-exec.sh" <<'WRAPPER'
+          #!/bin/sh
+          exec unshare --net sh -c 'ip link set lo up && exec "$@"' -- "$@"
+          WRAPPER
+          chmod +x "$RUNNER_TEMP/netns-exec.sh"
+
+      - name: Run GTP-U datapath tests
+        run: go test -v -count=1 -exec "sudo --preserve-env=EBPF_REQUIRE_PRIVILEGED $RUNNER_TEMP/netns-exec.sh" ./internal/gtpu/...
+        env:
+          EBPF_REQUIRE_PRIVILEGED: "1"

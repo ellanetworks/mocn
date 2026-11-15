@@ -13,6 +13,7 @@ import (
 
 	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/tracing"
 )
@@ -250,7 +251,7 @@ func (g *Gateway[S, R, I, C]) runClient(ctx context.Context, c *Client[I, C]) {
 	backoff := g.cfg.ReconnectMin
 
 	for {
-		conn, err := g.dial(ctx, c)
+		conn, local, err := g.dial(ctx, c)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -274,10 +275,18 @@ func (g *Gateway[S, R, I, C]) runClient(ctx context.Context, c *Client[I, C]) {
 		c.setStateLocked(Connected)
 		g.mu.Unlock()
 
-		log.InfoContext(ctx, g.names.Core+" association up")
+		log.InfoContext(ctx, g.names.Core+" association up", slog.Any("local", local))
+
+		if g.cfg.Plane != nil {
+			g.cfg.Plane.Anchor(c.operatorID, assoc, anchorOf(conn, c.addrs, local))
+		}
 
 		start := g.cfg.Now()
 		err = g.session(ctx, c, assoc)
+
+		if g.cfg.Plane != nil {
+			g.cfg.Plane.Unanchor(c.operatorID, assoc)
+		}
 
 		if ctx.Err() != nil {
 			_ = conn.Close()
@@ -323,26 +332,64 @@ func (g *Gateway[S, R, I, C]) runClient(ctx context.Context, c *Client[I, C]) {
 
 // TS 36.412 clause 7
 // TS 38.412 clause 7
-func (g *Gateway[S, R, I, C]) dial(ctx context.Context, c *Client[I, C]) (*sctp.SCTPConn, error) {
+func (g *Gateway[S, R, I, C]) dial(ctx context.Context, c *Client[I, C]) (*sctp.SCTPConn, []netip.Addr, error) {
 	raddr := &sctp.SCTPAddr{Port: g.cfg.CorePort}
+	laddr := &sctp.SCTPAddr{}
+
+	var local []netip.Addr
 
 	for _, a := range c.addrs {
 		ip, err := netip.ParseAddr(a)
 		if err != nil {
-			return nil, fmt.Errorf("invalid TNL address %q: %w", a, err)
+			return nil, nil, fmt.Errorf("invalid TNL address %q: %w", a, err)
 		}
 
+		ip = ip.Unmap()
 		raddr.IPAddrs = append(raddr.IPAddrs, net.IPAddr{IP: ip.AsSlice()})
+
+		if slices.ContainsFunc(local, func(l netip.Addr) bool { return l.Is4() == ip.Is4() }) {
+			continue
+		}
+
+		r, err := gtpu.NetlinkHost{}.Route(ip)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if !r.Src.IsValid() {
+			return nil, nil, fmt.Errorf("%w toward %s", gtpu.ErrNoAddress, ip)
+		}
+
+		local = append(local, r.Src)
+		laddr.IPAddrs = append(laddr.IPAddrs, net.IPAddr{IP: r.Src.AsSlice()})
 	}
 
 	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 
 	d := sctp.Dialer{
-		InitMsg: sctp.InitMsg{NumOstreams: g.names.CoreStreams, MaxInstreams: g.names.CoreStreams}, Logger: g.log,
+		InitMsg:   sctp.InitMsg{NumOstreams: g.names.CoreStreams, MaxInstreams: g.names.CoreStreams},
+		LocalAddr: laddr, Logger: g.log,
 	}
 
-	return d.Dial(dialCtx, raddr)
+	conn, err := d.Dial(dialCtx, raddr)
+
+	return conn, local, err
+}
+
+func anchorOf(conn *sctp.SCTPConn, addrs []string, local []netip.Addr) gtpu.Anchor {
+	peer, err := conn.PrimaryPeerAddr()
+	if err != nil && len(addrs) > 0 {
+		peer, _ = netip.ParseAddr(addrs[0])
+	}
+
+	a := gtpu.Anchor{Peer: peer.Unmap(), Addresses: local}
+
+	if _, name, err := gtpu.Resolve(gtpu.NetlinkHost{}, a.Peer); err == nil {
+		a.Interface = name
+	}
+
+	return a
 }
 
 func (g *Gateway[S, R, I, C]) session(ctx context.Context, c *Client[I, C], assoc *Core) error {

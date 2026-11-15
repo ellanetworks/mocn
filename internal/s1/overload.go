@@ -142,7 +142,7 @@ func (g *Gateway) overloadStart(ctx context.Context, a *mmeAssoc, log *slog.Logg
 		return
 	}
 
-	action := overloadActions[start.OverloadResponse.OverloadAction]
+	action := overloadActions[*start.OverloadResponse.OverloadAction]
 
 	var radios []*ranAssoc
 
@@ -249,7 +249,7 @@ func overloadStarts(entries []Overload) ([]*s1ap.OverloadStart, error) {
 		}
 
 		out = append(out, &s1ap.OverloadStart{
-			OverloadResponse: s1ap.OverloadResponse{OverloadAction: gr.action}, GUMMEIList: list,
+			OverloadResponse: s1ap.OverloadResponse{OverloadAction: s1ap.Ptr(gr.action)}, GUMMEIList: list,
 			TrafficLoadReductionIndication: gr.tlri,
 		})
 	}

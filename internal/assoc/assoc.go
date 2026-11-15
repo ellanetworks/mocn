@@ -5,11 +5,13 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/ellanetworks/core/per"
 	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/metrics"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -32,11 +34,12 @@ var States = []State{Disconnected, Connected, Up, SetupFailed}
 type RadioState string
 
 const (
-	RadioConnected RadioState = "connected"
-	RadioUp        RadioState = "up"
+	RadioConnected   RadioState = "connected"
+	RadioUp          RadioState = "up"
+	RadioSetupFailed RadioState = "setup_failed"
 )
 
-var RadioStates = []RadioState{RadioConnected, RadioUp}
+var RadioStates = []RadioState{RadioConnected, RadioUp, RadioSetupFailed}
 
 type Operator struct {
 	ID          int64
@@ -101,6 +104,7 @@ type Config struct {
 	ReconnectMax    time.Duration
 	Now             func() time.Time
 	IntN            func(n int) int
+	Plane           *gtpu.Plane
 }
 
 const (
@@ -197,4 +201,13 @@ func GetIE[T any, P interface {
 	}
 
 	return &v, nil
+}
+
+func CauseLabel(name string) string {
+	label := strings.ReplaceAll(name, "-", " ")
+	if label == "" {
+		return label
+	}
+
+	return strings.ToUpper(label[:1]) + label[1:]
 }

@@ -49,7 +49,7 @@ func TestErrorIndicationWithOnlyTheAMFUEID(t *testing.T) {
 	gnb, amf := upAndRunning(t, h, amfs)
 	ue := attach(t, gnb, amf, 3, 77)
 
-	other := ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscUnspecified}
+	other := ngap.CauseMiscUnspecified.Cause()
 	amf.Send(t, &ngap.ErrorIndication{AMFUENGAPID: &ue.amfID, Cause: &other})
 	gnb.Quiet(t, 200*time.Millisecond)
 
@@ -77,17 +77,24 @@ func TestDuplicateGlobalGNBIDRejected(t *testing.T) {
 	gnb2.Send(t, setupRequest(t, 1, "copy", ngap.PagingDRXv128, ta(t, 2, "00101")))
 
 	fail := expect(t, gnb2, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
-	if fail.Cause == nil || fail.Cause.Group != ngap.CauseGroupProtocol || fail.Cause.Value != ngap.CauseProtocolSemanticError {
+	if fail.Cause == nil || !fail.Cause.Equal(ngap.CauseProtocolSemanticError.Cause()) {
 		t.Fatalf("NG Setup Failure = %+v, want semantic error", fail)
 	}
 
 	nodes := h.gw.RANNodes()
-	if len(nodes) != 2 || nodes[0].State != ng.RANNodeUp || nodes[1].GlobalGNBID != nil {
+	if len(nodes) != 2 || nodes[0].State != ng.RANNodeUp || nodes[1].State != ng.RANNodeSetupFailed ||
+		nodes[1].GlobalGNBID == nil || *nodes[1].GlobalGNBID != *nodes[0].GlobalGNBID || nodes[1].Name != "copy" ||
+		nodes[1].SetupFailure == nil || nodes[1].SetupFailure.Cause != "Semantic error" {
 		t.Fatalf("RAN nodes = %+v", nodes)
 	}
 
 	gnb2.Send(t, setupRequest(t, 2, "gnb2", ngap.PagingDRXv128, ta(t, 2, "00101")))
 	expect(t, gnb2, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
+
+	nodes = h.gw.RANNodes()
+	if len(nodes) != 2 || nodes[1].State != ng.RANNodeUp || nodes[1].SetupFailure != nil || nodes[1].Name != "gnb2" {
+		t.Fatalf("RAN nodes = %+v, want the second gNB up", nodes)
+	}
 }
 
 func TestDuplicateGlobalGNBIDFromTheSameAddressesReplacesTheOldAssociation(t *testing.T) {
@@ -218,8 +225,8 @@ func TestResetUEsOfALostAMFReportedToAnotherAMFOfTheSet(t *testing.T) {
 	expect(t, x.gnb, "initiating", ngap.ProcAMFConfigurationUpdate, ngap.ParseAMFConfigurationUpdate)
 	x.gnb.Send(t, &ngap.AMFConfigurationUpdateAcknowledge{})
 
-	cause := ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkUnspecified}
-	x.gnb.Send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{Part: []ngap.UEAssociatedLogicalNGConnectionItem{
+	cause := ngap.CauseRadioNetworkUnspecified.Cause()
+	x.gnb.Send(t, &ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{PartOfNGInterface: &ngap.UEAssociatedLogicalNGConnectionList{
 		connection(&ue.ranAMFID, ue.ranID),
 	}}})
 	expect(t, x.gnb, "successful", ngap.ProcNGReset, ngap.ParseNGResetAcknowledge)
@@ -238,7 +245,7 @@ func TestAMFConfigurationUpdateEndsTheOverloadOfGUAMIsNoLongerServed(t *testing.
 	gnb, amf := upAndRunning(t, h, amfs)
 
 	amf.Send(t, &ngap.OverloadStart{
-		AMFOverloadResponse: &ngap.OverloadResponse{OverloadAction: ngap.OverloadActionRejectRRCCRSignalling},
+		AMFOverloadResponse: &ngap.OverloadResponse{OverloadAction: new(ngap.OverloadActionRejectRRCCRSignalling)},
 	})
 	expect(t, gnb, "initiating", ngap.ProcOverloadStart, ngap.ParseOverloadStart)
 
@@ -290,7 +297,7 @@ func TestOverloadReplayedWhenARANConfigurationUpdateAddsAPLMN(t *testing.T) {
 	expect(t, gnbB, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
 
 	amfA.Send(t, &ngap.OverloadStart{
-		AMFOverloadResponse: &ngap.OverloadResponse{OverloadAction: ngap.OverloadActionRejectRRCCRSignalling},
+		AMFOverloadResponse: &ngap.OverloadResponse{OverloadAction: new(ngap.OverloadActionRejectRRCCRSignalling)},
 	})
 
 	for {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/ellanetworks/mocn/internal/s1"
@@ -44,6 +45,33 @@ type UEConnection struct {
 	TAI       *TAI              `json:"tai,omitempty"`
 	ECGI      *ECGI             `json:"ecgi,omitempty"`
 	NRCGI     *NRCGI            `json:"nr_cgi,omitempty"`
+	Tunnels   []UETunnel        `json:"tunnels,omitempty"`
+}
+
+type UETunnel struct {
+	Bearer      int    `json:"bearer"`
+	Direction   string `json:"direction"`
+	Forwarding  bool   `json:"forwarding"`
+	Address     string `json:"address"`
+	TEID        uint32 `json:"teid"`
+	PeerAddress string `json:"peer_address"`
+	PeerTEID    uint32 `json:"peer_teid"`
+	Packets     uint64 `json:"packets"`
+	Bytes       uint64 `json:"bytes"`
+}
+
+func tunnelsOf(in []gtpu.TunnelInfo) []UETunnel {
+	out := make([]UETunnel, 0, len(in))
+
+	for _, t := range in {
+		out = append(out, UETunnel{
+			Bearer: t.Bearer, Direction: t.Ingress.Direction(), Forwarding: t.Forwarding, Address: t.Local.Addr.String(),
+			TEID: t.Local.TEID, PeerAddress: t.Peer.Addr.String(), PeerTEID: t.Peer.TEID, Packets: t.Counters.Packets,
+			Bytes: t.Counters.Bytes,
+		})
+	}
+
+	return out
 }
 
 type ListUEConnectionsResponse struct {
@@ -136,6 +164,7 @@ func onCoreNode(iface string, operatorID int64, tnlAddresses []string) func(ueRe
 
 func s1UEConnection(u s1.UE) UEConnection {
 	resp := UEConnection{
+		Tunnels:   tunnelsOf(u.Tunnels),
 		Interface: metrics.InterfaceS1,
 		Radio: UEConnectionRadio{
 			Ref: u.RadioGlobalENBID.Ref(), ENBUES1APID: u.RadioENBUES1APID, MMEUES1APID: new(u.RadioMMEUES1APID),
@@ -162,6 +191,7 @@ func s1UEConnection(u s1.UE) UEConnection {
 
 func ngUEConnection(u ng.UE) UEConnection {
 	resp := UEConnection{
+		Tunnels:   tunnelsOf(u.Tunnels),
 		Interface: metrics.InterfaceNG,
 		Radio: UEConnectionRadio{
 			Ref: u.RadioGlobalGNBID.Ref(), RANUENGAPID: u.RadioRANUENGAPID, AMFUENGAPID: new(u.RadioAMFUENGAPID),

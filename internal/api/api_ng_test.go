@@ -207,3 +207,103 @@ func TestRadiosAndUEConnectionsOverBothInterfaces(t *testing.T) {
 		t.Fatalf("GET all UE connections = %d %s", code, result)
 	}
 }
+
+func TestRadiosInTheSetupFailedState(t *testing.T) {
+	t.Parallel()
+
+	since := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
+	at := since.Add(time.Second)
+	plmn := db.PLMN{MCC: "001", MNC: "01"}
+	refused := db.PLMN{MCC: "001", MNC: "03"}
+	enb := db.GlobalENBID{PLMN: plmn, Type: db.ENBIDMacro, ID: 411}
+	gnb := db.GlobalGNBID{PLMN: refused, ID: 2, Length: 22}
+
+	a := newNGTestAPI(t,
+		fakeS1{nodes: []s1.RANNode{
+			{
+				GlobalENBID: &enb, Name: "enb1", State: s1.RANNodeUp, ConnectedSince: since,
+				SupportedTAs: []s1.TA{{TAC: 1, BroadcastPLMNs: []db.PLMN{plmn}}}, TNLAddresses: []string{"10.0.0.5"},
+			},
+			{
+				GlobalENBID: &enb, Name: "copy", State: s1.RANNodeSetupFailed, ConnectedSince: since.Add(time.Minute),
+				DefaultPagingDRX: 64, SupportedTAs: []s1.TA{{TAC: 1, BroadcastPLMNs: []db.PLMN{plmn}}},
+				TNLAddresses: []string{"10.0.0.7"},
+				SetupFailure: &s1.SetupFailure{
+					Cause: "Semantic error", Reason: "the Global eNB ID eNB:001-01:MacroeNB-0019b is used by another radio",
+					At: at.In(time.FixedZone("x", 3600)),
+				},
+			},
+		}, ues: []s1.UE{{RadioGlobalENBID: enb, OperatorID: 1, PLMN: plmn, Since: since}}},
+		fakeNG{nodes: []ng.RANNode{
+			{
+				GlobalGNBID: &gnb, Name: "gnb-west", State: ng.RANNodeSetupFailed, ConnectedSince: since.Add(2 * time.Minute),
+				DefaultPagingDRX: 128, TNLAddresses: []string{"10.0.0.8"},
+				SupportedTAs: []ng.TA{{TAC: 1, BroadcastPLMNs: []ng.BroadcastPLMN{{PLMN: refused, Slices: []ng.SNSSAI{{SST: 1}}}}}},
+				SetupFailure: &ng.SetupFailure{Cause: "Unknown PLMN or SNPN", Reason: "no operator serves a broadcast PLMN", At: at},
+			},
+			{
+				State: ng.RANNodeSetupFailed, ConnectedSince: since.Add(3 * time.Minute), SupportedTAs: []ng.TA{},
+				TNLAddresses: []string{"10.0.0.9"},
+				SetupFailure: &ng.SetupFailure{Cause: "Semantic error", Reason: "invalid Global RAN Node ID", At: at},
+			},
+		}})
+
+	code, result, _ := a.do(t, http.MethodGet, "/api/v1/radios", "")
+
+	got := decode[api.ListRadiosResponse](t, result)
+	if code != http.StatusOK || len(got.Items) != 4 {
+		t.Fatalf("GET = %d %s", code, result)
+	}
+
+	if got.Items[0].Ref != "eNB:001-01:MacroeNB-0019b" || got.Items[0].State != "up" || got.Items[0].SetupFailure != nil ||
+		got.Items[0].UEConnections != 1 {
+		t.Fatalf("up radio = %+v", got.Items[0])
+	}
+
+	want := []api.Radio{
+		{
+			Type: "eNB", GlobalENBID: &api.GlobalENBID{PLMN: api.PLMN{MCC: "001", MNC: "01"}, Type: "macro", ID: 411},
+			Name: "copy", DefaultPagingDRX: 64, State: "setup_failed", ConnectedAt: since.Add(time.Minute),
+			SupportedTAs: []api.SupportedTA{{TAC: "000001", BroadcastPLMNs: []api.BroadcastPLMN{{PLMN: api.PLMN{MCC: "001", MNC: "01"}}}}},
+			TNLAddresses: []string{"10.0.0.7"},
+			SetupFailure: &api.RadioSetupFailure{
+				Cause: "Semantic error", Reason: "the Global eNB ID eNB:001-01:MacroeNB-0019b is used by another radio", At: at,
+			},
+		},
+		{
+			Type: "gNB", GlobalGNBID: &api.GlobalGNBID{PLMN: api.PLMN{MCC: "001", MNC: "03"}, ID: 2, BitLength: 22},
+			Name: "gnb-west", DefaultPagingDRX: 128, State: "setup_failed", ConnectedAt: since.Add(2 * time.Minute),
+			SupportedTAs: []api.SupportedTA{{TAC: "000001", BroadcastPLMNs: []api.BroadcastPLMN{
+				{PLMN: api.PLMN{MCC: "001", MNC: "03"}, SNSSAIs: []api.SNSSAI{{SST: 1}}},
+			}}},
+			TNLAddresses: []string{"10.0.0.8"},
+			SetupFailure: &api.RadioSetupFailure{Cause: "Unknown PLMN or SNPN", Reason: "no operator serves a broadcast PLMN", At: at},
+		},
+		{
+			Type: "gNB", State: "setup_failed", ConnectedAt: since.Add(3 * time.Minute), SupportedTAs: []api.SupportedTA{},
+			TNLAddresses: []string{"10.0.0.9"},
+			SetupFailure: &api.RadioSetupFailure{Cause: "Semantic error", Reason: "invalid Global RAN Node ID", At: at},
+		},
+	}
+
+	if !reflect.DeepEqual(got.Items[1:], want) {
+		t.Fatalf("setup_failed radios = %+v, want %+v", got.Items[1:], want)
+	}
+
+	for _, field := range []string{
+		`"state":"setup_failed","setup_failure":{"cause":"Unknown PLMN or SNPN","reason":"no operator serves a broadcast PLMN","at":"2026-11-12T10:00:01Z"}`,
+	} {
+		if !strings.Contains(string(result), field) {
+			t.Errorf("%s missing from %s", field, result)
+		}
+	}
+
+	code, result, _ = a.do(t, http.MethodGet, "/api/v1/radios/eNB:001-01:MacroeNB-0019b", "")
+	if one := decode[api.Radio](t, result); code != http.StatusOK || one.Name != "enb1" || one.State != "up" {
+		t.Fatalf("GET one = %d %s, want the up radio", code, result)
+	}
+
+	if code, _, _ := a.do(t, http.MethodGet, "/api/v1/radios/gNB:001-03:000002@22", ""); code != http.StatusNotFound {
+		t.Fatalf("GET a setup_failed radio = %d, want 404", code)
+	}
+}

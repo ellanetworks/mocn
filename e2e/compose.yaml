@@ -37,10 +37,10 @@ services:
     networks:
       core:
         ipv4_address: 10.90.0.14
-      ran:
+      core-up:
         driver_opts:
           com.docker.network.endpoint.ifname: n3
-        ipv4_address: 10.90.1.14
+        ipv4_address: 10.90.4.14
       n6:
         driver_opts:
           com.docker.network.endpoint.ifname: n6
@@ -77,7 +77,7 @@ services:
     environment:
       DB_URI: mongodb://10.90.0.20/open5gs_b
       S1_ADDR: 10.90.0.11
-      GTPU_ADDR: 10.90.1.11
+      GTPU_ADDR: 10.90.0.11
       MCC: "001"
       MNC: "02"
       MME_GID: "3"
@@ -92,8 +92,6 @@ services:
     networks:
       core:
         ipv4_address: 10.90.0.11
-      ran:
-        ipv4_address: 10.90.1.11
 
   open5gs-5g-b:
     image: gradiant/open5gs:2.7.6
@@ -107,7 +105,7 @@ services:
     environment:
       DB_URI: mongodb://10.90.0.20/open5gs_b
       NGAP_ADDR: 10.90.0.13
-      GTPU_ADDR: 10.90.1.13
+      GTPU_ADDR: 10.90.0.13
       MCC: "001"
       MNC: "02"
       AMF_REGION: "3"
@@ -121,8 +119,6 @@ services:
     networks:
       core:
         ipv4_address: 10.90.0.13
-      ran:
-        ipv4_address: 10.90.1.13
 
   mocn:
     image: ella-mocn-e2e/mocn
@@ -131,6 +127,10 @@ services:
       dockerfile: e2e/mocn/Dockerfile
     restart: unless-stopped
     command: ["--config", "/mocn.yaml"]
+    cap_add: [BPF, NET_ADMIN, NET_RAW, PERFMON]
+    sysctls:
+      net.ipv4.ip_forward: 1
+      net.ipv6.conf.all.forwarding: 1
     volumes:
       - ./mocn/mocn.yaml:/mocn.yaml:ro
     tmpfs:
@@ -142,6 +142,8 @@ services:
         ipv4_address: 10.90.0.30
       ran:
         ipv4_address: 10.90.1.30
+      core-up:
+        ipv4_address: 10.90.4.30
 
   srsenb:
     image: gradiant/srsran-4g:23_11
@@ -378,3 +380,8 @@ networks:
     ipam:
       config:
         - subnet: 10.90.3.0/24
+  core-up:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.90.4.0/24

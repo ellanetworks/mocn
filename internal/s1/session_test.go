@@ -79,7 +79,7 @@ func TestENBConfigurationUpdateRetriedAfterAFailure(t *testing.T) {
 	_, mme := upAndRunning(t, h, mmeListener)
 
 	mme.Send(t, &s1ap.ENBConfigurationUpdateFailure{
-		Cause: &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified},
+		Cause: s1ap.Ptr(s1ap.CauseMiscUnspecified.Cause()),
 	})
 	mme.Send(t, &s1ap.MMEConfigurationUpdate{})
 	expect(t, mme, "successful", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdateAcknowledge)
@@ -89,7 +89,7 @@ func TestENBConfigurationUpdateRetriedAfterAFailure(t *testing.T) {
 
 	first := expect(t, mme, "initiating", s1ap.ProcENBConfigurationUpdate, s1ap.ParseENBConfigurationUpdate)
 	mme.Send(t, &s1ap.ENBConfigurationUpdateFailure{
-		Cause:      &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified},
+		Cause:      s1ap.Ptr(s1ap.CauseMiscUnspecified.Cause()),
 		TimeToWait: s1ap.Ptr(s1ap.TimeToWaitV1s),
 	})
 
@@ -115,7 +115,7 @@ func TestMMEConfigurationUpdateRetriedAfterTheRadioRejectsIt(t *testing.T) {
 
 	first := expect(t, enb, "initiating", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdate)
 	enb.Send(t, &s1ap.MMEConfigurationUpdateFailure{
-		Cause:      &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified},
+		Cause:      s1ap.Ptr(s1ap.CauseMiscUnspecified.Cause()),
 		TimeToWait: s1ap.Ptr(s1ap.TimeToWaitV1s),
 	})
 

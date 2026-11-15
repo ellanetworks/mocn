@@ -3,12 +3,15 @@ package api_test
 import (
 	"fmt"
 	"net/http"
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ellanetworks/mocn/internal/api"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 )
 
 const operatorA = `{"name": "Operator A", "pws_operator": true, "plmns": [{"mcc": "001", "mnc": "01"}, {"mcc": "001", "mnc": "002"}],
@@ -34,6 +37,7 @@ func TestOperators(t *testing.T) {
 		GlobalGNBID: &api.GlobalGNBID{PLMN: api.PLMN{MCC: "001", MNC: "002"}, ID: 74565, BitLength: 22},
 		MMEs:        []api.MME{{TNLAddresses: []string{"10.0.0.1", "10.0.0.2"}}, {TNLAddresses: []string{"10.0.0.3"}}},
 		AMFs:        []api.AMF{{TNLAddresses: []string{"2001:db8::1"}}},
+		UserPlane:   &api.UserPlane{Aggregation: new(true)},
 	}
 
 	if got := decode[api.Operator](t, result); !reflect.DeepEqual(got, want) {
@@ -262,5 +266,96 @@ func TestOperatorPLMNTotals(t *testing.T) {
 
 	if code, _, msg := a.do(t, http.MethodPut, "/api/v1/operators/B", operator("B", "002", 4, true)); code != http.StatusOK {
 		t.Fatalf("AMF total of 12 = %d %q", code, msg)
+	}
+}
+
+func TestOperatorUserPlane(t *testing.T) {
+	t.Parallel()
+
+	since := time.Date(2026, 9, 29, 9, 0, 0, 0, time.UTC)
+	plane := fakePlane{7: gtpu.Status{
+		State: gtpu.StateUnavailable, Reason: gtpu.ReasonRouteMismatch, Interface: "xfrm-op",
+		Addresses: []netip.Addr{netip.MustParseAddr("10.1.0.1"), netip.MustParseAddr("2001:db8::7")}, Since: since,
+	}}
+
+	a := newTestAPI(t, func(c *api.Config) { c.Plane = plane })
+
+	code, result, msg := a.do(t, http.MethodPost, "/api/v1/operators",
+		`{"name": "Op", "plmns": [{"mcc": "001", "mnc": "01"}], "user_plane": {"aggregation": false}}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create = %d %q", code, msg)
+	}
+
+	if got := decode[api.Operator](t, result).UserPlane; !reflect.DeepEqual(got, &api.UserPlane{Aggregation: new(false)}) {
+		t.Fatalf("user_plane = %+v", got)
+	}
+
+	o, err := a.store.GetOperator(t.Context(), "Op")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plane[o.ID] = plane[7]
+
+	_, result, _ = a.do(t, http.MethodGet, "/api/v1/operators/Op", "")
+
+	want := &api.UserPlane{Aggregation: new(false), Status: &api.UserPlaneStatus{
+		State: gtpu.StateUnavailable, Reason: gtpu.ReasonRouteMismatch, Interface: "xfrm-op",
+		Addresses: []string{"10.1.0.1", "2001:db8::7"}, Since: since,
+	}}
+	if got := decode[api.Operator](t, result).UserPlane; !reflect.DeepEqual(got, want) {
+		t.Fatalf("user_plane = %+v, want %+v", got, want)
+	}
+
+	for _, removed := range []string{`{"addresses": ["10.1.0.1"]}`, `{"interface": "xfrm-op"}`} {
+		code, _, _ := a.do(t, http.MethodPut, "/api/v1/operators/Op",
+			`{"name": "Op", "plmns": [{"mcc": "001", "mnc": "01"}], "user_plane": `+removed+`}`)
+		if code != http.StatusBadRequest {
+			t.Errorf("user_plane %s = %d, want 400", removed, code)
+		}
+	}
+}
+
+type fakePlane map[int64]gtpu.Status
+
+func (f fakePlane) Status(id int64) (gtpu.Status, bool) {
+	st, ok := f[id]
+
+	return st, ok
+}
+
+func TestOperatorUserPlaneDisabled(t *testing.T) {
+	t.Parallel()
+
+	a := newTestAPI(t, func(c *api.Config) { c.UserPlane = false })
+
+	code, _, msg := a.do(t, http.MethodPost, "/api/v1/operators",
+		`{"name": "Op", "plmns": [{"mcc": "001", "mnc": "01"}], "user_plane": {"aggregation": true}}`)
+	if code != http.StatusBadRequest || !strings.Contains(msg, "user-plane aggregation is not enabled on this Ella MOCN") {
+		t.Fatalf("aggregation on = %d %q, want 400", code, msg)
+	}
+
+	code, result, msg := a.do(t, http.MethodPost, "/api/v1/operators", `{"name": "Op", "plmns": [{"mcc": "001", "mnc": "01"}]}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create = %d %q", code, msg)
+	}
+
+	if up := decode[api.Operator](t, result).UserPlane; up == nil || up.Aggregation == nil || *up.Aggregation {
+		t.Fatalf("user_plane = %+v, want aggregation off", up)
+	}
+
+	stored, err := a.store.GetOperator(t.Context(), "Op")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stored.UserPlane.Aggregation = true
+	if err := a.store.UpdateOperator(t.Context(), stored); err != nil {
+		t.Fatal(err)
+	}
+
+	_, result, _ = a.do(t, http.MethodGet, "/api/v1/operators/Op", "")
+	if up := decode[api.Operator](t, result).UserPlane; up == nil || up.Aggregation == nil || *up.Aggregation {
+		t.Fatalf("stored aggregation shown as %+v, want the effective state off", up)
 	}
 }

@@ -22,10 +22,10 @@ func (r *relay) resetFromRAN(ctx context.Context, n *ranAssoc, log *slog.Logger,
 
 	var gone []*ueContext
 
-	if reset.ResetType.All {
+	if reset.ResetType.NGInterface != nil {
 		gone = r.ues.Remove(r.ues.Where(func(u *ueContext) bool { return u.RAN == n })...)
 	} else {
-		for _, item := range reset.ResetType.Part {
+		for _, item := range assoc.Items(reset.ResetType.PartOfNGInterface) {
 			gone = append(gone, r.ues.Remove(r.ues.OnRAN(n, item.AMFUENGAPID, item.RANUENGAPID)...)...)
 		}
 	}
@@ -48,10 +48,10 @@ func (r *relay) resetFromAMF(ctx context.Context, a *amfAssoc, log *slog.Logger,
 
 	var gone []*ueContext
 
-	if reset.ResetType.All {
+	if reset.ResetType.NGInterface != nil {
 		gone = r.ues.Remove(r.ues.Where(func(u *ueContext) bool { return u.Core == a })...)
 	} else {
-		for _, item := range reset.ResetType.Part {
+		for _, item := range assoc.Items(reset.ResetType.PartOfNGInterface) {
 			gone = append(gone, r.ues.Remove(r.ues.OnCore(a, item.AMFUENGAPID, item.RANUENGAPID)...)...)
 		}
 	}
@@ -147,7 +147,9 @@ func sendResets(ctx context.Context, peer assoc.Sender, log *slog.Logger, to str
 	items []ngap.UEAssociatedLogicalNGConnectionItem,
 ) {
 	for chunk := range slices.Chunk(items, maxnoofNGConnectionsToReset) {
-		out, err := (&ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{Part: chunk}}).Marshal()
+		part := ngap.UEAssociatedLogicalNGConnectionList(chunk)
+
+		out, err := (&ngap.NGReset{Cause: &cause, ResetType: ngap.ResetType{PartOfNGInterface: &part}}).Marshal()
 		if err != nil {
 			log.ErrorContext(ctx, "failed to marshal NG Reset", slog.Any("error", err))
 			return
@@ -179,7 +181,7 @@ func parseReset(ctx context.Context, peer assoc.Sender, from string, log *slog.L
 // TS 38.413 clause 8.7.4
 func acknowledgeReset(ctx context.Context, peer assoc.Sender, from string, log *slog.Logger, reset *ngap.NGReset) {
 	out, err := (&ngap.NGResetAcknowledge{
-		ConnectionList:         reset.ResetType.Part,
+		ConnectionList:         assoc.Items(reset.ResetType.PartOfNGInterface),
 		CriticalityDiagnostics: responseDiagnostics(ngap.ProcNGReset, reset.Diagnostics()),
 	}).Marshal()
 	if err != nil {
@@ -193,5 +195,6 @@ func acknowledgeReset(ctx context.Context, peer assoc.Sender, from string, log *
 	}
 
 	log.InfoContext(ctx, "NG Reset from "+from+" acknowledged", slog.String("cause", causeText(reset.Cause)),
-		slog.Bool("all", reset.ResetType.All), slog.Int("connections", len(reset.ResetType.Part)))
+		slog.Bool("all", reset.ResetType.NGInterface != nil),
+		slog.Int("connections", len(assoc.Items(reset.ResetType.PartOfNGInterface))))
 }

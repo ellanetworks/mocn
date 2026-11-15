@@ -160,8 +160,7 @@ func rewriteRaw(msg []byte, mmeID *s1ap.MMEUES1APID, enbID *s1ap.ENBUES1APID) ([
 
 // TS 36.413 clause 10.6
 func releasesConnection(c *s1ap.Cause) bool {
-	return c != nil && !c.Extended && c.Group == s1ap.CauseGroupRadioNetwork &&
-		(c.Value == causeUnknownMMEUEID.Value || c.Value == causeUnknownENBUEID.Value || c.Value == causeUnknownPair.Value)
+	return c != nil && (c.Equal(causeUnknownMMEUEID) || c.Equal(causeUnknownENBUEID) || c.Equal(causeUnknownPair))
 }
 
 // TS 36.413 clause 8.7.2.2

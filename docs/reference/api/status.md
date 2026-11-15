@@ -6,7 +6,7 @@ description: RESTful API reference for viewing the status and health of Ella MOC
 
 ## Get the Status
 
-This path returns the version of the MOCN, and whether it is initialized.
+This path returns the version of the MOCN, whether it is initialized, and whether user-plane aggregation is enabled.
 
 | Method | Path             |
 | ------ | ---------------- |
@@ -19,12 +19,7 @@ This path returns the version of the MOCN, and whether it is initialized.
 | `version`     | string  | Version. |
 | `revision`    | string  | Git commit of the build. Empty in development builds. |
 | `initialized` | boolean | Whether the first user exists. See [Initialize](initialize.md). |
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `500` | The users could not be counted. |
+| `user_plane_aggregation` | boolean | Whether operators can use user-plane aggregation: `ran.user_plane.enabled` in the configuration file. |
 
 ### Sample Response
 
@@ -33,7 +28,8 @@ This path returns the version of the MOCN, and whether it is initialized.
     "result": {
         "version": "v0.0.1",
         "revision": "",
-        "initialized": true
+        "initialized": true,
+        "user_plane_aggregation": false
     }
 }
 ```
@@ -71,13 +67,6 @@ This path returns whether the MOCN is ready to receive traffic. The response has
 | `checks[].name`   | string  | Name of the check. |
 | `checks[].ok`     | boolean | Whether it passes. |
 | `checks[].detail` | string  | Why it fails. Empty when it passes. |
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `200` | Every check passes. |
-| `503` | A check fails. |
 
 ### Sample Response
 

@@ -169,6 +169,14 @@ func (r *relay) initialUEMessage(ctx context.Context, n *ranAssoc, log *slog.Log
 		return
 	}
 
+	if err := r.tnlInitialUELocked(u, p); err != nil {
+		r.ues.Remove(u)
+		r.mu.Unlock()
+		r.rejectInitialUE(ctx, log, assoc.InitialUEError, "failed to relay INITIAL UE MESSAGE", err)
+
+		return
+	}
+
 	out, err := rewrite(p, nil, &u.CoreRANID)
 	if err != nil {
 		r.ues.Remove(u)
@@ -236,7 +244,7 @@ func (r *relay) releaseRadioSide(ctx context.Context, n *ranAssoc, log *slog.Log
 	r.mu.Unlock()
 
 	out, err := (&s1ap.UEContextReleaseCommand{
-		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: u.RANCoreID, ENBUES1APID: enbID, Pair: true},
+		UES1APIDs: s1ap.UES1APIDs{UES1APIDPair: &s1ap.UES1APIDPair{MMEUES1APID: u.RANCoreID, ENBUES1APID: enbID}},
 		Cause:     &cause,
 	}).Marshal()
 	if err != nil {
@@ -322,7 +330,7 @@ func (r *relay) updateLocation(u *ueContext, p *s1ap.RawPDU) {
 
 	if cgi, err := assoc.GetIE[s1ap.EUTRANCGI](p.Get, s1ap.IDEUTRANCGI); err == nil && cgi != nil {
 		if plmn, err := plmnid.Decode(cgi.PLMNIdentity); err == nil {
-			u.Ext.ecgi = &ECGI{PLMN: plmn, CellID: cgi.CellID}
+			u.Ext.ecgi = &ECGI{PLMN: plmn, CellID: uint32(cgi.CellID)}
 		}
 	}
 }
