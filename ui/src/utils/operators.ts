@@ -14,6 +14,7 @@ import type {
   PLMNSupport,
   ServedGUMMEIsItem,
   SNSSAI,
+  UserPlaneReason,
 } from "@/queries/operators";
 
 export const MAX_NAME_LENGTH = 64;
@@ -37,6 +38,27 @@ export const ENB_ID_TYPE_LABELS: Record<ENBIDType, string> = {
 
 export const PWS_HELP =
   "The operator whose core sends emergency warnings (PWS) to every cell, through the common CBC.";
+
+export const USER_PLANE_AGGREGATION_HELP =
+  "Whether this operator's user traffic goes through Ella MOCN. Off: radios exchange user traffic directly with the operator's gateways.";
+
+export const USER_PLANE_STATUS_HELP =
+  "Ready: Ella MOCN relays this operator's new sessions. Unavailable: Ella MOCN refuses them; UEs still register. Off: user-plane aggregation is off.";
+
+export const USER_PLANE_ADDRESSES_HELP =
+  "Ella MOCN's addresses toward this operator: the addresses the host routes toward its MMEs and AMFs.";
+
+export const USER_PLANE_INTERFACE_HELP =
+  "The interface the host routes this operator's MMEs and AMFs through. Its user traffic uses the same interface.";
+
+export const USER_PLANE_REASONS: Record<UserPlaneReason, string> = {
+  not_connected: "No association with the operator's MMEs or AMFs",
+  no_route: "No route to the operator's MMEs or AMFs",
+  route_mismatch: "The route to the operator's MMEs or AMFs changed",
+  no_address: "The source address toward the operator changed",
+  interface_error: "Ella MOCN cannot attach to the interface",
+  too_many_operators: "Too many operators use user-plane aggregation",
+};
 
 export const ENB_IDENTITY_LABEL = "4G Gateway Identity (Global eNB ID)";
 
@@ -352,6 +374,9 @@ export const operatorBody = (
     global_gnb_id: merged.global_gnb_id,
     mmes: merged.mmes.map(nodeBody),
     amfs: merged.amfs.map(nodeBody),
+    user_plane: merged.user_plane && {
+      aggregation: merged.user_plane.aggregation,
+    },
   };
 };
 

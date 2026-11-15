@@ -12,12 +12,7 @@ This path returns the metrics of the MOCN in a [Prometheus exposition format](ht
 | ------ | ----------------- |
 | GET    | `/api/v1/metrics` |
 
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `500` | No metric could be gathered. |
-| `503` | 32 requests already in flight, or gathering took more than 8 seconds. |
+It answers `503 Service Unavailable` when 32 requests are already in flight, or when collecting the metrics takes more than 8 seconds.
 
 ### Sample Response
 
@@ -38,11 +33,13 @@ ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="invalid"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="no_radio"} 0
 ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="relayed"} 0
-# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded).
+# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded; setup_failed: SCTP association up, Ella MOCN rejected the last S1 or NG Setup).
 # TYPE ellamocn_radio_associations gauge
 ellamocn_radio_associations{interface="ng",state="connected"} 0
+ellamocn_radio_associations{interface="ng",state="setup_failed"} 0
 ellamocn_radio_associations{interface="ng",state="up"} 1
 ellamocn_radio_associations{interface="s1",state="connected"} 0
+ellamocn_radio_associations{interface="s1",state="setup_failed"} 0
 ellamocn_radio_associations{interface="s1",state="up"} 2
 # HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) and NG-connections relayed, by interface (s1, ng) and operator.
 # TYPE ellamocn_ue_connections gauge

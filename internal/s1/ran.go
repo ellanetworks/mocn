@@ -14,28 +14,31 @@ import (
 )
 
 var (
-	causeUnknownPLMN            = s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnknownPLMN}
-	causeMiscUnspecified        = s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified}
-	causeSemanticError          = s1ap.Cause{Group: s1ap.CauseGroupProtocol, Value: s1ap.CauseProtocolSemanticError}
-	causeNotCompatibleWithState = s1ap.Cause{Group: s1ap.CauseGroupProtocol, Value: s1ap.CauseProtocolMessageNotCompatible}
-	causeTransportUnavailable   = s1ap.Cause{Group: s1ap.CauseGroupTransport, Value: s1ap.CauseTransportResourceUnavailable}
+	causeUnknownPLMN            = s1ap.CauseMiscUnknownPLMN.Cause()
+	causeMiscUnspecified        = s1ap.CauseMiscUnspecified.Cause()
+	causeSemanticError          = s1ap.CauseProtocolSemanticError.Cause()
+	causeNotCompatibleWithState = s1ap.CauseProtocolMessageNotCompatible.Cause()
+	causeTransportUnavailable   = s1ap.CauseTransportResourceUnavailable.Cause()
 )
 
 const noMMETimeToWait = s1ap.TimeToWaitV5s
 
 func ranNodeLocked(n *ranAssoc) RANNode {
 	r := RANNode{
-		State:          RANNodeConnected,
+		State:          n.StateLocked(),
 		ConnectedSince: n.ConnectedAt(),
 		TNLAddresses:   n.TNLAddresses(),
 		SupportedTAs:   []TA{},
 	}
 
-	if n.Up {
-		r.State = RANNodeUp
+	s := n.Setup
+
+	if f := n.Failure; r.State == RANNodeSetupFailed {
+		r.SetupFailure = &SetupFailure{Cause: f.Cause, Reason: f.Reason, At: f.At}
+		s = f.Request
 	}
 
-	if s := n.Setup; s != nil {
+	if s != nil {
 		id := s.globalENBID
 		r.GlobalENBID = &id
 		r.Name = s.name
@@ -123,14 +126,14 @@ func (p protocol) handleS1Setup(ctx context.Context, n *ranAssoc, value []byte) 
 	req, err := s1ap.ParseS1SetupRequest(value)
 	if err != nil {
 		cause, diag := failureCause(err)
-		p.rejectS1Setup(ctx, n, assoc.SetupInvalid, cause, nil, diag, err.Error())
+		p.rejectS1Setup(ctx, n, nil, assoc.SetupInvalid, cause, nil, diag, err.Error())
 
 		return
 	}
 
 	setup, err := ranSetupFrom(req)
 	if err != nil {
-		p.rejectS1Setup(ctx, n, assoc.SetupInvalid, causeSemanticError, nil, nil, err.Error())
+		p.rejectS1Setup(ctx, n, nil, assoc.SetupInvalid, causeSemanticError, nil, nil, err.Error())
 		return
 	}
 
@@ -138,12 +141,12 @@ func (p protocol) handleS1Setup(ctx context.Context, n *ranAssoc, value []byte) 
 
 	switch {
 	case errors.Is(err, assoc.ErrNodeInUse):
-		p.rejectS1Setup(ctx, n, assoc.SetupInvalid, causeSemanticError, nil, nil,
+		p.rejectS1Setup(ctx, n, &setup, assoc.SetupInvalid, causeSemanticError, nil, nil,
 			"the Global eNB ID "+setup.Ref()+" is used by another radio")
 
 		return
 	case err != nil:
-		p.rejectS1Setup(ctx, n, assoc.SetupUnknownPLMN, causeUnknownPLMN, nil, nil, err.Error())
+		p.rejectS1Setup(ctx, n, &setup, assoc.SetupUnknownPLMN, causeUnknownPLMN, nil, nil, err.Error())
 		return
 	}
 
@@ -155,9 +158,9 @@ func (p protocol) handleS1Setup(ctx context.Context, n *ranAssoc, value []byte) 
 	switch outcome, failures := p.core.AwaitCore(ctx, n, serving, accept, failed); outcome {
 	case assoc.AwaitCoreFailed:
 		cause, ttw := setupFailure(failures)
-		p.rejectS1Setup(ctx, n, names.CoreFailure, cause, ttw, nil, "S1 Setup toward the operator's MMEs failed: "+cause.String())
+		p.rejectS1Setup(ctx, n, &setup, names.CoreFailure, cause, ttw, nil, "the operator's MMEs refused the setup: "+causeLabel(cause))
 	case assoc.AwaitNoCore:
-		p.rejectS1Setup(ctx, n, names.NoCore, causeTransportUnavailable, s1ap.Ptr(noMMETimeToWait), nil,
+		p.rejectS1Setup(ctx, n, &setup, names.NoCore, causeTransportUnavailable, s1ap.Ptr(noMMETimeToWait), nil,
 			"no MME of the serving operators is up")
 	case assoc.AwaitDone:
 	}
@@ -207,10 +210,12 @@ func (p protocol) RadioUpLocked(ctx context.Context, n *ranAssoc) {
 	p.replayOverloadLocked(ctx, n, nil)
 }
 
-func (p protocol) rejectS1Setup(ctx context.Context, n *ranAssoc, result string, cause s1ap.Cause,
+func (p protocol) rejectS1Setup(ctx context.Context, n *ranAssoc, req *ranSetup, result string, cause s1ap.Cause,
 	ttw *s1ap.TimeToWait, diag *s1ap.CriticalityDiagnostics, reason string,
 ) {
-	p.core.SetupRejected(ctx, n, result)
+	p.core.SetupRejected(ctx, n, result, assoc.RadioSetupFailure[ranSetup]{
+		Request: req, Cause: causeLabel(cause), Reason: reason,
+	})
 
 	n.Logger(p.log).WarnContext(ctx, "radio S1 Setup rejected", slog.String("cause", cause.String()),
 		slog.String("reason", reason))

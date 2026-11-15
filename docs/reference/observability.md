@@ -34,27 +34,89 @@ Audit events are logs at level `info` with `msg` set to `audit event`.
 
 ## Metrics
 
-Ella MOCN exposes Prometheus metrics at [`GET /api/v1/metrics`](api/metrics.md). The `interface` label is `s1` (TS 36.413) or `ng` (TS 38.413).
+Ella MOCN exposes Prometheus metrics at [`GET /api/v1/metrics`](api/metrics.md).
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `ellamocn_radio_associations` | Gauge | `interface`, `state` (`connected`, `up`) | Radio associations. `connected`: SCTP association up, no S1 or NG Setup. `up`: S1 or NG Setup succeeded. |
-| `ellamocn_core_associations` | Gauge | `interface`, `operator`, `state` (`disconnected`, `connected`, `up`, `setup_failed`) | Associations to the configured MMEs (`s1`) and AMFs (`ng`), by operator name. `disconnected`: no SCTP association. `connected`: SCTP association up, no S1 or NG Setup. `up`: S1 or NG Setup succeeded. `setup_failed`: the MME or AMF rejected the setup. Every state of every operator with an MME or AMF is exported, at 0 when none. |
-| `ellamocn_core_overloaded` | Gauge | `interface`, `operator` | Configured MMEs and AMFs with an ongoing overload action, by operator name. Exported at 0 for every operator with an MME or AMF. |
-| `ellamocn_setup_attempts_total` | Counter | `interface`, `side` (`radio`, `core`), `result` | S1 Setup and NG Setup procedures, one per attempt. `radio`: received from radios, with result `success`, `invalid` (undecodable or invalid request), `unknown_plmn` (no operator serves a broadcast PLMN), `no_mme` or `no_amf` (no MME or AMF of the serving operators is up), `mme_failure` or `amf_failure` (the serving operators' MMEs or AMFs rejected the setup) or `error` (the response could not be built or sent, or the radio left before the answer). `core`: sent to MMEs and AMFs, with result `success`, `failure` (S1 Setup Failure, NG Setup Failure or an invalid response), `timeout` (no answer) or `error` (the request could not be built or sent, or the association dropped before the answer). |
-| `ellamocn_initial_ue_messages_total` | Counter | `interface`, `result` (`relayed`, `unknown_plmn`, `no_mme`, `no_amf`, `rejected`, `invalid`, `error`) | INITIAL UE MESSAGEs received from radios. `relayed`: sent to an MME or AMF. `unknown_plmn`: no operator serves the PLMN. `no_mme`, `no_amf`: no selectable MME or AMF of the operator. `rejected`: reuses an allocated eNB UE S1AP ID or RAN UE NGAP ID; an ERROR INDICATION is sent. `invalid`: undecodable or missing a mandatory IE. `error`: internal failure, or the send to the MME or AMF failed. |
-| `ellamocn_paging_messages_total` | Counter | `interface`, `result` (`relayed`, `no_radio`, `invalid`) | PAGING messages received from MMEs and AMFs. `relayed`: sent to the radios that serve a TAI of the message in one of the operator's PLMNs. `no_radio`: no radio that is up serves such a TAI. `invalid`: undecodable. |
-| `ellamocn_overload_messages_total` | Counter | `interface`, `procedure` (`overload_start`, `overload_stop`), `result` (`relayed`, `no_radio`, `ignored`, `invalid`) | OVERLOAD START and OVERLOAD STOP messages received from MMEs (`s1`) and AMFs (`ng`). `relayed`: sent to the radios that broadcast one of the operator's PLMNs, including the replay of an ongoing OVERLOAD START to a radio after its S1 or NG Setup. `no_radio`: no such radio is up. `ignored` (`overload_stop` only): no ongoing overload action for the GUMMEIs or GUAMIs. `invalid`: undecodable or with an invalid GUMMEI or GUAMI. |
-| `ellamocn_handover_messages_total` | Counter | `interface`, `procedure` (`handover_request`, `path_switch_request`), `result` (`relayed`, `no_radio`, `no_mme`, `no_amf`, `invalid`, `error`) | HANDOVER REQUEST messages received from MMEs and AMFs (`handover_request`) and PATH SWITCH REQUEST messages received from radios (`path_switch_request`). `relayed`: sent to the target radio, or to the MME or AMF. `no_radio` (`handover_request` only): no radio of the operator that is up is the target: the radio with the Target RAN Node ID, or else the radio whose eNB ID or gNB ID is the leftmost bits of the target cell's identity. `no_mme`, `no_amf` (`path_switch_request` only): no selectable MME serves the Source MME GUMMEI, or no selectable AMF is in the AMF set of the Source AMF GUAMI. Without a Source AMF GUAMI, the operator of the NR TAI's PLMN does not have exactly one AMF set up. `invalid`: undecodable or with an invalid IE needed for routing. `error`: internal failure, or the send failed. |
-| `ellamocn_pws_messages_total` | Counter | `interface`, `procedure` (`write_replace_warning`, `kill`, `pws_cancel`, `pws_restart_indication`, `pws_failure_indication`), `result` (`relayed`, `not_pws_operator`, `no_radio`, `timeout`, `no_pws_operator`, `no_mme`, `no_amf`, `invalid`) | WRITE-REPLACE WARNING REQUEST, KILL REQUEST (`s1`) and PWS CANCEL REQUEST (`ng`) messages received from MMEs and AMFs, and PWS RESTART INDICATION and PWS FAILURE INDICATION messages received from radios. `relayed`: sent to the radios that cover the warning area, or to every MME or AMF of the PWS operator that is up. `not_pws_operator`: from an operator that is not the PWS operator; answered with no broadcast area. `no_radio`: no radio that is up covers the warning area; answered with no broadcast area. `timeout` (requests only): a radio the request was sent to did not answer within 3 seconds; counted once per radio. `no_pws_operator` (indications only): no operator with MMEs or AMFs on the interface is the PWS operator; dropped. `no_mme`, `no_amf` (indications only): no MME or AMF of the PWS operator is up; a PWS RESTART INDICATION is kept and sent when one is up. `invalid`: undecodable. |
-| `ellamocn_ue_connections` | Gauge | `interface`, `operator` | UE-associated logical S1-connections (TS 36.413 clause 3.1) and NG-connections relayed, by operator name. |
-| `ellamocn_api_request_duration_seconds` | Histogram | `method`, `route`, `code` | Duration of API requests, by route (`/api/v1/operators/{name}`). Requests to `/api/v1/pprof/` and to no route are left out. |
-| `ellamocn_database_query_duration_seconds` | Histogram | `pool` (`write`, `read`) | Duration of database calls, statements, transaction and row scanning included. Exemplars: `trace_id`, `span_id`. |
-| `ellamocn_database_query_errors_total` | Counter | `pool` (`write`, `read`) | Failed database calls. A record not found, in conflict or rejected as invalid is a result, not a failure. |
+| `ellamocn_radio_associations` | Gauge | `interface`, `state` (`connected`, `up`, `setup_failed`) | Radios connected, by state: `connected` before the S1 or NG Setup, `up` after, `setup_failed` after Ella MOCN rejected the last S1 or NG Setup. |
+| `ellamocn_core_associations` | Gauge | `interface`, `operator`, `state` (`disconnected`, `connected`, `up`, `setup_failed`) | Associations to MMEs and AMFs, by operator and state. |
+| `ellamocn_core_overloaded` | Gauge | `interface`, `operator` | MMEs and AMFs reporting overload, by operator. |
+| `ellamocn_setup_attempts_total` | Counter | `interface`, `side` (`radio`, `core`), `result` (`success`, `failure`, `timeout`, `unknown_plmn`, …) | S1 and NG Setup attempts from radios (`radio`) and to MMEs and AMFs (`core`), by result. |
+| `ellamocn_initial_ue_messages_total` | Counter | `interface`, `result` (`relayed`, `unknown_plmn`, `no_mme`, `no_amf`, `rejected`, `invalid`, `error`) | New UE connections from radios, by result. |
+| `ellamocn_paging_messages_total` | Counter | `interface`, `result` (`relayed`, `no_radio`, `invalid`) | Paging messages from MMEs and AMFs, by result. |
+| `ellamocn_overload_messages_total` | Counter | `interface`, `procedure` (`overload_start`, `overload_stop`), `result` (`relayed`, `no_radio`, `ignored`, `invalid`) | Overload start and stop messages from MMEs and AMFs, by result. |
+| `ellamocn_handover_messages_total` | Counter | `interface`, `procedure` (`handover_request`, `path_switch_request`), `result` (`relayed`, `no_radio`, `no_mme`, `no_amf`, `invalid`, `error`) | Handover and path switch requests, by result. |
+| `ellamocn_pws_messages_total` | Counter | `interface`, `procedure` (`write_replace_warning`, `kill`, `pws_cancel`, `pws_restart_indication`, `pws_failure_indication`), `result` (`relayed`, `no_radio`, `timeout`, …) | Public warning requests from MMEs and AMFs and indications from radios, by result. |
+| `ellamocn_ue_connections` | Gauge | `interface`, `operator` | UE connections relayed, by operator. |
+| `ellamocn_api_request_duration_seconds` | Histogram | `method`, `route`, `code` | Duration of API requests. |
+| `ellamocn_database_query_duration_seconds` | Histogram | `pool` (`write`, `read`) | Duration of database queries. |
+| `ellamocn_database_query_errors_total` | Counter | `pool` (`write`, `read`) | Failed database queries. |
 | `ellamocn_database_storage_bytes` | Gauge | `file` (`main`, `wal`) | Size of the database on disk. |
-| `ellamocn_build_info` | Gauge | `version`, `revision`, `branch`, `goversion`, `goos`, `goarch`, `tags` | Always 1. |
-| `go_*` | Gauge, Counter, Summary | | Go runtime: goroutines, heap, garbage-collection pauses. |
-| `process_*` | Gauge, Counter | | Process: memory, CPU, open file descriptors, start time. |
+| `ellamocn_build_info` | Gauge | `version`, `revision`, `branch`, `goversion`, `goos`, `goarch`, `tags` | Build information. Always 1. |
+| `go_*` | Gauge, Counter, Summary | | Go runtime. |
+| `process_*` | Gauge, Counter | | Process memory, CPU and file descriptors. |
+
+### User-plane metrics
+
+With [user-plane aggregation](../explanation/user_plane_aggregation_with_ebpf.md):
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `ellamocn_user_plane_enabled` | Gauge | | 1 when `ran.user_plane.enabled` is `true` in the [configuration file](config_file.md), 0 otherwise. |
+| `ellamocn_user_plane_datapath_loaded` | Gauge | | 1 while the user-plane eBPF program is loaded, 0 otherwise. |
+| `ellamocn_user_plane_state` | Gauge | `operator`, `state` (`ready`, `unavailable`, `off`) | 1 for the operator's current [user-plane state](api/operators.md), 0 for the other states. |
+| `ellamocn_user_plane_unavailable` | Gauge | `operator`, `reason` (`not_connected`, `no_route`, `route_mismatch`, `no_address`, `interface_error`, `too_many_operators`) | 1 for the [reason](api/operators.md) while the state is `unavailable`, 0 otherwise. |
+| `ellamocn_user_plane_tunnels` | Gauge | `operator`, `direction` | GTP-U tunnels relayed. |
+| `ellamocn_user_plane_tunnel_setups_total` | Counter | `operator`, `direction` | GTP-U tunnels set up. |
+| `ellamocn_user_plane_tunnel_setup_failures_total` | Counter | `operator`, `interface` (`s1`, `ng`), `procedure`, `reason` (`user_plane_unavailable`, `no_route`, `route_mismatch`, `no_address`, `no_teid`, `too_many_paths`, `invalid_address`, `unknown_endpoint`, `other`) | Procedures whose user-plane transport could not be relayed. The UE is released, or the handover or path switch is rejected. |
+| `ellamocn_user_plane_packets_total` | Counter | `operator`, `radio`, `direction` | G-PDUs relayed. End Marker and Tunnel Status messages are not counted. |
+| `ellamocn_user_plane_bytes_total` | Counter | `operator`, `radio`, `direction` | Octets of the T-PDUs of the G-PDUs relayed: the inner IP packet, without the GTP-U header and extension headers. |
+| `ellamocn_user_plane_dropped_packets_total` | Counter | `operator`, `path` (`fast`, `slow`), `reason` | GTP-U messages dropped. |
+| `ellamocn_user_plane_slow_path_packets_total` | Counter | `reason` | Packets on user-plane interfaces that the fast path left to the kernel. |
+| `ellamocn_user_plane_slow_path_relayed_total` | Counter | `operator`, `direction` | G-PDUs, End Markers and Tunnel Status messages relayed by the slow path. |
+| `ellamocn_user_plane_error_indications_total` | Counter | `origin`, `result` | GTP-U Error Indications. |
+| `ellamocn_user_plane_peer_up` | Gauge | `operator`, `side` (`radio`, `core`), `peer` | 0 once 3 Echo Requests in a row, sent every 60 s, go unanswered, 3 to 4 minutes after the peer stops answering. 1 otherwise. Present while a tunnel of the operator relays to the peer. |
+| `ellamocn_user_plane_bpf_map_entries` | Gauge | `map` (`tunnels`, `tunnel_stats`, `ifaces`, `path_stats`) | Entries in a map of the user-plane datapath. |
+| `ellamocn_user_plane_bpf_map_max_entries` | Gauge | `map` (`tunnels`, `tunnel_stats`, `ifaces`, `path_stats`) | Capacity of a map of the user-plane datapath. |
+| `ellamocn_user_plane_bpf_map_memory_bytes` | Gauge | `map` (`tunnels`, `tunnel_stats`, `ifaces`, `config`, `path_stats`, `drops`, `passes`) | Kernel memory locked by a map of the user-plane datapath. |
+
+| Label | Values |
+|---|---|
+| `operator` | Operator name. Series follow a rename and are removed with the operator. |
+| `direction` | `uplink`: received from a radio. `downlink`: received from the operator. |
+| `radio` | `ref`, in the [Radios API](api/radios.md), of the radio that carries the traffic. After a handover or path switch, later traffic counts under the target radio. Series are removed when the radio disconnects. |
+| `procedure` | `initial_context_setup`, `erab_setup`, `erab_modify`, `erab_modification_indication`, `handover_preparation`, `handover_resource_allocation`, `path_switch_request` (`s1`); `initial_context_setup`, `pdu_session_resource_setup`, `pdu_session_resource_modify`, `pdu_session_resource_modify_indication`, `handover_preparation`, `handover_resource_allocation`, `path_switch_request` (`ng`). |
+| `peer` | Address of the eNB, gNB, S-GW or UPF. |
+
+`ellamocn_user_plane_dropped_packets_total` reasons:
+
+| `path` | `operator` | `reason` |
+|---|---|---|
+| `fast` | Set | `wrong_interface`: received on an interface of another operator. `wrong_egress_interface`: routed out of another interface than the tunnel's. `fib_blackhole`, `fib_unreachable`, `fib_prohibit`: route type toward the peer. `rewrite_failed`: the packet could not be rewritten. |
+| `slow` | Set | `wrong_interface`: received on an interface of another operator. `malformed`: invalid extension headers. `unsupported_extension_header`: an extension header that must be comprehended. `no_egress_interface`: the tunnel has no egress interface. `wrong_egress_interface`: the route toward the peer leaves by another interface than the tunnel's. `send_failed`: the kernel refused the packet. |
+| `slow` | Empty | `no_tunnel`: unknown TEID. `quarantined`: TEID of a tunnel closed less than 10 s ago. `malformed`: invalid GTP-U header. `wrong_interface`: Echo Request on an interface Ella MOCN does not relay. `unknown_message`: unsupported message type. `supported_extension_headers_notification`: received from a peer. |
+
+`ellamocn_user_plane_slow_path_packets_total` reasons:
+
+| `reason` | Packet |
+|---|---|
+| `ip_fragment` | An IP fragment, of any protocol. Counted before UDP and GTP-U parsing. |
+| `no_tunnel` | Unknown TEID. |
+| `not_local` | Not addressed to the tunnel's address. |
+| `extension_header` | An extension header the fast path does not relay. |
+| `zero_checksum` | IPv6 with a zero UDP checksum. |
+| `merged` | A GRO aggregate. |
+| `frag_needed` | Larger than the egress MTU. |
+| `forwarding_disabled` | IP forwarding is off on the ingress interface. |
+| `ipsec_policy` | An IPsec policy with a template and no XFRM interface ID, or a blocking default policy, is installed, and the ingress or egress interface is not an XFRM interface. |
+| `fib_other` | Another route lookup result. |
+
+`ellamocn_user_plane_error_indications_total` labels:
+
+| `origin` | `result` |
+|---|---|
+| `received`: from a peer | `translated`: sent to the other side of the matching tunnels. `no_tunnel`: no matching tunnel. `no_return_address`: no address known for the other side. `malformed`. |
+| `generated`: by Ella MOCN, for a G-PDU to an unknown TEID | `sent`. `rate_limited`: over 100 per second. |
 
 ## Traces
 

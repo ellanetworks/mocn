@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
   Stack,
 } from "@mui/material";
@@ -22,6 +23,7 @@ interface EditDialogProps {
   pendingLabel?: string;
   failure?: string;
   notice?: ReactNode;
+  description?: string;
 }
 
 export default function EditDialog({
@@ -36,6 +38,7 @@ export default function EditDialog({
   pendingLabel = "Updating…",
   failure = "Could not update",
   notice,
+  description,
 }: EditDialogProps) {
   const content = useRef<HTMLDivElement>(null);
 
@@ -60,6 +63,7 @@ export default function EditDialog({
       <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers ref={content}>
         <Stack spacing={2}>
+          {description && <DialogContentText>{description}</DialogContentText>}
           <DialogError error={error} prefix={failure} />
           {children}
         </Stack>

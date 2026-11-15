@@ -1,14 +1,17 @@
 import { Chip, Tooltip, type ChipProps } from "@mui/material";
-import type { AMFState, MMEState } from "@/queries/operators";
+import type { AMFState, MMEState, UserPlaneState } from "@/queries/operators";
 import type { RadioState } from "@/queries/radios";
 
-type State = MMEState | AMFState | RadioState;
+type State = MMEState | AMFState | RadioState | UserPlaneState;
 
 const STATE_LABELS: Record<State, string> = {
   disconnected: "Disconnected",
   connected: "Connected",
   up: "Up",
   setup_failed: "Setup failed",
+  ready: "Ready",
+  unavailable: "Unavailable",
+  off: "Off",
 };
 
 const STATE_COLORS: Record<State, ChipProps["color"]> = {
@@ -16,6 +19,9 @@ const STATE_COLORS: Record<State, ChipProps["color"]> = {
   connected: "warning",
   up: "success",
   setup_failed: "default",
+  ready: "success",
+  unavailable: "error",
+  off: "default",
 };
 
 export default function StateChip({

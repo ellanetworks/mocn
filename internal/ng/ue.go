@@ -6,6 +6,7 @@ import (
 
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/uetable"
 )
 
@@ -41,6 +42,7 @@ type UE struct {
 	Since            time.Time
 	TAI              *TAI
 	NRCGI            *NRCGI
+	Tunnels          []gtpu.TunnelInfo
 }
 
 type ueInfo struct {
@@ -54,6 +56,8 @@ type ueInfo struct {
 	backup    amfName
 	switching bool
 	source    ngap.AMFUENGAPID
+	tunnels   gtpu.Session
+	path      *gtpu.Path
 }
 
 type (

@@ -158,7 +158,11 @@ func reroutedInitialUEMessage(msg []byte, req *ngap.RerouteNASRequest) ([]byte, 
 	for _, id := range []ngap.ProtocolIEID{
 		ngap.IDAMFSetID, ngap.IDAllowedNSSAI, ngap.IDSourceToTargetAMFInformationReroute, ngap.IDPartiallyAllowedNSSAI,
 	} {
-		i := reroute.Index(id)
+		i, err := reroute.Index(id)
+		if err != nil {
+			return nil, err
+		}
+
 		if i < 0 {
 			continue
 		}
@@ -181,7 +185,12 @@ func reroutedInitialUEMessage(msg []byte, req *ngap.RerouteNASRequest) ([]byte, 
 }
 
 func setIE(p *ngap.RawPDU, ie ngap.RawIE, order []ngap.ProtocolIEID) error {
-	if i := p.Index(ie.ID); i >= 0 {
+	i, err := p.Index(ie.ID)
+	if err != nil {
+		return err
+	}
+
+	if i >= 0 {
 		return p.SetValue(i, ie.Value)
 	}
 

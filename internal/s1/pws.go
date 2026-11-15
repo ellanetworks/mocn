@@ -44,24 +44,25 @@ func (s ranSetup) ownsCellID(cellID uint32) bool {
 func (s ranSetup) ownsCell(c s1ap.EUTRANCGI) bool {
 	plmn, err := plmnid.Decode(c.PLMNIdentity)
 
-	return err == nil && s.ownsCellID(c.CellID) && (plmn == s.globalENBID.PLMN || s.Broadcasts([]db.PLMN{plmn}))
+	return err == nil && s.ownsCellID(uint32(c.CellID)) && (plmn == s.globalENBID.PLMN || s.Broadcasts([]db.PLMN{plmn}))
 }
 
 // TS 36.413 clause 8.12.1.2
 // TS 36.413 clause 9.2.1.46
 func warningCovers(l *s1ap.WarningAreaList) func(ranSetup) bool {
 	switch {
-	case l == nil || len(l.EmergencyAreaIDList) > 0:
+	case l == nil || l.Ext != nil || l.EmergencyAreaIDList != nil:
 		return func(ranSetup) bool { return true }
-	case len(l.CellIDList) > 0:
+	case l.CellIDList != nil:
 		return func(s ranSetup) bool {
-			return slices.ContainsFunc(l.CellIDList, s.ownsCell)
+			return slices.ContainsFunc(*l.CellIDList, s.ownsCell)
 		}
 	}
 
-	tais := make([]assoc.TAI, 0, len(l.TAIList))
+	listed := assoc.Items(l.TrackingAreaListforWarning)
+	tais := make([]assoc.TAI, 0, len(listed))
 
-	for _, t := range l.TAIList {
+	for _, t := range listed {
 		if id, err := plmnid.Decode(t.PLMNIdentity); err == nil {
 			tais = append(tais, assoc.TAI{PLMN: id, TAC: uint32(t.TAC)})
 		}
@@ -219,15 +220,15 @@ func completedAreaList(got []*s1ap.BroadcastCompletedAreaList) *s1ap.BroadcastCo
 			continue
 		}
 
-		a.AddCells(l.CellIDBroadcast...)
+		a.AddCells(assoc.Items(l.CellIDBroadcast)...)
 
-		for _, t := range l.TAIBroadcast {
+		for _, t := range assoc.Items(l.TAIBroadcast) {
 			a.AddTAI(t.TAI, assoc.Convert(t.CompletedCellInTAI, func(c s1ap.CompletedCellInTAIItem) s1ap.CellIDBroadcastItem {
 				return s1ap.CellIDBroadcastItem(c)
 			}))
 		}
 
-		for _, e := range l.EmergencyAreaIDBroadcast {
+		for _, e := range assoc.Items(l.EmergencyAreaIDBroadcast) {
 			a.AddEAI(e.EmergencyAreaID, assoc.Convert(e.CompletedCellInEAI, func(c s1ap.CompletedCellInEAIItem) s1ap.CellIDBroadcastItem {
 				return s1ap.CellIDBroadcastItem(c)
 			}))
@@ -241,15 +242,15 @@ func completedAreaList(got []*s1ap.BroadcastCompletedAreaList) *s1ap.BroadcastCo
 	a = a.OneKind()
 
 	return &s1ap.BroadcastCompletedAreaList{
-		CellIDBroadcast: a.Cells,
-		TAIBroadcast: assoc.Convert(a.TAIs, func(t assoc.Area[s1ap.TAI, s1ap.CellIDBroadcastItem]) s1ap.TAIBroadcastItem {
+		CellIDBroadcast: assoc.NonEmpty(s1ap.CellIDBroadcast(a.Cells)),
+		TAIBroadcast: assoc.NonEmpty(s1ap.TAIBroadcast(assoc.Convert(a.TAIs, func(t assoc.Area[s1ap.TAI, s1ap.CellIDBroadcastItem]) s1ap.TAIBroadcastItem {
 			return s1ap.TAIBroadcastItem{
 				TAI: t.ID, CompletedCellInTAI: assoc.Convert(t.Cells, func(c s1ap.CellIDBroadcastItem) s1ap.CompletedCellInTAIItem {
 					return s1ap.CompletedCellInTAIItem(c)
 				}),
 			}
-		}),
-		EmergencyAreaIDBroadcast: assoc.Convert(a.EAIs,
+		}))),
+		EmergencyAreaIDBroadcast: assoc.NonEmpty(s1ap.EmergencyAreaIDBroadcast(assoc.Convert(a.EAIs,
 			func(e assoc.Area[s1ap.EmergencyAreaID, s1ap.CellIDBroadcastItem]) s1ap.EmergencyAreaIDBroadcastItem {
 				return s1ap.EmergencyAreaIDBroadcastItem{
 					EmergencyAreaID: e.ID,
@@ -257,7 +258,7 @@ func completedAreaList(got []*s1ap.BroadcastCompletedAreaList) *s1ap.BroadcastCo
 						return s1ap.CompletedCellInEAIItem(c)
 					}),
 				}
-			}),
+			}))),
 	}
 }
 
@@ -270,15 +271,15 @@ func cancelledAreaList(got []*s1ap.BroadcastCancelledAreaList) *s1ap.BroadcastCa
 			continue
 		}
 
-		a.AddCells(l.CellIDCancelled...)
+		a.AddCells(assoc.Items(l.CellIDCancelled)...)
 
-		for _, t := range l.TAICancelled {
+		for _, t := range assoc.Items(l.TAICancelled) {
 			a.AddTAI(t.TAI, assoc.Convert(t.CancelledCellInTAI, func(c s1ap.CancelledCellInTAIItem) s1ap.CellIDCancelledItem {
 				return s1ap.CellIDCancelledItem(c)
 			}))
 		}
 
-		for _, e := range l.EmergencyAreaIDCancelled {
+		for _, e := range assoc.Items(l.EmergencyAreaIDCancelled) {
 			a.AddEAI(e.EmergencyAreaID, assoc.Convert(e.CancelledCellInEAI, func(c s1ap.CancelledCellInEAIItem) s1ap.CellIDCancelledItem {
 				return s1ap.CellIDCancelledItem(c)
 			}))
@@ -292,15 +293,15 @@ func cancelledAreaList(got []*s1ap.BroadcastCancelledAreaList) *s1ap.BroadcastCa
 	a = a.OneKind()
 
 	return &s1ap.BroadcastCancelledAreaList{
-		CellIDCancelled: a.Cells,
-		TAICancelled: assoc.Convert(a.TAIs, func(t assoc.Area[s1ap.TAI, s1ap.CellIDCancelledItem]) s1ap.TAICancelledItem {
+		CellIDCancelled: assoc.NonEmpty(s1ap.CellIDCancelled(a.Cells)),
+		TAICancelled: assoc.NonEmpty(s1ap.TAICancelled(assoc.Convert(a.TAIs, func(t assoc.Area[s1ap.TAI, s1ap.CellIDCancelledItem]) s1ap.TAICancelledItem {
 			return s1ap.TAICancelledItem{
 				TAI: t.ID, CancelledCellInTAI: assoc.Convert(t.Cells, func(c s1ap.CellIDCancelledItem) s1ap.CancelledCellInTAIItem {
 					return s1ap.CancelledCellInTAIItem(c)
 				}),
 			}
-		}),
-		EmergencyAreaIDCancelled: assoc.Convert(a.EAIs,
+		}))),
+		EmergencyAreaIDCancelled: assoc.NonEmpty(s1ap.EmergencyAreaIDCancelled(assoc.Convert(a.EAIs,
 			func(e assoc.Area[s1ap.EmergencyAreaID, s1ap.CellIDCancelledItem]) s1ap.EmergencyAreaIDCancelledItem {
 				return s1ap.EmergencyAreaIDCancelledItem{
 					EmergencyAreaID: e.ID,
@@ -308,7 +309,7 @@ func cancelledAreaList(got []*s1ap.BroadcastCancelledAreaList) *s1ap.BroadcastCa
 						return s1ap.CancelledCellInEAIItem(c)
 					}),
 				}
-			}),
+			}))),
 	}
 }
 

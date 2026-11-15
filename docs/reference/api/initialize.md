@@ -26,15 +26,6 @@ This path creates the first user, an Admin, and logs it in: it returns an access
 | `message` | string | `System initialized successfully`. |
 | `token`   | string | Access token, valid for 15 minutes. |
 
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `201` | Created. |
-| `400` | Invalid email or password. |
-| `403` | A user exists. |
-| `429` | More than 20 attempts in a minute from the client address, or its IPv6 /64, counting logins. |
-
 ### Sample Request
 
 ```json

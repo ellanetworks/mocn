@@ -35,6 +35,8 @@ This path returns the operators, sorted by name, with the state of their MMEs an
 | `amfs`                      | array   | AMFs. Empty when none. |
 | `amfs[].tnl_addresses`      | array   | Addresses of the AMF, reached over one SCTP association to port 38412. |
 | `amfs[].status`             | object  | State of the AMF. See [AMF Status](#amf-status). |
+| `user_plane.aggregation`    | boolean | Whether user traffic goes through Ella MOCN ([user-plane aggregation](../../explanation/user_plane_aggregation_with_ebpf.md)). Always `false` when `ran.user_plane.enabled` is `false` in the configuration file. |
+| `user_plane.status`         | object  | State of the operator's user plane. See [User-Plane Status](#user-plane-status). |
 | `ue_connections`            | int     | UE-associated logical S1-connections and NG-connections across the operator's MMEs and AMFs. |
 
 ### Sample Response
@@ -149,6 +151,18 @@ The state of an MME, learned from its S1 association and not stored.
 | `overload[].traffic_load_reduction_indication` | int | Traffic Load Reduction Indication from the same OVERLOAD START: the percentage of the traffic to reject, `1` to `99`. Absent when the MME did not include it. |
 | `ue_connections`        | int    | UE-associated logical S1-connections relayed to the MME. |
 
+### User-Plane Status
+
+The state of the operator's user plane, derived from the host's routes and not stored.
+
+| Field        | Type   | Description |
+| ------------ | ------ | ----------- |
+| `state`      | string | `ready`: Ella MOCN relays the operator's new sessions. `unavailable`: user-plane aggregation is on, but Ella MOCN refuses the operator's new sessions; UEs still register. `off`: user-plane aggregation is off for the operator. |
+| `reason`     | string | Why the user plane is unavailable. Absent otherwise. `not_connected`: no association with the operator's MMEs or AMFs. `no_route`: no route to an MME or AMF. `route_mismatch`: the route to an MME or AMF no longer leaves by the interface its association uses, or two of them use different interfaces or addresses. `no_address`: the route to an MME or AMF no longer has the association's address as its source. `interface_error`: Ella MOCN cannot attach to the interface. `too_many_operators`: more operators use user-plane aggregation than Ella MOCN supports. |
+| `interface`  | string | The interface the host routes the operator's MMEs and AMFs through. Absent without an association. |
+| `addresses`  | array  | Ella MOCN's addresses toward the operator, at most one IPv4 and one IPv6: the source addresses of its associations with the operator's MMEs and AMFs. |
+| `since`      | string | When the user plane entered its current state. |
+
 ### AMF Status
 
 The state of an AMF, learned from its NG association and not stored.
@@ -199,12 +213,6 @@ The fields of [List Operators](#list-operators), plus:
 | `ue_connections_by_radio[].global_gnb_id`  | object | The radio's `global_gnb_id`. Absent when the radio has none. |
 | `ue_connections_by_radio[].name`           | string | The radio's `name`. Absent when the radio sent none. |
 | `ue_connections_by_radio[].ue_connections` | int    | UE-associated logical S1-connections or NG-connections. |
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `404` | No operator has that name. |
 
 ### Sample Response
 
@@ -298,16 +306,10 @@ This path returns the operator as [Get an Operator](#get-an-operator) returns it
 | `mmes[].tnl_addresses`        | array   | Yes      | At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's MMEs. Returned in canonical form. |
 | `amfs`                        | array   | No       | AMFs. |
 | `amfs[].tnl_addresses`        | array   | Yes      | At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's AMFs. Returned in canonical form. |
+| `user_plane`                  | object  | No       | Absent for the defaults. |
+| `user_plane.aggregation`      | boolean | No       | Default `true` when `ran.user_plane.enabled` is `true` in the configuration file, `false` otherwise. `true` gets `400` when it is `false`. |
 
-The read-only fields of the responses, `mmes[].status`, `amfs[].status`, `ue_connections` and `ue_connections_by_radio`, are ignored. Other unknown fields get `400`.
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `201` | Created. |
-| `400` | Invalid field. |
-| `409` | Another operator has the name or one of the PLMNs, or is the PWS operator. |
+The read-only fields of the responses, `mmes[].status`, `amfs[].status`, `user_plane.status`, `ue_connections` and `ue_connections_by_radio`, are ignored. Other unknown fields get `400`.
 
 ### Sample Request
 
@@ -409,14 +411,6 @@ This path replaces the whole operator. A different `name` renames it. It takes t
 | ------ | -------------------------- |
 | PUT    | `/api/v1/operators/{name}` |
 
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `400` | Invalid field. |
-| `404` | No operator has that name. |
-| `409` | Another operator has the name or one of the PLMNs, or is the PWS operator. |
-
 ### Sample Request
 
 ```json
@@ -447,12 +441,6 @@ This path replaces the whole operator. A different `name` renames it. It takes t
 | Method | Path                       |
 | ------ | -------------------------- |
 | DELETE | `/api/v1/operators/{name}` |
-
-### Response Codes
-
-| Code  | Description |
-| ----- | ----------- |
-| `404` | No operator has that name. |
 
 ### Sample Response
 

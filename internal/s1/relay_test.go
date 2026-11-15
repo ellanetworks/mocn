@@ -98,8 +98,8 @@ func servingMME(t *testing.T, got frame, group uint16, code byte, mmeID s1ap.MME
 		t.Fatalf("MME UE S1AP ID 2 = %d (%v, %v), want %d", id2, ok, err, mmeID)
 	}
 
-	i, j := p.Index(s1ap.IDGUMMEI), p.Index(s1ap.IDMMEUES1APID2)
-	if j != i+1 || p.Index(s1ap.IDSecurityKey) > i {
+	i, j := indexOf(t, p, s1ap.IDGUMMEI), indexOf(t, p, s1ap.IDMMEUES1APID2)
+	if j != i+1 || indexOf(t, p, s1ap.IDSecurityKey) > i {
 		t.Fatalf("GUMMEI at %d and MME UE S1AP ID 2 at %d are out of order", i, j)
 	}
 
@@ -248,9 +248,9 @@ func contextSetup(ue attached, mmeSide bool) *s1ap.InitialContextSetupRequest {
 				PriorityLevel: 15, PreemptionCapability: s1ap.PreemptionShallNotTrigger,
 				PreemptionVulnerability: s1ap.PreemptionNotPreemptable,
 			}},
-			TransportLayerAddress: s1ap.TransportLayerAddress{10, 45, 0, 1}, GTPTEID: 0x12345678, NASPDU: nas,
+			TransportLayerAddress: tlaOf("10.45.0.1"), GTPTEID: 0x12345678, NASPDU: nas,
 		}},
-		UESecurityCapabilities: s1ap.UESecurityCapabilities{EncryptionAlgorithms: 0x8000, IntegrityProtectionAlgorithms: 0xc000},
+		UESecurityCapabilities: s1ap.UESecurityCapabilities{EncryptionAlgorithms: s1ap.SecurityAlgorithms{Value: 0x8000}, IntegrityProtectionAlgorithms: s1ap.SecurityAlgorithms{Value: 0xc000}},
 		SecurityKey:            securityKey(),
 		UERadioCapability:      []byte{0xaa, 0xbb},
 	}
@@ -320,7 +320,7 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 
 	icsResp := &s1ap.InitialContextSetupResponse{
 		MMEUES1APID: s1ap.Ptr(ue.ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(7)),
-		ERABSetup: []s1ap.ERABSetupItemCtxtSURes{{ERABID: 5, TransportLayerAddress: s1ap.TransportLayerAddress{10, 90, 1, 21}, GTPTEID: 1}},
+		ERABSetup: []s1ap.ERABSetupItemCtxtSURes{{ERABID: 5, TransportLayerAddress: tlaOf("10.90.1.21"), GTPTEID: 1}},
 	}
 	enb.Send(t, icsResp)
 
@@ -329,7 +329,7 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 
 	req := &s1ap.UEContextReleaseRequest{
 		MMEUES1APID: ue.ranMMEID, ENBUES1APID: 7,
-		Cause: &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: 20},
+		Cause: s1ap.Ptr(s1ap.CauseRadioNetworkUserInactivity.Cause()),
 	}
 	enb.Send(t, req)
 
@@ -341,8 +341,8 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	}
 
 	cmd := &s1ap.UEContextReleaseCommand{
-		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: 1000, ENBUES1APID: ue.mmeENBID, Pair: true},
-		Cause:     &s1ap.Cause{Group: s1ap.CauseGroupNAS, Value: 0},
+		UES1APIDs: s1ap.UES1APIDs{UES1APIDPair: &s1ap.UES1APIDPair{MMEUES1APID: 1000, ENBUES1APID: ue.mmeENBID}},
+		Cause:     s1ap.Ptr(s1ap.CauseNASNormalRelease.Cause()),
 	}
 	mme.Send(t, cmd)
 
@@ -350,7 +350,7 @@ func TestUELifecycleThroughRelay(t *testing.T) {
 	assertRelayed(t, cmd, f)
 
 	pair, _, err := raw.UES1APIDs()
-	if err != nil || !pair.Pair || pair.MMEUES1APID != ue.ranMMEID || pair.ENBUES1APID != 7 {
+	if err != nil || pair.UES1APIDPair == nil || pair.UES1APIDPair.MMEUES1APID != ue.ranMMEID || pair.UES1APIDPair.ENBUES1APID != 7 {
 		t.Fatalf("UE Context Release Command IDs = %+v, %v", pair, err)
 	}
 
@@ -399,13 +399,13 @@ func TestReleaseCommandWithMMEUEIDOnly(t *testing.T) {
 	ue := attach(t, enb, mme, 3, 300)
 
 	mme.Send(t, &s1ap.UEContextReleaseCommand{
-		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: 300}, Cause: &s1ap.Cause{Group: s1ap.CauseGroupNAS, Value: 0},
+		UES1APIDs: s1ap.UES1APIDs{MMEUES1APID: s1ap.Ptr(s1ap.MMEUES1APID(300))}, Cause: s1ap.Ptr(s1ap.CauseNASNormalRelease.Cause()),
 	})
 
 	_, raw := expectRaw(t, enb, "initiating", s1ap.ProcUEContextRelease)
 
 	got, _, err := raw.UES1APIDs()
-	if err != nil || got.Pair || got.MMEUES1APID != ue.ranMMEID {
+	if err != nil || got.UES1APIDPair != nil || mmeIDOf(got) != ue.ranMMEID {
 		t.Fatalf("UE Context Release Command IDs = %+v, %v", got, err)
 	}
 
@@ -417,12 +417,12 @@ func TestReleaseCommandWithMMEUEIDOnly(t *testing.T) {
 	}
 }
 
-func expectErrorIndication(t *testing.T, p *peer, cause int, mmeID *s1ap.MMEUES1APID, enbID *s1ap.ENBUES1APID) {
+func expectErrorIndication(t *testing.T, p *peer, cause s1ap.CauseRadioNetwork, mmeID *s1ap.MMEUES1APID, enbID *s1ap.ENBUES1APID) {
 	t.Helper()
 
 	ind := expect(t, p, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Group != s1ap.CauseGroupRadioNetwork || ind.Cause.Value != cause {
-		t.Fatalf("Error Indication cause = %v, want radio network %d", ind.Cause, cause)
+	if ind.Cause == nil || !ind.Cause.Equal(cause.Cause()) {
+		t.Fatalf("Error Indication cause = %v, want %v", ind.Cause, cause.Cause())
 	}
 
 	if (ind.MMEUES1APID == nil) != (mmeID == nil) || (mmeID != nil && *ind.MMEUES1APID != *mmeID) ||
@@ -431,12 +431,12 @@ func expectErrorIndication(t *testing.T, p *peer, cause int, mmeID *s1ap.MMEUES1
 	}
 }
 
-func expectProtocolError(t *testing.T, p *peer, cause int) *s1ap.ErrorIndication {
+func expectProtocolError(t *testing.T, p *peer, cause s1ap.CauseProtocol) *s1ap.ErrorIndication {
 	t.Helper()
 
 	ind := expect(t, p, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Group != s1ap.CauseGroupProtocol || ind.Cause.Value != cause {
-		t.Fatalf("Error Indication cause = %v, want protocol %d", ind.Cause, cause)
+	if ind.Cause == nil || !ind.Cause.Equal(cause.Cause()) {
+		t.Fatalf("Error Indication cause = %v, want %v", ind.Cause, cause.Cause())
 	}
 
 	return ind
@@ -446,12 +446,12 @@ func expectReset(t *testing.T, p *peer, want ...s1ap.UEAssociatedLogicalS1Connec
 	t.Helper()
 
 	reset := expect(t, p, "initiating", s1ap.ProcReset, s1ap.ParseReset)
-	if reset.ResetType.All || len(reset.ResetType.Part) != len(want) {
+	if reset.ResetType.S1Interface != nil || len(parts(reset.ResetType)) != len(want) {
 		t.Fatalf("Reset = %+v, want a partial reset of %d connections", reset.ResetType, len(want))
 	}
 
 	for i, w := range want {
-		got := reset.ResetType.Part[i]
+		got := parts(reset.ResetType)[i]
 		if fmt.Sprint(got.MMEUES1APID == nil, got.ENBUES1APID == nil) != fmt.Sprint(w.MMEUES1APID == nil, w.ENBUES1APID == nil) ||
 			(w.MMEUES1APID != nil && *got.MMEUES1APID != *w.MMEUES1APID) ||
 			(w.ENBUES1APID != nil && *got.ENBUES1APID != *w.ENBUES1APID) {
@@ -515,9 +515,9 @@ func TestUnknownUEIDs(t *testing.T) {
 	expectErrorIndication(t, mme, s1ap.CauseRadioNetworkUnknownMMEUES1APID, s1ap.Ptr(s1ap.MMEUES1APID(102)), &secondENBID)
 
 	r := expect(t, enb, "initiating", s1ap.ProcReset, s1ap.ParseReset)
-	if len(r.ResetType.Part) != 2 || *r.ResetType.Part[0].ENBUES1APID != 2 || r.ResetType.Part[0].MMEUES1APID != nil ||
-		*r.ResetType.Part[1].ENBUES1APID != 1 || *r.ResetType.Part[1].MMEUES1APID != first.ranMMEID {
-		t.Fatalf("Reset after an already allocated MME UE S1AP ID = %+v", r.ResetType.Part)
+	if len(parts(r.ResetType)) != 2 || *parts(r.ResetType)[0].ENBUES1APID != 2 || parts(r.ResetType)[0].MMEUES1APID != nil ||
+		*parts(r.ResetType)[1].ENBUES1APID != 1 || *parts(r.ResetType)[1].MMEUES1APID != first.ranMMEID {
+		t.Fatalf("Reset after an already allocated MME UE S1AP ID = %+v", parts(r.ResetType))
 	}
 
 	if ues := h.gw.UEs(); len(ues) != 0 {
@@ -544,7 +544,7 @@ func TestErrorIndicationRelayed(t *testing.T) {
 
 	ind := &s1ap.ErrorIndication{
 		MMEUES1APID: s1ap.Ptr(ue.ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(4)),
-		Cause: &s1ap.Cause{Group: s1ap.CauseGroupProtocol, Value: s1ap.CauseProtocolSemanticError},
+		Cause: s1ap.Ptr(s1ap.CauseProtocolSemanticError.Cause()),
 	}
 	enb.Send(t, ind)
 
@@ -561,7 +561,7 @@ func TestErrorIndicationRelayed(t *testing.T) {
 
 	mme.Send(t, &s1ap.ErrorIndication{
 		MMEUES1APID: s1ap.Ptr(s1ap.MMEUES1APID(400)), ENBUES1APID: s1ap.Ptr(ue.mmeENBID),
-		Cause: &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownPairUES1APID},
+		Cause: s1ap.Ptr(s1ap.CauseRadioNetworkUnknownPairUES1APID.Cause()),
 	})
 
 	_, raw = expectRaw(t, enb, "initiating", s1ap.ProcErrorIndication)
@@ -598,7 +598,7 @@ func TestRadioLossResetsItsUEsTowardTheMME(t *testing.T) {
 	_ = enb.Conn.Abort()
 
 	r := expectReset(t, mme, item(100, a.mmeENBID), item(101, b.mmeENBID))
-	if r.Cause == nil || r.Cause.Group != s1ap.CauseGroupTransport || r.Cause.Value != s1ap.CauseTransportResourceUnavailable {
+	if r.Cause == nil || !r.Cause.Equal(s1ap.CauseTransportResourceUnavailable.Cause()) {
 		t.Fatalf("Reset cause = %v", r.Cause)
 	}
 
@@ -626,8 +626,7 @@ func TestRepeatedS1SetupResetsTheRadioUEs(t *testing.T) {
 	r := expectReset(t, mme, item(100, a.mmeENBID))
 	expect(t, enb, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
 
-	if r.Cause == nil || r.Cause.Group != s1ap.CauseGroupRadioNetwork ||
-		r.Cause.Value != s1ap.CauseRadioNetworkReleaseDueToEUTRANGeneratedReason {
+	if r.Cause == nil || !r.Cause.Equal(s1ap.CauseRadioNetworkReleaseDueToEUTRANGeneratedReason.Cause()) {
 		t.Fatalf("Reset cause = %v", r.Cause)
 	}
 
@@ -655,12 +654,12 @@ func TestMMELossResetsItsUEsTowardTheRadios(t *testing.T) {
 	_ = mme.Conn.Abort()
 
 	r := expect(t, enb, "initiating", s1ap.ProcReset, s1ap.ParseReset)
-	if len(r.ResetType.Part) != 2 || *r.ResetType.Part[0].MMEUES1APID != a.ranMMEID || *r.ResetType.Part[0].ENBUES1APID != 1 ||
-		r.ResetType.Part[1].MMEUES1APID != nil || *r.ResetType.Part[1].ENBUES1APID != 2 {
-		t.Fatalf("Reset after MME loss = %+v", r.ResetType.Part)
+	if len(parts(r.ResetType)) != 2 || *parts(r.ResetType)[0].MMEUES1APID != a.ranMMEID || *parts(r.ResetType)[0].ENBUES1APID != 1 ||
+		parts(r.ResetType)[1].MMEUES1APID != nil || *parts(r.ResetType)[1].ENBUES1APID != 2 {
+		t.Fatalf("Reset after MME loss = %+v", parts(r.ResetType))
 	}
 
-	if r.Cause == nil || r.Cause.Group != s1ap.CauseGroupTransport {
+	if r.Cause == nil || r.Cause.Transport == nil {
 		t.Fatalf("Reset cause = %v", r.Cause)
 	}
 
@@ -682,12 +681,12 @@ func TestResetTranslation(t *testing.T) {
 	enb2.Send(t, setupRequest(t, 2, "enb2", s1ap.PagingDRXv128, ta(t, 1, "00101")))
 	expect(t, enb2, "successful", s1ap.ProcS1Setup, s1ap.ParseS1SetupResponse)
 
-	cause := &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscOMIntervention}
+	cause := s1ap.Ptr(s1ap.CauseMiscOMIntervention.Cause())
 
 	a := attach(t, enb, mme, 1, 100)
 	b := attach(t, enb2, mme, 1, 101)
 
-	mme.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{All: true}})
+	mme.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{S1Interface: s1ap.Ptr(s1ap.ResetAllResetAll)}})
 
 	if ack := expect(t, mme, "successful", s1ap.ProcReset, s1ap.ParseResetAcknowledge); len(ack.ConnectionList) != 0 {
 		t.Fatalf("Reset Acknowledge = %+v", ack.ConnectionList)
@@ -709,7 +708,7 @@ func TestResetTranslation(t *testing.T) {
 		{ENBUES1APID: s1ap.Ptr(c.mmeENBID)},
 		{MMEUES1APID: s1ap.Ptr(s1ap.MMEUES1APID(77))},
 	}
-	mme.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{Part: part}})
+	mme.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{PartOfS1Interface: s1ap.Ptr(s1ap.UEAssociatedLogicalS1ConnectionListRes(part))}})
 
 	ack := expect(t, mme, "successful", s1ap.ProcReset, s1ap.ParseResetAcknowledge)
 	if len(ack.ConnectionList) != 3 || *ack.ConnectionList[0].MMEUES1APID != 102 || *ack.ConnectionList[1].ENBUES1APID != c.mmeENBID ||
@@ -724,14 +723,14 @@ func TestResetTranslation(t *testing.T) {
 		t.Fatalf("UEs after a partial Reset from the MME = %+v", ues)
 	}
 
-	enb.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{All: true}})
+	enb.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{S1Interface: s1ap.Ptr(s1ap.ResetAllResetAll)}})
 	expect(t, enb, "successful", s1ap.ProcReset, s1ap.ParseResetAcknowledge)
 	expectReset(t, mme, item(103, b.mmeENBID))
 
 	a = attach(t, enb, mme, 5, 105)
 	b = attach(t, enb, mme, 6, 106)
 
-	enb.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{Part: []s1ap.UEAssociatedLogicalS1ConnectionItem{
+	enb.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{PartOfS1Interface: &s1ap.UEAssociatedLogicalS1ConnectionListRes{
 		{ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(6))},
 	}}})
 
@@ -740,8 +739,8 @@ func TestResetTranslation(t *testing.T) {
 	}
 
 	reset := expect(t, mme, "initiating", s1ap.ProcReset, s1ap.ParseReset)
-	if len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].MMEUES1APID != 106 ||
-		*reset.ResetType.Part[0].ENBUES1APID != b.mmeENBID || reset.Cause == nil || *reset.Cause != *cause {
+	if len(parts(reset.ResetType)) != 1 || *parts(reset.ResetType)[0].MMEUES1APID != 106 ||
+		*parts(reset.ResetType)[0].ENBUES1APID != b.mmeENBID || reset.Cause == nil || !reset.Cause.Equal(*cause) {
 		t.Fatalf("Reset toward the MME = %+v", reset)
 	}
 
@@ -815,7 +814,7 @@ func TestInitialUEMessageForAnUnknownPLMN(t *testing.T) {
 	msg.TAI.PLMNIdentity = plmnID(t, "999", "99")
 	enb.Send(t, msg)
 
-	expectReleaseCommand(t, enb, 1, s1ap.CauseGroupMisc, s1ap.CauseMiscUnknownPLMN)
+	expectReleaseCommand(t, enb, 1, s1ap.CauseMiscUnknownPLMN.Cause())
 
 	if ues := h.gw.UEs(); len(ues) != 0 {
 		t.Fatalf("UEs = %+v", ues)
@@ -825,7 +824,7 @@ func TestInitialUEMessageForAnUnknownPLMN(t *testing.T) {
 	expectErrorIndication(t, enb, s1ap.CauseRadioNetworkUnknownENBUES1APID, nil, s1ap.Ptr(s1ap.ENBUES1APID(1)))
 
 	enb.Send(t, msg)
-	ranMMEID := expectReleaseCommand(t, enb, 1, s1ap.CauseGroupMisc, s1ap.CauseMiscUnknownPLMN)
+	ranMMEID := expectReleaseCommand(t, enb, 1, s1ap.CauseMiscUnknownPLMN.Cause())
 	enb.Send(t, &s1ap.UEContextReleaseComplete{MMEUES1APID: s1ap.Ptr(ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(1))})
 	mme.Quiet(t, 200*time.Millisecond)
 
@@ -853,7 +852,7 @@ ellamocn_ue_connections{interface="s1",operator="A"} 1
 	}
 }
 
-func expectReleaseCommand(t *testing.T, p *peer, enbID s1ap.ENBUES1APID, group s1ap.CauseGroup, value int) s1ap.MMEUES1APID {
+func expectReleaseCommand(t *testing.T, p *peer, enbID s1ap.ENBUES1APID, want s1ap.Cause) s1ap.MMEUES1APID {
 	t.Helper()
 
 	f := p.NextFrame(t)
@@ -871,15 +870,15 @@ func expectReleaseCommand(t *testing.T, p *peer, enbID s1ap.ENBUES1APID, group s
 		t.Fatal(err)
 	}
 
-	if !cmd.UES1APIDs.Pair || cmd.UES1APIDs.ENBUES1APID != enbID {
+	if cmd.UES1APIDs.UES1APIDPair == nil || cmd.UES1APIDs.UES1APIDPair.ENBUES1APID != enbID {
 		t.Fatalf("UE Context Release Command IDs = %+v, want the pair with eNB UE S1AP ID %d", cmd.UES1APIDs, enbID)
 	}
 
-	if cmd.Cause == nil || cmd.Cause.Group != group || cmd.Cause.Value != value {
-		t.Fatalf("UE Context Release Command cause = %v, want %d/%d", cmd.Cause, group, value)
+	if cmd.Cause == nil || !cmd.Cause.Equal(want) {
+		t.Fatalf("UE Context Release Command cause = %v, want %v", cmd.Cause, want)
 	}
 
-	return cmd.UES1APIDs.MMEUES1APID
+	return mmeIDOf(cmd.UES1APIDs)
 }
 
 func TestUnroutedUEReleasedWithoutComplete(t *testing.T) {
@@ -894,7 +893,7 @@ func TestUnroutedUEReleasedWithoutComplete(t *testing.T) {
 	msg := initialUE(t, 1)
 	msg.TAI.PLMNIdentity = plmnID(t, "999", "99")
 	enb.Send(t, msg)
-	ranMMEID := expectReleaseCommand(t, enb, 1, s1ap.CauseGroupMisc, s1ap.CauseMiscUnknownPLMN)
+	ranMMEID := expectReleaseCommand(t, enb, 1, s1ap.CauseMiscUnknownPLMN.Cause())
 
 	expectResetForUnansweredRelease(t, enb, ranMMEID, 1)
 	enb.Send(t, &s1ap.ResetAcknowledge{ConnectionList: []s1ap.UEAssociatedLogicalS1ConnectionItem{item(ranMMEID, 1)}})
@@ -926,14 +925,13 @@ func expectResetForUnansweredRelease(t *testing.T, enb *peer, ranMMEID s1ap.MMEU
 		t.Fatal(err)
 	}
 
-	if reset.ResetType.All || len(reset.ResetType.Part) != 1 || reset.ResetType.Part[0].MMEUES1APID == nil ||
-		*reset.ResetType.Part[0].MMEUES1APID != ranMMEID || reset.ResetType.Part[0].ENBUES1APID == nil ||
-		*reset.ResetType.Part[0].ENBUES1APID != enbID {
+	if reset.ResetType.S1Interface != nil || len(parts(reset.ResetType)) != 1 || parts(reset.ResetType)[0].MMEUES1APID == nil ||
+		*parts(reset.ResetType)[0].MMEUES1APID != ranMMEID || parts(reset.ResetType)[0].ENBUES1APID == nil ||
+		*parts(reset.ResetType)[0].ENBUES1APID != enbID {
 		t.Fatalf("Reset = %+v, want a partial reset of %d/%d", reset.ResetType, ranMMEID, enbID)
 	}
 
-	if reset.Cause == nil || reset.Cause.Group != s1ap.CauseGroupRadioNetwork ||
-		reset.Cause.Value != s1ap.CauseRadioNetworkUnspecified {
+	if reset.Cause == nil || !reset.Cause.Equal(s1ap.CauseRadioNetworkUnspecified.Cause()) {
 		t.Fatalf("Reset cause = %v, want radio network unspecified", reset.Cause)
 	}
 }
@@ -950,14 +948,14 @@ func TestInitialUEMessageWhoseSendToTheMMEFails(t *testing.T) {
 	h.gw.FailMMESends(errors.New("send failed"))
 
 	enb.Send(t, initialUE(t, 1))
-	ranMMEID := expectReleaseCommand(t, enb, 1, s1ap.CauseGroupTransport, s1ap.CauseTransportResourceUnavailable)
+	ranMMEID := expectReleaseCommand(t, enb, 1, s1ap.CauseTransportResourceUnavailable.Cause())
 
 	if ues := h.gw.UEs(); len(ues) != 0 {
 		t.Fatalf("UEs after a failed send = %+v", ues)
 	}
 
 	enb.Send(t, initialUE(t, 2))
-	secondMMEID := expectReleaseCommand(t, enb, 2, s1ap.CauseGroupTransport, s1ap.CauseTransportResourceUnavailable)
+	secondMMEID := expectReleaseCommand(t, enb, 2, s1ap.CauseTransportResourceUnavailable.Cause())
 	enb.Send(t, &s1ap.UEContextReleaseComplete{MMEUES1APID: s1ap.Ptr(secondMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(2))})
 
 	expectResetForUnansweredRelease(t, enb, ranMMEID, 1)
@@ -995,7 +993,7 @@ func TestInitialUEMessageWithNoSelectableMME(t *testing.T) {
 	expect(t, mme, "successful", s1ap.ProcMMEConfigurationUpdate, s1ap.ParseMMEConfigurationUpdateAcknowledge)
 
 	enb.Send(t, initialUE(t, 1))
-	ranMMEID := expectReleaseCommand(t, enb, 1, s1ap.CauseGroupTransport, s1ap.CauseTransportResourceUnavailable)
+	ranMMEID := expectReleaseCommand(t, enb, 1, s1ap.CauseTransportResourceUnavailable.Cause())
 	enb.Send(t, &s1ap.UEContextReleaseComplete{MMEUES1APID: s1ap.Ptr(ranMMEID), ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(1))})
 	mme.Quiet(t, 200*time.Millisecond)
 
@@ -1009,7 +1007,7 @@ func TestInitialUEMessageWithNoSelectableMME(t *testing.T) {
 	expect(t, enb, "initiating", s1ap.ProcReset, s1ap.ParseReset)
 
 	enb.Send(t, initialUE(t, 3))
-	expectReleaseCommand(t, enb, 3, s1ap.CauseGroupTransport, s1ap.CauseTransportResourceUnavailable)
+	expectReleaseCommand(t, enb, 3, s1ap.CauseTransportResourceUnavailable.Cause())
 
 	registry := prometheus.NewPedanticRegistry()
 	registry.MustRegister(h.metrics.Collectors(h.gw)...)

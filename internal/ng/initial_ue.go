@@ -117,12 +117,12 @@ func (r *relay) initialUEMessage(ctx context.Context, n *ranAssoc, log *slog.Log
 		}, nil))
 	}
 
-	if uli.Kind != ngap.UserLocationNR {
+	if uli.NR == nil {
 		semantic("INITIAL UE MESSAGE without an NR User Location Information", nil)
 		return
 	}
 
-	plmn, err := plmnid.Decode(uli.TAI.PLMNIdentity)
+	plmn, err := plmnid.Decode(uli.NR.TAI.PLMNIdentity)
 	if err != nil {
 		semantic("INITIAL UE MESSAGE with an invalid PLMN", err)
 		return
@@ -266,7 +266,7 @@ func (r *relay) releaseRadioSide(ctx context.Context, n *ranAssoc, log *slog.Log
 	r.mu.Unlock()
 
 	out, err := (&ngap.UEContextReleaseCommand{
-		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: u.RANCoreID, RANUENGAPID: ranID, Pair: true},
+		UENGAPIDs: ngap.UENGAPIDs{UENGAPIDPair: &ngap.UENGAPIDPair{AMFUENGAPID: u.RANCoreID, RANUENGAPID: ranID}},
 		Cause:     &cause,
 	}).Marshal()
 	if err != nil {
@@ -346,15 +346,15 @@ func (r *relay) rejectInitialUE(ctx context.Context, log *slog.Logger, result, r
 // TS 38.413 clause 9.3.1.16
 func (r *relay) updateLocation(u *ueContext, p *ngap.RawPDU) {
 	uli, err := assoc.GetIE[ngap.UserLocationInformation](p.Get, ngap.IDUserLocationInformation)
-	if err != nil || uli == nil || uli.Kind != ngap.UserLocationNR {
+	if err != nil || uli == nil || uli.NR == nil {
 		return
 	}
 
-	if plmn, err := plmnid.Decode(uli.TAI.PLMNIdentity); err == nil {
-		u.Ext.tai = &TAI{PLMN: plmn, TAC: uint32(uli.TAI.TAC)}
+	if plmn, err := plmnid.Decode(uli.NR.TAI.PLMNIdentity); err == nil {
+		u.Ext.tai = &TAI{PLMN: plmn, TAC: uint32(uli.NR.TAI.TAC)}
 	}
 
-	if plmn, err := plmnid.Decode(uli.PLMNIdentity); err == nil {
-		u.Ext.nrcgi = &NRCGI{PLMN: plmn, CellID: uli.CellIdentity}
+	if plmn, err := plmnid.Decode(uli.NR.NRCGI.PLMNIdentity); err == nil {
+		u.Ext.nrcgi = &NRCGI{PLMN: plmn, CellID: uint64(uli.NR.NRCGI.NRCellIdentity)}
 	}
 }

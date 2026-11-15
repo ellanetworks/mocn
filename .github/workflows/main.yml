@@ -22,6 +22,12 @@ jobs:
     uses: ./.github/workflows/go-lint.yaml
   go-sec:
     uses: ./.github/workflows/go-sec.yaml
+  gtpu-ebpf-tests:
+    uses: ./.github/workflows/gtpu-ebpf-tests.yaml
+  bpf-generate:
+    uses: ./.github/workflows/bpf-generate.yaml
+  clang-format:
+    uses: ./.github/workflows/clang-format.yaml
   ui-lint:
     uses: ./.github/workflows/ui-lint.yaml
   ui-typecheck:
@@ -42,7 +48,7 @@ jobs:
     uses: ./.github/workflows/k8s-smoke.yaml
   image-publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [go-unit-test, go-lint, go-sec, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, image-build, k8s-smoke]
+    needs: [go-unit-test, go-lint, go-sec, gtpu-ebpf-tests, bpf-generate, clang-format, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, image-build, k8s-smoke]
     permissions:
       contents: read
       packages: write

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/ellanetworks/mocn/internal/s1"
@@ -69,6 +70,12 @@ type AMFStatus struct {
 }
 
 func withStatus(cfg Config, o db.Operator, resp Operator, ues []ueRecord) Operator {
+	if cfg.Plane != nil && resp.UserPlane != nil {
+		if st, ok := cfg.Plane.Status(o.ID); ok {
+			resp.UserPlane.Status = userPlaneStatusResponse(st)
+		}
+	}
+
 	if cfg.S1 == nil && cfg.NG == nil {
 		return resp
 	}
@@ -189,6 +196,19 @@ func amfStatusResponse(st ng.AMFStatus) *AMFStatus {
 		}
 
 		resp.Overload = append(resp.Overload, item)
+	}
+
+	return resp
+}
+
+func userPlaneStatusResponse(st gtpu.Status) *UserPlaneStatus {
+	resp := &UserPlaneStatus{
+		State: st.State, Reason: st.Reason, Interface: st.Interface, Addresses: make([]string, 0, len(st.Addresses)),
+		Since: st.Since.UTC(),
+	}
+
+	for _, a := range st.Addresses {
+		resp.Addresses = append(resp.Addresses, a.String())
 	}
 
 	return resp

@@ -162,11 +162,7 @@ func (g *Gateway[S, R, I, C]) MetricsState() metrics.State {
 	defer g.mu.Unlock()
 
 	for _, n := range g.radios {
-		if n.Up {
-			s.Radios[string(RadioUp)]++
-		} else {
-			s.Radios[string(RadioConnected)]++
-		}
+		s.Radios[string(n.StateLocked())]++
 	}
 
 	for _, o := range g.operators {

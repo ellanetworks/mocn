@@ -24,7 +24,7 @@ func operatorParams(w http.ResponseWriter, r *http.Request, cfg Config) (db.Oper
 		return db.Operator{}, false
 	}
 
-	o, err := operatorOf(params)
+	o, err := operatorOf(params, cfg)
 	if err != nil {
 		writeError(r.Context(), w, http.StatusBadRequest, err.Error(), nil, cfg.Logger)
 		return db.Operator{}, false
@@ -33,7 +33,7 @@ func operatorParams(w http.ResponseWriter, r *http.Request, cfg Config) (db.Oper
 	return o, true
 }
 
-func operatorOf(params Operator) (db.Operator, error) {
+func operatorOf(params Operator, cfg Config) (db.Operator, error) {
 	o := db.Operator{Name: strings.TrimSpace(params.Name), PWSOperator: params.PWSOperator}
 
 	if o.Name == "" {
@@ -114,7 +114,29 @@ func operatorOf(params Operator) (db.Operator, error) {
 		return db.Operator{}, err
 	}
 
+	if o.UserPlane, err = userPlaneOf(params.UserPlane, cfg); err != nil {
+		return db.Operator{}, err
+	}
+
 	return o, nil
+}
+
+var errUserPlaneDisabled = errors.New("user_plane.aggregation cannot be turned on: user-plane aggregation is not " +
+	"enabled on this Ella MOCN (ran.user_plane.enabled in the configuration file)")
+
+func userPlaneOf(p *UserPlane, cfg Config) (db.UserPlane, error) {
+	up := db.UserPlane{Aggregation: cfg.UserPlane}
+	if p == nil || p.Aggregation == nil {
+		return up, nil
+	}
+
+	if *p.Aggregation && !cfg.UserPlane {
+		return db.UserPlane{}, errUserPlaneDisabled
+	}
+
+	up.Aggregation = *p.Aggregation
+
+	return up, nil
 }
 
 func plmnOf(p PLMN, field string) (db.PLMN, error) {

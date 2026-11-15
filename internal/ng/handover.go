@@ -9,6 +9,7 @@ import (
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/plmnid"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,8 +17,8 @@ import (
 )
 
 var (
-	causeSuccessfulHandover   = ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkSuccessfulHandover}
-	causeUnknownTargetID      = ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkUnknownTargetID}
+	causeSuccessfulHandover   = ngap.CauseRadioNetworkSuccessfulHandover.Cause()
+	causeUnknownTargetID      = ngap.CauseRadioNetworkUnknownTargetID.Cause()
 	errNoTransparentContainer = errors.New("no Source to Target Transparent Container")
 )
 
@@ -188,6 +189,16 @@ func (r *relay) handoverRequest(ctx context.Context, a *amfAssoc, log *slog.Logg
 	r.ues.SetCoreID(u, amfID)
 	traceUE(u, p)
 
+	if err := r.tnlHandoverRequestLocked(u, p); err != nil {
+		r.ues.Remove(u)
+		r.mu.Unlock()
+		r.plane.TunnelSetupFailed(u.OperatorID, metrics.InterfaceNG, procedureLabel(ngap.ProcHandoverResourceAllocation), err)
+		fail(assoc.HandoverError, "HANDOVER REQUEST rejected: the user-plane transport could not be relayed",
+			causeTransportResource, err)
+
+		return
+	}
+
 	out, err := handoverRequestToRadio(p, u.RANCoreID, amfID)
 	if err != nil {
 		r.ues.Remove(u)
@@ -334,8 +345,8 @@ func (r *relay) pathSwitchRequest(ctx context.Context, n *ranAssoc, log *slog.Lo
 
 	var located *db.PLMN
 
-	if uli := req.UserLocationInformation; uli != nil && uli.Kind == ngap.UserLocationNR {
-		if v, err := plmnid.Decode(uli.TAI.PLMNIdentity); err == nil {
+	if uli := req.UserLocationInformation; uli != nil && uli.NR != nil {
+		if v, err := plmnid.Decode(uli.NR.TAI.PLMNIdentity); err == nil {
 			located = &v
 		}
 	}
@@ -424,6 +435,16 @@ func (r *relay) pathSwitchRequest(ctx context.Context, n *ranAssoc, log *slog.Lo
 	if err := r.ues.Add(u); err != nil {
 		r.mu.Unlock()
 		reject(assoc.HandoverError, "dropped PATH SWITCH REQUEST", causeTransportUnavailable, err)
+
+		return
+	}
+
+	if err := r.tnlPathSwitchRequestLocked(u, p); err != nil {
+		r.ues.Remove(u)
+		r.mu.Unlock()
+		r.plane.TunnelSetupFailed(u.OperatorID, metrics.InterfaceNG, procedureLabel(ngap.ProcPathSwitchRequest), err)
+		reject(assoc.HandoverError, "PATH SWITCH REQUEST rejected: the user-plane transport could not be relayed",
+			causeTransportResource, err)
 
 		return
 	}

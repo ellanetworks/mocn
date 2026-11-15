@@ -23,6 +23,12 @@ type SupportedTA struct {
 	BroadcastPLMNs []BroadcastPLMN `json:"broadcast_plmns"`
 }
 
+type RadioSetupFailure struct {
+	Cause  string    `json:"cause"`
+	Reason string    `json:"reason"`
+	At     time.Time `json:"at"`
+}
+
 type Radio struct {
 	Ref                     string                  `json:"ref,omitempty"`
 	Type                    string                  `json:"type"`
@@ -32,6 +38,7 @@ type Radio struct {
 	SupportedTAs            []SupportedTA           `json:"supported_tas"`
 	DefaultPagingDRX        int                     `json:"default_paging_drx,omitempty"`
 	State                   string                  `json:"state"`
+	SetupFailure            *RadioSetupFailure      `json:"setup_failure,omitempty"`
 	ConnectedAt             time.Time               `json:"connected_at"`
 	TNLAddresses            []string                `json:"tnl_addresses"`
 	UEConnections           int                     `json:"ue_connections"`
@@ -117,6 +124,11 @@ func s1RadioResponse(n s1.RANNode, ues []ueRecord) Radio {
 
 	if e := n.GlobalENBID; e != nil {
 		resp.GlobalENBID = globalENBIDOfDB(*e)
+	}
+
+	if f := n.SetupFailure; f != nil {
+		resp.SetupFailure = &RadioSetupFailure{Cause: f.Cause, Reason: f.Reason, At: f.At.UTC()}
+	} else if e := n.GlobalENBID; e != nil {
 		resp.Ref = e.Ref()
 		resp.UEConnections = countUEConnections(ues, onRadio(resp.Ref))
 	}
@@ -142,6 +154,11 @@ func ngRadioResponse(n ng.RANNode, ues []ueRecord) Radio {
 
 	if g := n.GlobalGNBID; g != nil {
 		resp.GlobalGNBID = globalGNBIDOfDB(*g)
+	}
+
+	if f := n.SetupFailure; f != nil {
+		resp.SetupFailure = &RadioSetupFailure{Cause: f.Cause, Reason: f.Reason, At: f.At.UTC()}
+	} else if g := n.GlobalGNBID; g != nil {
 		resp.Ref = g.Ref()
 		resp.UEConnections = countUEConnections(ues, onRadio(resp.Ref))
 	}

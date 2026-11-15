@@ -4,6 +4,7 @@ export interface Status {
   version: string;
   revision: string;
   initialized: boolean;
+  user_plane_aggregation: boolean;
 }
 
 export const getStatus = (): Promise<Status> =>

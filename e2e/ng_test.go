@@ -29,7 +29,7 @@ type lab5G struct {
 
 var ellaCoreAMFLog = coreLog{
 	args:     []string{"logs", "--no-color", "ella-core"},
-	accepted: []string{`"msg":"Radio setup complete"`, `"ran_addr":"10.90.0.30`, `"rat":"5g"`},
+	accepted: []string{`"msg":"Radio setup complete"`, `"ran_addr":"10.90.4.30`, `"rat":"5g"`},
 	attached: []string{`"msg":"UE registration accepted"`, ellaSUPI, `"rat":"5g"`},
 }
 
@@ -41,7 +41,7 @@ var open5gsAMFLog = coreLog{
 
 var labs5G = []lab5G{
 	{
-		operator: "ella-core", plmn: plmn{MCC: "001", MNC: "01"}, amf: "10.90.0.14", core: "ella-core", coreLog: ellaCoreAMFLog,
+		operator: "ella-core", plmn: plmn{MCC: "001", MNC: "01"}, amf: "10.90.4.14", core: "ella-core", coreLog: ellaCoreAMFLog,
 		dn: "10.90.3.3", dnHost: "router", gnb: "gnb", ue: "srsue-5g", radio: "gNB:001-01:000001@22", imsi: "001010000000011", ueNet: "10.45.",
 	},
 	{
@@ -164,6 +164,8 @@ func ngLifecycle(ctx context.Context, t *testing.T, c *client, l lab5G) {
 	if err := uePing(ctx, l.ue, l.dn); err != nil {
 		t.Fatalf("%s user plane: %v", l.operator, err)
 	}
+
+	eventually(ctx, t, l.operator+" user traffic through Ella MOCN", 10*time.Second, aggregated(ctx, c, l.operator, l.radio))
 
 	eventually(ctx, t, l.operator+" UE connection in /api/v1/ue-connections", 10*time.Second, func() error {
 		items, err := radioUEs(ctx, c, l.radio)

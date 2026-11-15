@@ -9,6 +9,7 @@ import (
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/plmnid"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,8 +17,8 @@ import (
 )
 
 var (
-	causeSuccessfulHandover   = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkSuccessfulHandover}
-	causeUnknownTargetID      = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownTargetID}
+	causeSuccessfulHandover   = s1ap.CauseRadioNetworkSuccessfulHandover.Cause()
+	causeUnknownTargetID      = s1ap.CauseRadioNetworkUnknownTargetID.Cause()
 	errNoTransparentContainer = errors.New("no Source to Target Transparent Container")
 )
 
@@ -85,7 +86,7 @@ func (r *relay) handoverRequest(ctx context.Context, a *mmeAssoc, log *slog.Logg
 		return
 	}
 
-	log = log.With(slog.String("target_plmn", cellPLMN.String()), slog.Uint64("target_cell_identity", uint64(cell.CellID)))
+	log = log.With(slog.String("target_plmn", cellPLMN.String()), slog.Uint64("target_cell_identity", uint64(uint32(cell.CellID))))
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String(assoc.AttrOperator, a.Operator()))
 
 	var (
@@ -96,7 +97,7 @@ func (r *relay) handoverRequest(ctx context.Context, a *mmeAssoc, log *slog.Logg
 
 	r.g.core.View(func() {
 		op, _ = r.g.core.OperatorLocked(a.OperatorID())
-		if n = servingCell(r.g.core.OperatorRadiosLocked(a.OperatorID()), cellPLMN, cell.CellID); n != nil {
+		if n = servingCell(r.g.core.OperatorRadiosLocked(a.OperatorID()), cellPLMN, uint32(cell.CellID)); n != nil {
 			radio = n.Setup.globalENBID
 		}
 	})
@@ -114,7 +115,7 @@ func (r *relay) handoverRequest(ctx context.Context, a *mmeAssoc, log *slog.Logg
 
 	u := &ueContext{
 		RAN: n, Core: a, OperatorID: a.OperatorID(), PLMN: plmn, Since: r.g.cfg.Now(),
-		Ext: ueInfo{radio: radio, ecgi: &ECGI{PLMN: cellPLMN, CellID: cell.CellID}},
+		Ext: ueInfo{radio: radio, ecgi: &ECGI{PLMN: cellPLMN, CellID: uint32(cell.CellID)}},
 	}
 
 	if err := r.ues.Add(u); err != nil {
@@ -126,6 +127,16 @@ func (r *relay) handoverRequest(ctx context.Context, a *mmeAssoc, log *slog.Logg
 
 	r.ues.SetCoreID(u, mmeID)
 	traceUE(u, p)
+
+	if err := r.tnlHandoverRequestLocked(u, p); err != nil {
+		r.ues.Remove(u)
+		r.mu.Unlock()
+		r.plane.TunnelSetupFailed(u.OperatorID, metrics.InterfaceS1, procedureLabel(s1ap.ProcHandoverResourceAllocation), err)
+		fail(assoc.HandoverError, "HANDOVER REQUEST rejected: the user-plane transport could not be relayed",
+			causeTransportResource, err)
+
+		return
+	}
 
 	ranMMEID := u.RANCoreID
 	r.mu.Unlock()
@@ -370,6 +381,16 @@ func (r *relay) pathSwitchRequest(ctx context.Context, n *ranAssoc, log *slog.Lo
 	if err := r.ues.Add(u); err != nil {
 		r.mu.Unlock()
 		reject(assoc.HandoverError, "dropped PATH SWITCH REQUEST", causeTransportUnavailable, err)
+
+		return
+	}
+
+	if err := r.tnlPathSwitchRequestLocked(u, p); err != nil {
+		r.ues.Remove(u)
+		r.mu.Unlock()
+		r.plane.TunnelSetupFailed(u.OperatorID, metrics.InterfaceS1, procedureLabel(s1ap.ProcPathSwitchRequest), err)
+		reject(assoc.HandoverError, "PATH SWITCH REQUEST rejected: the user-plane transport could not be relayed",
+			causeTransportResource, err)
 
 		return
 	}

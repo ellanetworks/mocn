@@ -66,8 +66,8 @@ describe("App", () => {
         .map((link) => [link.textContent, link.getAttribute("href")]),
     ).toEqual([
       ["Dashboard", "/dashboard"],
-      ["Operators", "/operators"],
       ["Radios", "/radios"],
+      ["Operators", "/operators"],
       ["Users", "/users"],
     ]);
     const nav = within(screen.getByRole("navigation", { name: "Main" }));
@@ -127,7 +127,7 @@ describe("App", () => {
       within(screen.getByRole("navigation", { name: "Main" }))
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Dashboard", "Operators", "Radios"]);
+    ).toEqual(["Dashboard", "Radios", "Operators"]);
     expect(
       within(screen.getByRole("navigation", { name: "Main" })).queryByText(
         "System",

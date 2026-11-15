@@ -10,6 +10,7 @@ type Status struct {
 	Version     string `json:"version"`
 	Revision    string `json:"revision"`
 	Initialized bool   `json:"initialized"`
+	UserPlane   bool   `json:"user_plane_aggregation"`
 }
 
 func getStatus(cfg Config) http.Handler {
@@ -22,7 +23,9 @@ func getStatus(cfg Config) http.Handler {
 
 		v := version.Get()
 
-		writeResponse(r.Context(), w, Status{Version: v.Version, Revision: v.Revision, Initialized: n > 0}, http.StatusOK,
+		writeResponse(r.Context(), w, Status{
+			Version: v.Version, Revision: v.Revision, Initialized: n > 0, UserPlane: cfg.UserPlane,
+		}, http.StatusOK,
 			cfg.Logger)
 	})
 }

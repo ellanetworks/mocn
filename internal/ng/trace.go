@@ -199,7 +199,7 @@ func traceActivationOf(p *ngap.RawPDU) (tracing.RANTraceID, bool) {
 
 func tracesUE(p *ngap.RawPDU) bool {
 	return p.Trigger() == ngap.TriggeringInitiatingMessage &&
-		(p.Index(ngap.IDTraceActivation) >= 0 || p.ProcedureCode() == ngap.ProcDeactivateTrace)
+		(present(p, ngap.IDTraceActivation) || p.ProcedureCode() == ngap.ProcDeactivateTrace)
 }
 
 // TS 38.413 clause 8.11.1

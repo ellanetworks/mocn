@@ -13,11 +13,9 @@ import (
 const errTypeUnsupported = "unsupported"
 
 var (
-	causeTransferSyntax = s1ap.Cause{Group: s1ap.CauseGroupProtocol, Value: s1ap.CauseProtocolTransferSyntaxError}
-	causeAbstractReject = s1ap.Cause{Group: s1ap.CauseGroupProtocol, Value: s1ap.CauseProtocolAbstractSyntaxErrorReject}
-	causeAbstractNotify = s1ap.Cause{
-		Group: s1ap.CauseGroupProtocol, Value: s1ap.CauseProtocolAbstractSyntaxErrorIgnoreAndNotify,
-	}
+	causeTransferSyntax = s1ap.CauseProtocolTransferSyntaxError.Cause()
+	causeAbstractReject = s1ap.CauseProtocolAbstractSyntaxErrorReject.Cause()
+	causeAbstractNotify = s1ap.CauseProtocolAbstractSyntaxErrorIgnoreAndNotify.Cause()
 )
 
 type sendable interface {

@@ -58,9 +58,10 @@ configs:
       api:
         address: 0.0.0.0
         port: 5030
-      s1:
-        address: 0.0.0.0
-        port: 36412
+      ran:
+        signalling:
+          address: 0.0.0.0
+          s1_port: 36412
 
 services:
   ella-core:

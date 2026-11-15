@@ -107,6 +107,22 @@ func Convert[A, B any](in []A, f func(A) B) []B {
 	return out
 }
 
+func Items[L ~[]E, E any](l *L) L {
+	if l == nil {
+		return nil
+	}
+
+	return *l
+}
+
+func NonEmpty[L ~[]E, E any](l L) *L {
+	if len(l) == 0 {
+		return nil
+	}
+
+	return &l
+}
+
 type Warnings[K comparable, T any] struct {
 	timeout time.Duration
 	mu      sync.Mutex

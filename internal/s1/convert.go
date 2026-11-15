@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ellanetworks/core/s1ap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/ellanetworks/mocn/internal/plmnid"
 )
@@ -16,13 +17,6 @@ const (
 	maxnoofGroupIDs    = 65535
 )
 
-var enbIDKinds = map[s1ap.ENBIDKind]db.ENBIDType{
-	s1ap.ENBIDMacro:      db.ENBIDMacro,
-	s1ap.ENBIDHome:       db.ENBIDHome,
-	s1ap.ENBIDShortMacro: db.ENBIDShortMacro,
-	s1ap.ENBIDLongMacro:  db.ENBIDLongMacro,
-}
-
 // TS 36.413 clause 9.2.1.37
 func globalENBIDFrom(g s1ap.GlobalENBID) (db.GlobalENBID, error) {
 	plmn, err := plmnid.Decode(g.PLMNIdentity)
@@ -30,12 +24,26 @@ func globalENBIDFrom(g s1ap.GlobalENBID) (db.GlobalENBID, error) {
 		return db.GlobalENBID{}, err
 	}
 
-	t, ok := enbIDKinds[g.ENBID.Kind]
-	if !ok {
-		return db.GlobalENBID{}, fmt.Errorf("unknown eNB ID kind %d", g.ENBID.Kind)
+	id, ok := g.ENBID.Value()
+
+	var t db.ENBIDType
+
+	switch {
+	case g.ENBID.MacroENBID != nil:
+		t = db.ENBIDMacro
+	case g.ENBID.HomeENBID != nil:
+		t = db.ENBIDHome
+	case g.ENBID.ShortMacroENBID != nil:
+		t = db.ENBIDShortMacro
+	case g.ENBID.LongMacroENBID != nil:
+		t = db.ENBIDLongMacro
 	}
 
-	return db.GlobalENBID{PLMN: plmn, Type: t, ID: g.ENBID.Value}, nil
+	if !ok {
+		return db.GlobalENBID{}, fmt.Errorf("unknown eNB ID kind %q", g.ENBID.AlternativeName())
+	}
+
+	return db.GlobalENBID{PLMN: plmn, Type: t, ID: id}, nil
 }
 
 // TS 36.413 clause 9.2.1.37
@@ -45,13 +53,22 @@ func globalENBIDTo(g db.GlobalENBID) (s1ap.GlobalENBID, error) {
 		return s1ap.GlobalENBID{}, err
 	}
 
-	for kind, t := range enbIDKinds {
-		if t == g.Type {
-			return s1ap.GlobalENBID{PLMNIdentity: plmn, ENBID: s1ap.ENBID{Kind: kind, Value: g.ID}}, nil
-		}
+	var id s1ap.ENBID
+
+	switch g.Type {
+	case db.ENBIDMacro:
+		id.MacroENBID = s1ap.Ptr(s1ap.MacroENBID(g.ID))
+	case db.ENBIDHome:
+		id.HomeENBID = s1ap.Ptr(s1ap.HomeENBID(g.ID))
+	case db.ENBIDShortMacro:
+		id.ShortMacroENBID = s1ap.Ptr(s1ap.ShortMacroENBID(g.ID))
+	case db.ENBIDLongMacro:
+		id.LongMacroENBID = s1ap.Ptr(s1ap.LongMacroENBID(g.ID))
+	default:
+		return s1ap.GlobalENBID{}, fmt.Errorf("unknown eNB ID type %q", g.Type)
 	}
 
-	return s1ap.GlobalENBID{}, fmt.Errorf("unknown eNB ID type %q", g.Type)
+	return s1ap.GlobalENBID{PLMNIdentity: plmn, ENBID: id}, nil
 }
 
 func plmnsFrom(ids []s1ap.PLMNIdentity) ([]db.PLMN, error) {
@@ -181,6 +198,12 @@ var timeToWait = map[s1ap.TimeToWait]time.Duration{
 	s1ap.TimeToWaitV10s: 10 * time.Second,
 	s1ap.TimeToWaitV20s: 20 * time.Second,
 	s1ap.TimeToWaitV60s: 60 * time.Second,
+}
+
+func causeLabel(c s1ap.Cause) string {
+	name, _ := c.ValueName()
+
+	return assoc.CauseLabel(name)
 }
 
 func causeText(c *s1ap.Cause) string {

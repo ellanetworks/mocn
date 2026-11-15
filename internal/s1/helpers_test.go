@@ -153,3 +153,28 @@ func procedureName(pdu s1ap.PDU) string {
 
 	return "unknown"
 }
+
+func parts(r s1ap.ResetType) []s1ap.UEAssociatedLogicalS1ConnectionItem {
+	if r.PartOfS1Interface == nil {
+		return nil
+	}
+
+	return *r.PartOfS1Interface
+}
+
+func indexOf(t *testing.T, p *s1ap.RawPDU, id s1ap.ProtocolIEID) int {
+	t.Helper()
+
+	i, err := p.Index(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return i
+}
+
+func mmeIDOf(ids s1ap.UES1APIDs) s1ap.MMEUES1APID {
+	id, _ := ids.MMEID()
+
+	return id
+}

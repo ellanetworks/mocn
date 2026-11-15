@@ -2,6 +2,7 @@ package s1
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/ellanetworks/core/per"
@@ -27,21 +28,28 @@ func rewrite(p *s1ap.RawPDU, mmeID *s1ap.MMEUES1APID, enbID *s1ap.ENBUES1APID) (
 	return p.Marshal()
 }
 
+var errUnknownUEIDs = errors.New("UE S1AP IDs in an unknown alternative")
+
 type ueIDs struct {
 	mme *s1ap.MMEUES1APID
 	enb *s1ap.ENBUES1APID
 }
 
 func readUEIDs(p *s1ap.RawPDU) (ueIDs, *s1ap.UES1APIDs, error) {
-	if p.Index(s1ap.IDUES1APIDs) >= 0 {
+	if present(p, s1ap.IDUES1APIDs) {
 		v, _, err := p.UES1APIDs()
 		if err != nil {
 			return ueIDs{}, nil, err
 		}
 
-		ids := ueIDs{mme: &v.MMEUES1APID}
-		if v.Pair {
-			ids.enb = &v.ENBUES1APID
+		mmeID, ok := v.MMEID()
+		if !ok {
+			return ueIDs{}, nil, errUnknownUEIDs
+		}
+
+		ids := ueIDs{mme: &mmeID}
+		if enbID, ok := v.ENBID(); ok {
+			ids.enb = &enbID
 		}
 
 		return ids, &v, nil
@@ -142,7 +150,7 @@ func (r *relay) uplink(ctx context.Context, n *ranAssoc, log *slog.Logger, p *s1
 		return
 	}
 
-	if proc == s1ap.ProcUEContextReleaseRequest && p.Index(s1ap.IDGWContextReleaseIndication) >= 0 {
+	if proc == s1ap.ProcUEContextReleaseRequest && present(p, s1ap.IDGWContextReleaseIndication) {
 		r.ues.Remove(u)
 		r.mu.Unlock()
 
@@ -160,6 +168,13 @@ func (r *relay) uplink(ctx context.Context, n *ranAssoc, log *slog.Logger, p *s1
 	}
 
 	r.updateLocation(u, p)
+
+	if err := r.tnlUplinkLocked(u, p); err != nil {
+		r.mu.Unlock()
+		r.abort(ctx, log, u, proc, err)
+
+		return
+	}
 
 	mmeID, mmeENBID, mme := u.CoreID, u.CoreRANID, u.Core
 	r.mu.Unlock()
@@ -256,6 +271,17 @@ func (r *relay) downlink(ctx context.Context, a *mmeAssoc, log *slog.Logger, p *
 		stale = r.supersededLocked(u, a)
 	}
 
+	if err := r.tnlDownlinkLocked(u, p, stale); err != nil {
+		r.mu.Unlock()
+		r.abort(ctx, log, u, p.ProcedureCode(), err)
+
+		for _, o := range stale {
+			r.releaseRadioSide(ctx, o.RAN, o.RAN.Logger(r.log), o, causeSuccessfulHandover)
+		}
+
+		return
+	}
+
 	ranMMEID, enbID, ran, told, mmeID, plmn := u.RANCoreID, u.RANID, u.RAN, u.Ext.told, u.CoreID, u.PLMN
 	r.mu.Unlock()
 
@@ -272,7 +298,12 @@ func (r *relay) downlink(ctx context.Context, a *mmeAssoc, log *slog.Logger, p *
 	switch {
 	case err != nil:
 	case pair != nil:
-		pair.MMEUES1APID, pair.ENBUES1APID = ranMMEID, enbID
+		if pair.UES1APIDPair != nil {
+			pair.UES1APIDPair.MMEUES1APID, pair.UES1APIDPair.ENBUES1APID = ranMMEID, enbID
+		} else {
+			pair.MMEUES1APID = &ranMMEID
+		}
+
 		if err = p.SetUES1APIDs(*pair); err == nil {
 			out, err = p.Marshal()
 		}
@@ -379,7 +410,7 @@ var initialContextSetupRequestOrder = []s1ap.ProtocolIEID{
 func (r *relay) informServingMME(p *s1ap.RawPDU, a *mmeAssoc, plmn db.PLMN, mmeID s1ap.MMEUES1APID,
 	order []s1ap.ProtocolIEID,
 ) error {
-	if gummei, ok := r.g.servingGUMMEI(a, plmn); ok && p.Index(s1ap.IDGUMMEI) < 0 {
+	if gummei, ok := r.g.servingGUMMEI(a, plmn); ok && !present(p, s1ap.IDGUMMEI) {
 		g, err := gummeiTo(gummei)
 		if err != nil {
 			return err

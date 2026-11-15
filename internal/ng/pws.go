@@ -53,17 +53,17 @@ func (s ranSetup) ownsCell(c ngap.NRCGI) bool {
 // TS 38.413 clause 9.3.1.37
 func warningCovers(l *ngap.WarningAreaList) func(ranSetup) bool {
 	switch {
-	case l == nil || len(l.EmergencyAreaIDs) > 0:
+	case l == nil || len(assoc.Items(l.EmergencyAreaIDList)) > 0:
 		return func(ranSetup) bool { return true }
-	case len(l.NRCGIs) > 0:
+	case len(assoc.Items(l.NRCGIListForWarning)) > 0:
 		return func(s ranSetup) bool {
-			return slices.ContainsFunc(l.NRCGIs, s.ownsCell)
+			return slices.ContainsFunc(*l.NRCGIListForWarning, s.ownsCell)
 		}
 	}
 
-	tais := make([]assoc.TAI, 0, len(l.TAIs))
+	tais := make([]assoc.TAI, 0, len(assoc.Items(l.TAIListForWarning)))
 
-	for _, t := range l.TAIs {
+	for _, t := range assoc.Items(l.TAIListForWarning) {
 		if id, err := plmnid.Decode(t.PLMNIdentity); err == nil {
 			tais = append(tais, assoc.TAI{PLMN: id, TAC: uint32(t.TAC)})
 		}
@@ -224,28 +224,28 @@ func completedAreaList(got []*ngap.BroadcastCompletedAreaList) *ngap.BroadcastCo
 			continue
 		}
 
-		eutra.AddCells(l.CellIDBroadcastEUTRA...)
-		nr.AddCells(l.CellIDBroadcastNR...)
+		eutra.AddCells(assoc.Items(l.CellIDBroadcastEUTRA)...)
+		nr.AddCells(assoc.Items(l.CellIDBroadcastNR)...)
 
-		for _, t := range l.TAIBroadcastEUTRA {
+		for _, t := range assoc.Items(l.TAIBroadcastEUTRA) {
 			eutra.AddTAI(t.TAI, assoc.Convert(t.CompletedCellsInTAI, func(c ngap.CompletedCellsInTAIEUTRAItem) ngap.CellIDBroadcastEUTRAItem {
 				return ngap.CellIDBroadcastEUTRAItem(c)
 			}))
 		}
 
-		for _, e := range l.EmergencyAreaIDBroadcastEUTRA {
+		for _, e := range assoc.Items(l.EmergencyAreaIDBroadcastEUTRA) {
 			eutra.AddEAI(e.EmergencyAreaID, assoc.Convert(e.CompletedCellsInEAI, func(c ngap.CompletedCellsInEAIEUTRAItem) ngap.CellIDBroadcastEUTRAItem {
 				return ngap.CellIDBroadcastEUTRAItem(c)
 			}))
 		}
 
-		for _, t := range l.TAIBroadcastNR {
+		for _, t := range assoc.Items(l.TAIBroadcastNR) {
 			nr.AddTAI(t.TAI, assoc.Convert(t.CompletedCellsInTAI, func(c ngap.CompletedCellsInTAINRItem) ngap.CellIDBroadcastNRItem {
 				return ngap.CellIDBroadcastNRItem(c)
 			}))
 		}
 
-		for _, e := range l.EmergencyAreaIDBroadcastNR {
+		for _, e := range assoc.Items(l.EmergencyAreaIDBroadcastNR) {
 			nr.AddEAI(e.EmergencyAreaID, assoc.Convert(e.CompletedCellsInEAI, func(c ngap.CompletedCellsInEAINRItem) ngap.CellIDBroadcastNRItem {
 				return ngap.CellIDBroadcastNRItem(c)
 			}))
@@ -256,15 +256,15 @@ func completedAreaList(got []*ngap.BroadcastCompletedAreaList) *ngap.BroadcastCo
 		nr = nr.OneKind()
 
 		return &ngap.BroadcastCompletedAreaList{
-			CellIDBroadcastNR: nr.Cells,
-			TAIBroadcastNR: assoc.Convert(nr.TAIs, func(t assoc.Area[ngap.TAI, ngap.CellIDBroadcastNRItem]) ngap.TAIBroadcastNRItem {
+			CellIDBroadcastNR: assoc.NonEmpty(ngap.CellIDBroadcastNR(nr.Cells)),
+			TAIBroadcastNR: assoc.NonEmpty(ngap.TAIBroadcastNR(assoc.Convert(nr.TAIs, func(t assoc.Area[ngap.TAI, ngap.CellIDBroadcastNRItem]) ngap.TAIBroadcastNRItem {
 				return ngap.TAIBroadcastNRItem{
 					TAI: t.ID, CompletedCellsInTAI: assoc.Convert(t.Cells, func(c ngap.CellIDBroadcastNRItem) ngap.CompletedCellsInTAINRItem {
 						return ngap.CompletedCellsInTAINRItem(c)
 					}),
 				}
-			}),
-			EmergencyAreaIDBroadcastNR: assoc.Convert(nr.EAIs,
+			}))),
+			EmergencyAreaIDBroadcastNR: assoc.NonEmpty(ngap.EmergencyAreaIDBroadcastNR(assoc.Convert(nr.EAIs,
 				func(e assoc.Area[ngap.EmergencyAreaID, ngap.CellIDBroadcastNRItem]) ngap.EmergencyAreaIDBroadcastNRItem {
 					return ngap.EmergencyAreaIDBroadcastNRItem{
 						EmergencyAreaID: e.ID,
@@ -272,7 +272,7 @@ func completedAreaList(got []*ngap.BroadcastCompletedAreaList) *ngap.BroadcastCo
 							return ngap.CompletedCellsInEAINRItem(c)
 						}),
 					}
-				}),
+				}))),
 		}
 	}
 
@@ -283,15 +283,15 @@ func completedAreaList(got []*ngap.BroadcastCompletedAreaList) *ngap.BroadcastCo
 	eutra = eutra.OneKind()
 
 	return &ngap.BroadcastCompletedAreaList{
-		CellIDBroadcastEUTRA: eutra.Cells,
-		TAIBroadcastEUTRA: assoc.Convert(eutra.TAIs, func(t assoc.Area[ngap.TAI, ngap.CellIDBroadcastEUTRAItem]) ngap.TAIBroadcastEUTRAItem {
+		CellIDBroadcastEUTRA: assoc.NonEmpty(ngap.CellIDBroadcastEUTRA(eutra.Cells)),
+		TAIBroadcastEUTRA: assoc.NonEmpty(ngap.TAIBroadcastEUTRA(assoc.Convert(eutra.TAIs, func(t assoc.Area[ngap.TAI, ngap.CellIDBroadcastEUTRAItem]) ngap.TAIBroadcastEUTRAItem {
 			return ngap.TAIBroadcastEUTRAItem{
 				TAI: t.ID, CompletedCellsInTAI: assoc.Convert(t.Cells, func(c ngap.CellIDBroadcastEUTRAItem) ngap.CompletedCellsInTAIEUTRAItem {
 					return ngap.CompletedCellsInTAIEUTRAItem(c)
 				}),
 			}
-		}),
-		EmergencyAreaIDBroadcastEUTRA: assoc.Convert(eutra.EAIs,
+		}))),
+		EmergencyAreaIDBroadcastEUTRA: assoc.NonEmpty(ngap.EmergencyAreaIDBroadcastEUTRA(assoc.Convert(eutra.EAIs,
 			func(e assoc.Area[ngap.EmergencyAreaID, ngap.CellIDBroadcastEUTRAItem]) ngap.EmergencyAreaIDBroadcastEUTRAItem {
 				return ngap.EmergencyAreaIDBroadcastEUTRAItem{
 					EmergencyAreaID: e.ID,
@@ -299,7 +299,7 @@ func completedAreaList(got []*ngap.BroadcastCompletedAreaList) *ngap.BroadcastCo
 						return ngap.CompletedCellsInEAIEUTRAItem(c)
 					}),
 				}
-			}),
+			}))),
 	}
 }
 
@@ -315,28 +315,28 @@ func cancelledAreaList(got []*ngap.BroadcastCancelledAreaList) *ngap.BroadcastCa
 			continue
 		}
 
-		eutra.AddCells(l.CellIDCancelledEUTRA...)
-		nr.AddCells(l.CellIDCancelledNR...)
+		eutra.AddCells(assoc.Items(l.CellIDCancelledEUTRA)...)
+		nr.AddCells(assoc.Items(l.CellIDCancelledNR)...)
 
-		for _, t := range l.TAICancelledEUTRA {
+		for _, t := range assoc.Items(l.TAICancelledEUTRA) {
 			eutra.AddTAI(t.TAI, assoc.Convert(t.CancelledCellsInTAI, func(c ngap.CancelledCellsInTAIEUTRAItem) ngap.CellIDCancelledEUTRAItem {
 				return ngap.CellIDCancelledEUTRAItem(c)
 			}))
 		}
 
-		for _, e := range l.EmergencyAreaIDCancelledEUTRA {
+		for _, e := range assoc.Items(l.EmergencyAreaIDCancelledEUTRA) {
 			eutra.AddEAI(e.EmergencyAreaID, assoc.Convert(e.CancelledCellsInEAI, func(c ngap.CancelledCellsInEAIEUTRAItem) ngap.CellIDCancelledEUTRAItem {
 				return ngap.CellIDCancelledEUTRAItem(c)
 			}))
 		}
 
-		for _, t := range l.TAICancelledNR {
+		for _, t := range assoc.Items(l.TAICancelledNR) {
 			nr.AddTAI(t.TAI, assoc.Convert(t.CancelledCellsInTAI, func(c ngap.CancelledCellsInTAINRItem) ngap.CellIDCancelledNRItem {
 				return ngap.CellIDCancelledNRItem(c)
 			}))
 		}
 
-		for _, e := range l.EmergencyAreaIDCancelledNR {
+		for _, e := range assoc.Items(l.EmergencyAreaIDCancelledNR) {
 			nr.AddEAI(e.EmergencyAreaID, assoc.Convert(e.CancelledCellsInEAI, func(c ngap.CancelledCellsInEAINRItem) ngap.CellIDCancelledNRItem {
 				return ngap.CellIDCancelledNRItem(c)
 			}))
@@ -347,15 +347,15 @@ func cancelledAreaList(got []*ngap.BroadcastCancelledAreaList) *ngap.BroadcastCa
 		nr = nr.OneKind()
 
 		return &ngap.BroadcastCancelledAreaList{
-			CellIDCancelledNR: nr.Cells,
-			TAICancelledNR: assoc.Convert(nr.TAIs, func(t assoc.Area[ngap.TAI, ngap.CellIDCancelledNRItem]) ngap.TAICancelledNRItem {
+			CellIDCancelledNR: assoc.NonEmpty(ngap.CellIDCancelledNR(nr.Cells)),
+			TAICancelledNR: assoc.NonEmpty(ngap.TAICancelledNR(assoc.Convert(nr.TAIs, func(t assoc.Area[ngap.TAI, ngap.CellIDCancelledNRItem]) ngap.TAICancelledNRItem {
 				return ngap.TAICancelledNRItem{
 					TAI: t.ID, CancelledCellsInTAI: assoc.Convert(t.Cells, func(c ngap.CellIDCancelledNRItem) ngap.CancelledCellsInTAINRItem {
 						return ngap.CancelledCellsInTAINRItem(c)
 					}),
 				}
-			}),
-			EmergencyAreaIDCancelledNR: assoc.Convert(nr.EAIs,
+			}))),
+			EmergencyAreaIDCancelledNR: assoc.NonEmpty(ngap.EmergencyAreaIDCancelledNR(assoc.Convert(nr.EAIs,
 				func(e assoc.Area[ngap.EmergencyAreaID, ngap.CellIDCancelledNRItem]) ngap.EmergencyAreaIDCancelledNRItem {
 					return ngap.EmergencyAreaIDCancelledNRItem{
 						EmergencyAreaID: e.ID,
@@ -363,7 +363,7 @@ func cancelledAreaList(got []*ngap.BroadcastCancelledAreaList) *ngap.BroadcastCa
 							return ngap.CancelledCellsInEAINRItem(c)
 						}),
 					}
-				}),
+				}))),
 		}
 	}
 
@@ -374,15 +374,15 @@ func cancelledAreaList(got []*ngap.BroadcastCancelledAreaList) *ngap.BroadcastCa
 	eutra = eutra.OneKind()
 
 	return &ngap.BroadcastCancelledAreaList{
-		CellIDCancelledEUTRA: eutra.Cells,
-		TAICancelledEUTRA: assoc.Convert(eutra.TAIs, func(t assoc.Area[ngap.TAI, ngap.CellIDCancelledEUTRAItem]) ngap.TAICancelledEUTRAItem {
+		CellIDCancelledEUTRA: assoc.NonEmpty(ngap.CellIDCancelledEUTRA(eutra.Cells)),
+		TAICancelledEUTRA: assoc.NonEmpty(ngap.TAICancelledEUTRA(assoc.Convert(eutra.TAIs, func(t assoc.Area[ngap.TAI, ngap.CellIDCancelledEUTRAItem]) ngap.TAICancelledEUTRAItem {
 			return ngap.TAICancelledEUTRAItem{
 				TAI: t.ID, CancelledCellsInTAI: assoc.Convert(t.Cells, func(c ngap.CellIDCancelledEUTRAItem) ngap.CancelledCellsInTAIEUTRAItem {
 					return ngap.CancelledCellsInTAIEUTRAItem(c)
 				}),
 			}
-		}),
-		EmergencyAreaIDCancelledEUTRA: assoc.Convert(eutra.EAIs,
+		}))),
+		EmergencyAreaIDCancelledEUTRA: assoc.NonEmpty(ngap.EmergencyAreaIDCancelledEUTRA(assoc.Convert(eutra.EAIs,
 			func(e assoc.Area[ngap.EmergencyAreaID, ngap.CellIDCancelledEUTRAItem]) ngap.EmergencyAreaIDCancelledEUTRAItem {
 				return ngap.EmergencyAreaIDCancelledEUTRAItem{
 					EmergencyAreaID: e.ID,
@@ -390,7 +390,7 @@ func cancelledAreaList(got []*ngap.BroadcastCancelledAreaList) *ngap.BroadcastCa
 						return ngap.CancelledCellsInEAIEUTRAItem(c)
 					}),
 				}
-			}),
+			}))),
 	}
 }
 
@@ -416,11 +416,11 @@ func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logg
 		if ind, err = ngap.ParsePWSRestartIndication(value); err == nil {
 			d = ind.Diagnostics()
 
-			for _, c := range ind.CellIDListForRestart.EUTRACGIs {
+			for _, c := range assoc.Items(ind.CellIDListForRestart.EUTRACGIListforRestart) {
 				cells = append(cells, fmt.Sprintf("e%x/%07x", c.PLMNIdentity, c.EUTRACellIdentity))
 			}
 
-			for _, c := range ind.CellIDListForRestart.NRCGIs {
+			for _, c := range assoc.Items(ind.CellIDListForRestart.NRCGIListforRestart) {
 				cells = append(cells, fmt.Sprintf("n%x/%09x", c.PLMNIdentity, c.NRCellIdentity))
 			}
 		}
@@ -451,7 +451,7 @@ func (g *Gateway) pwsIndication(ctx context.Context, n *ranAssoc, log *slog.Logg
 			return nil, err
 		}
 
-		if err := p.Set(ngap.IDGlobalRANNodeID, id); err != nil {
+		if err := p.Set(ngap.IDGlobalRANNodeID, &id); err != nil {
 			return nil, err
 		}
 

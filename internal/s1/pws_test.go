@@ -20,7 +20,7 @@ func pws(o db.Operator) db.Operator {
 func ecgi(t *testing.T, plmn string, enbID, cell uint32) s1ap.EUTRANCGI {
 	t.Helper()
 
-	return s1ap.EUTRANCGI{PLMNIdentity: plmnID(t, plmn[:3], plmn[3:]), CellID: enbID<<8 | cell}
+	return s1ap.EUTRANCGI{PLMNIdentity: plmnID(t, plmn[:3], plmn[3:]), CellID: s1ap.CellIdentity(enbID<<8 | cell)}
 }
 
 func writeReplaceWarning(id, serial uint16, area *s1ap.WarningAreaList) *s1ap.WriteReplaceWarningRequest {
@@ -87,14 +87,14 @@ func TestWriteReplaceWarningFromThePWSOperator(t *testing.T) {
 	x.enbA.Send(t, &s1ap.WriteReplaceWarningResponse{
 		MessageIdentifier: 4370, SerialNumber: 2,
 		BroadcastCompletedAreaList: &s1ap.BroadcastCompletedAreaList{
-			CellIDBroadcast: []s1ap.CellIDBroadcastItem{{ECGI: ecgi(t, "00101", 1, 1)}},
+			CellIDBroadcast: &s1ap.CellIDBroadcast{{ECGI: ecgi(t, "00101", 1, 1)}},
 		},
 	})
 	x.mmeA.Quiet(t, 100*time.Millisecond)
 	x.enbB.Send(t, &s1ap.WriteReplaceWarningResponse{
 		MessageIdentifier: 4370, SerialNumber: 2,
 		BroadcastCompletedAreaList: &s1ap.BroadcastCompletedAreaList{
-			TAIBroadcast: []s1ap.TAIBroadcastItem{{
+			TAIBroadcast: &s1ap.TAIBroadcast{{
 				TAI: tai(t, "002002", 2), CompletedCellInTAI: []s1ap.CompletedCellInTAIItem{{ECGI: ecgi(t, "002002", 2, 1)}},
 			}},
 		},
@@ -103,7 +103,7 @@ func TestWriteReplaceWarningFromThePWSOperator(t *testing.T) {
 	x.enbAB.Send(t, &s1ap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 2})
 
 	got := expectWarningResponse(t, x.mmeA, 4370, 2)
-	want := &s1ap.BroadcastCompletedAreaList{CellIDBroadcast: []s1ap.CellIDBroadcastItem{
+	want := &s1ap.BroadcastCompletedAreaList{CellIDBroadcast: &s1ap.CellIDBroadcast{
 		{ECGI: ecgi(t, "00101", 1, 1)}, {ECGI: ecgi(t, "002002", 2, 1)},
 	}}
 
@@ -111,11 +111,11 @@ func TestWriteReplaceWarningFromThePWSOperator(t *testing.T) {
 		t.Fatalf("Broadcast Completed Area List = %+v, want %+v", got, want)
 	}
 
-	byTAI := writeReplaceWarning(4371, 1, &s1ap.WarningAreaList{TAIList: []s1ap.TAI{tai(t, "002002", 1)}})
+	byTAI := writeReplaceWarning(4371, 1, &s1ap.WarningAreaList{TrackingAreaListforWarning: &s1ap.TAIListforWarning{tai(t, "002002", 1)}})
 	x.mmeA.Send(t, byTAI)
 	expectSame(t, x.enbAB, marshal(t, byTAI))
 
-	completed := &s1ap.BroadcastCompletedAreaList{TAIBroadcast: []s1ap.TAIBroadcastItem{{
+	completed := &s1ap.BroadcastCompletedAreaList{TAIBroadcast: &s1ap.TAIBroadcast{{
 		TAI: tai(t, "002002", 1), CompletedCellInTAI: []s1ap.CompletedCellInTAIItem{{ECGI: ecgi(t, "00101", 3, 1)}},
 	}}}
 	x.enbAB.Send(t, &s1ap.WriteReplaceWarningResponse{
@@ -126,13 +126,13 @@ func TestWriteReplaceWarningFromThePWSOperator(t *testing.T) {
 		t.Fatalf("Broadcast Completed Area List = %+v, want %+v", got, completed)
 	}
 
-	byCell := writeReplaceWarning(4372, 1, &s1ap.WarningAreaList{CellIDList: []s1ap.EUTRANCGI{ecgi(t, "00101", 1, 5)}})
+	byCell := writeReplaceWarning(4372, 1, &s1ap.WarningAreaList{CellIDList: &s1ap.ECGIList{ecgi(t, "00101", 1, 5)}})
 	x.mmeA.Send(t, byCell)
 	x.mmeA.Send(t, byCell)
 	expectSame(t, x.enbA, marshal(t, byCell))
 	expectSame(t, x.enbA, marshal(t, byCell))
 
-	cell := &s1ap.BroadcastCompletedAreaList{CellIDBroadcast: []s1ap.CellIDBroadcastItem{{ECGI: ecgi(t, "00101", 1, 5)}}}
+	cell := &s1ap.BroadcastCompletedAreaList{CellIDBroadcast: &s1ap.CellIDBroadcast{{ECGI: ecgi(t, "00101", 1, 5)}}}
 	x.enbA.Send(t, &s1ap.WriteReplaceWarningResponse{MessageIdentifier: 4372, SerialNumber: 1, BroadcastCompletedAreaList: cell})
 
 	if got := expectWarningResponse(t, x.mmeA, 4372, 1); !reflect.DeepEqual(got, cell) {
@@ -145,7 +145,7 @@ func TestWriteReplaceWarningFromThePWSOperator(t *testing.T) {
 		t.Fatalf("Broadcast Completed Area List = %+v, want none", got)
 	}
 
-	x.mmeA.Send(t, writeReplaceWarning(4373, 1, &s1ap.WarningAreaList{CellIDList: []s1ap.EUTRANCGI{ecgi(t, "00101", 9, 1)}}))
+	x.mmeA.Send(t, writeReplaceWarning(4373, 1, &s1ap.WarningAreaList{CellIDList: &s1ap.ECGIList{ecgi(t, "00101", 9, 1)}}))
 
 	if got := expectWarningResponse(t, x.mmeA, 4373, 1); got != nil {
 		t.Fatalf("Broadcast Completed Area List = %+v, want none", got)
@@ -184,7 +184,7 @@ func TestKillAnsweredWhenTheRadiosLeave(t *testing.T) {
 		expectSame(t, enb, marshal(t, kill))
 	}
 
-	cancelled := &s1ap.BroadcastCancelledAreaList{TAICancelled: []s1ap.TAICancelledItem{{
+	cancelled := &s1ap.BroadcastCancelledAreaList{TAICancelled: &s1ap.TAICancelled{{
 		TAI:                tai(t, "00101", 1),
 		CancelledCellInTAI: []s1ap.CancelledCellInTAIItem{{ECGI: ecgi(t, "00101", 1, 1), NumberOfBroadcasts: 0}},
 	}}}
@@ -192,7 +192,7 @@ func TestKillAnsweredWhenTheRadiosLeave(t *testing.T) {
 	x.mmeA.Quiet(t, 100*time.Millisecond)
 	x.enbAB.Send(t, &s1ap.KillResponse{
 		MessageIdentifier: 4370, SerialNumber: 2,
-		BroadcastCancelledAreaList: &s1ap.BroadcastCancelledAreaList{TAICancelled: []s1ap.TAICancelledItem{{
+		BroadcastCancelledAreaList: &s1ap.BroadcastCancelledAreaList{TAICancelled: &s1ap.TAICancelled{{
 			TAI:                tai(t, "00101", 1),
 			CancelledCellInTAI: []s1ap.CancelledCellInTAIItem{{ECGI: ecgi(t, "00101", 3, 2), NumberOfBroadcasts: 0}},
 		}}},
@@ -203,7 +203,7 @@ func TestKillAnsweredWhenTheRadiosLeave(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := &s1ap.BroadcastCancelledAreaList{TAICancelled: []s1ap.TAICancelledItem{{
+	want := &s1ap.BroadcastCancelledAreaList{TAICancelled: &s1ap.TAICancelled{{
 		TAI: tai(t, "00101", 1),
 		CancelledCellInTAI: []s1ap.CancelledCellInTAIItem{
 			{ECGI: ecgi(t, "00101", 1, 1), NumberOfBroadcasts: 0}, {ECGI: ecgi(t, "00101", 3, 2), NumberOfBroadcasts: 0},
@@ -225,7 +225,7 @@ func TestKillAnsweredWithoutTheSilentRadios(t *testing.T) {
 
 	kill := &s1ap.KillRequest{
 		MessageIdentifier: 4370, SerialNumber: 3,
-		WarningAreaList: &s1ap.WarningAreaList{EmergencyAreaIDList: []s1ap.EmergencyAreaID{{0, 0, 1}}},
+		WarningAreaList: &s1ap.WarningAreaList{EmergencyAreaIDList: &s1ap.EmergencyAreaIDList{{0, 0, 1}}},
 	}
 	x.mmeA.Send(t, kill)
 
@@ -233,7 +233,7 @@ func TestKillAnsweredWithoutTheSilentRadios(t *testing.T) {
 		expectSame(t, enb, marshal(t, kill))
 	}
 
-	cancelled := &s1ap.BroadcastCancelledAreaList{EmergencyAreaIDCancelled: []s1ap.EmergencyAreaIDCancelledItem{{
+	cancelled := &s1ap.BroadcastCancelledAreaList{EmergencyAreaIDCancelled: &s1ap.EmergencyAreaIDCancelled{{
 		EmergencyAreaID:    s1ap.EmergencyAreaID{0, 0, 1},
 		CancelledCellInEAI: []s1ap.CancelledCellInEAIItem{{ECGI: ecgi(t, "002002", 2, 1), NumberOfBroadcasts: 4}},
 	}}}
@@ -261,13 +261,13 @@ func TestKillAnsweredWithoutTheSilentRadios(t *testing.T) {
 func gatewayENBID(t *testing.T) s1ap.GlobalENBID {
 	t.Helper()
 
-	return s1ap.GlobalENBID{PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{Kind: s1ap.ENBIDMacro, Value: 0xabcde}}
+	return s1ap.GlobalENBID{PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{MacroENBID: s1ap.Ptr(s1ap.MacroENBID(0xabcde))}}
 }
 
 func radioENBID(t *testing.T, id uint32) s1ap.GlobalENBID {
 	t.Helper()
 
-	return s1ap.GlobalENBID{PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{Kind: s1ap.ENBIDMacro, Value: id}}
+	return s1ap.GlobalENBID{PLMNIdentity: plmnID(t, "001", "01"), ENBID: s1ap.ENBID{MacroENBID: s1ap.Ptr(s1ap.MacroENBID(id))}}
 }
 
 func restartIndication(t *testing.T, id s1ap.GlobalENBID, enbID uint32, cells ...uint32) *s1ap.PWSRestartIndication {
@@ -317,7 +317,7 @@ func TestPWSIndicationsRelayedToThePWSOperator(t *testing.T) {
 	})))
 
 	ind := expect(t, x.enbB, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication)
-	if ind.Cause == nil || ind.Cause.Group != s1ap.CauseGroupProtocol || ind.CriticalityDiagnostics == nil ||
+	if ind.Cause == nil || ind.Cause.Protocol == nil || ind.CriticalityDiagnostics == nil ||
 		ind.CriticalityDiagnostics.ProcedureCode == nil || *ind.CriticalityDiagnostics.ProcedureCode != s1ap.ProcPWSRestartIndication {
 		t.Fatalf("Error Indication = %+v", ind)
 	}
@@ -461,7 +461,7 @@ func TestOwnsCell(t *testing.T) {
 		{db.GlobalENBID{PLMN: a, Type: db.ENBIDMacro, ID: 1}, "00303", 1<<8 | 1, false},
 	} {
 		got := s1.OwnsCell(tc.id, []db.PLMN{a, b}, s1ap.EUTRANCGI{
-			PLMNIdentity: plmnID(t, tc.plmn[:3], tc.plmn[3:]), CellID: tc.cell,
+			PLMNIdentity: plmnID(t, tc.plmn[:3], tc.plmn[3:]), CellID: s1ap.CellIdentity(tc.cell),
 		})
 		if got != tc.owned {
 			t.Fatalf("%s owns %s/%07x = %v, want %v", tc.id.Ref(), tc.plmn, tc.cell, got, tc.owned)
@@ -487,7 +487,7 @@ func TestWarningFromTwoMMEsOfThePWSOperator(t *testing.T) {
 	mme2.Send(t, req)
 	expectSame(t, enb, marshal(t, req))
 
-	cell := &s1ap.BroadcastCompletedAreaList{CellIDBroadcast: []s1ap.CellIDBroadcastItem{{ECGI: ecgi(t, "00101", 1, 1)}}}
+	cell := &s1ap.BroadcastCompletedAreaList{CellIDBroadcast: &s1ap.CellIDBroadcast{{ECGI: ecgi(t, "00101", 1, 1)}}}
 	enb.Send(t, &s1ap.WriteReplaceWarningResponse{MessageIdentifier: 4370, SerialNumber: 9, BroadcastCompletedAreaList: cell})
 
 	if got := expectWarningResponse(t, mme1, 4370, 9); !reflect.DeepEqual(got, cell) {
@@ -513,7 +513,7 @@ func TestInvalidWarningRequestFromTheMME(t *testing.T) {
 	h := startGateway(t, mmeListener.Port(), pws(operatorA("127.0.2.13")))
 	enb, mme := upAndRunning(t, h, mmeListener)
 
-	body := bodyOf(t, &s1ap.ErrorIndication{Cause: &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified}})
+	body := bodyOf(t, &s1ap.ErrorIndication{Cause: s1ap.Ptr(s1ap.CauseMiscUnspecified.Cause())})
 
 	for _, proc := range []s1ap.ProcedureCode{s1ap.ProcWriteReplaceWarning, s1ap.ProcKill} {
 		mme.Send(t, initiating(proc, s1ap.CriticalityReject, body))
@@ -567,10 +567,10 @@ func TestInvalidWarningResponsesFromTheRadio(t *testing.T) {
 	badList := rawResponse(t, &s1ap.WriteReplaceWarningResponse{
 		MessageIdentifier: 4370, SerialNumber: 2,
 		BroadcastCompletedAreaList: &s1ap.BroadcastCompletedAreaList{
-			CellIDBroadcast: []s1ap.CellIDBroadcastItem{{ECGI: ecgi(t, "00101", 1, 1)}},
+			CellIDBroadcast: &s1ap.CellIDBroadcast{{ECGI: ecgi(t, "00101", 1, 1)}},
 		},
 	}, func(p *s1ap.RawPDU) {
-		if err := p.SetValue(p.Index(s1ap.IDBroadcastCompletedAreaList), []byte{0x40}); err != nil {
+		if err := p.SetValue(indexOf(t, p, s1ap.IDBroadcastCompletedAreaList), []byte{0x40}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -586,8 +586,7 @@ func TestInvalidWarningResponsesFromTheRadio(t *testing.T) {
 
 		if serial == 2 {
 			ind := expect(t, enb, "initiating", s1ap.ProcErrorIndication, s1ap.ParseErrorIndication)
-			if ind.Cause == nil || ind.Cause.Group != s1ap.CauseGroupProtocol ||
-				ind.Cause.Value != s1ap.CauseProtocolTransferSyntaxError {
+			if ind.Cause == nil || !ind.Cause.Equal(s1ap.CauseProtocolTransferSyntaxError.Cause()) {
 				t.Fatalf("Error Indication = %+v", ind)
 			}
 		}

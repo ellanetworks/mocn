@@ -45,7 +45,7 @@ type lab struct {
 
 var labs = []lab{
 	{
-		operator: "ella-core", plmn: plmn{MCC: "001", MNC: "01"}, enbID: 1, gnbID: 1, mme: "10.90.0.14", amf: "10.90.0.14",
+		operator: "ella-core", plmn: plmn{MCC: "001", MNC: "01"}, enbID: 1, gnbID: 1, mme: "10.90.4.14", amf: "10.90.4.14",
 		core: "ella-core", coreLog: ellaCoreLog, dn: "10.90.3.3", dnHost: "router", enb: "srsenb",
 		radio: "eNB:001-01:MacroeNB-0019b", srsue: "srsue", imsi: "001010000000001", ueNet: "10.45.",
 	},
@@ -69,7 +69,7 @@ const ellaSUPI = `"supi":"imsi-{imsi}"`
 
 var ellaCoreLog = coreLog{
 	args:           []string{"logs", "--no-color", "ella-core"},
-	accepted:       []string{`"msg":"Radio setup complete"`, `"ran_addr":"10.90.0.30`, `"rat":"4g"`},
+	accepted:       []string{`"msg":"Radio setup complete"`, `"ran_addr":"10.90.4.30`, `"rat":"4g"`},
 	attached:       []string{`"msg":"UE registration accepted"`, ellaSUPI},
 	idle:           []string{`"msg":"UE idle"`, ellaSUPI, `"rat":"4g"`},
 	serviceRequest: []string{`"msg":"Service Request accepted"`, ellaSUPI},
@@ -266,6 +266,14 @@ func metric(text, name string, labels map[string]string) (float64, bool) {
 	sc := bufio.NewScanner(strings.NewReader(text))
 	for sc.Scan() {
 		line := sc.Text()
+		if v, ok := strings.CutPrefix(line, name+" "); ok {
+			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && len(labels) == 0 {
+				return f, true
+			}
+
+			continue
+		}
+
 		if !strings.HasPrefix(line, name+"{") {
 			continue
 		}
@@ -758,6 +766,7 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 	eventually(ctx, t, "Ella MOCN relayed the Initial Context Setup outcome from "+l.radio, 10*time.Second,
 		relayedToCore(ctx, "relayed S1AP message to MME", l.radio, "InitialContextSetup (9)"))
 	eventually(ctx, t, l.operator+" user plane up", 30*time.Second, func() error { return ping(ctx, l) })
+	eventually(ctx, t, l.operator+" user traffic through Ella MOCN", 10*time.Second, aggregated(ctx, c, l.operator, l.radio))
 
 	connected := l.coreLog.mark(ctx, t)
 
@@ -843,4 +852,51 @@ func ueLifecycle(ctx context.Context, t *testing.T, c *client, l lab) {
 
 		return nil
 	})
+}
+
+func aggregated(ctx context.Context, c *client, operatorName, radioRef string) func() error {
+	return func() error {
+		text, err := metricsText(ctx, c)
+		if err != nil {
+			return err
+		}
+
+		for _, name := range []string{"ellamocn_user_plane_enabled", "ellamocn_user_plane_datapath_loaded"} {
+			if v, ok := metric(text, name, nil); !ok || v != 1 {
+				return fmt.Errorf("%s = %v, %v", name, v, ok)
+			}
+		}
+
+		ready := map[string]string{"operator": operatorName, "state": "ready"}
+		if v, ok := metric(text, "ellamocn_user_plane_state", ready); !ok || v != 1 {
+			return fmt.Errorf("ellamocn_user_plane_state%v = %v, %v", ready, v, ok)
+		}
+
+		for _, side := range []string{"radio", "core"} {
+			labels := map[string]string{"operator": operatorName, "side": side}
+			if v, ok := metric(text, "ellamocn_user_plane_peer_up", labels); !ok || v != 1 {
+				return fmt.Errorf("ellamocn_user_plane_peer_up%v = %v, %v", labels, v, ok)
+			}
+		}
+
+		for _, dir := range []string{"uplink", "downlink"} {
+			labels := map[string]string{"operator": operatorName, "radio": radioRef, "direction": dir}
+			for _, name := range []string{"ellamocn_user_plane_packets_total", "ellamocn_user_plane_bytes_total"} {
+				if v, ok := metric(text, name, labels); !ok || v < 1 {
+					return fmt.Errorf("%s%v = %v, %v", name, labels, v, ok)
+				}
+			}
+
+			op := map[string]string{"operator": operatorName, "direction": dir}
+			if v, ok := metric(text, "ellamocn_user_plane_tunnel_setups_total", op); !ok || v < 1 {
+				return fmt.Errorf("ellamocn_user_plane_tunnel_setups_total%v = %v, %v", op, v, ok)
+			}
+
+			if v, ok := metric(text, "ellamocn_user_plane_slow_path_relayed_total", op); !ok || v != 0 {
+				return fmt.Errorf("ellamocn_user_plane_slow_path_relayed_total%v = %v, %v, want the fast path only", op, v, ok)
+			}
+		}
+
+		return nil
+	}
 }

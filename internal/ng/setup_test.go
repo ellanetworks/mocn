@@ -31,8 +31,7 @@ func TestGlobalGNBIDConversion(t *testing.T) {
 		t.Fatalf("round trip = %+v, %v", got, err)
 	}
 
-	wire.Kind = ngap.RANNodeIDMacroNgENB
-	if _, err := globalGNBIDFrom(wire); err == nil {
+	if _, err := globalGNBIDFrom(ngap.GlobalRANNodeID{GlobalNgENBID: &ngap.GlobalNgENBID{}}); err == nil {
 		t.Fatal("ng-eNB accepted as a gNB")
 	}
 }

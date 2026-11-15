@@ -4,15 +4,12 @@ description: System requirements for running Ella MOCN.
 
 # System Requirements
 
-Ella MOCN runs on Linux. It supports **amd64** and **arm64** architectures.
+Ella MOCN runs on any Linux distribution.
 
 |  | Minimum |
 |------------|-------------|
-| **CPU** | 1 core |
+| **Operating System** | Linux, kernel 6.6 or later with SCTP |
+| **CPU** | 1 core, amd64 or arm64 |
 | **Memory** | 1 GB RAM |
 | **Disk** | 10 GB |
-| **Operating System** | Ubuntu 26.04 LTS |
-| **Kernel** | SCTP, for S1 toward radios and MMEs, and NG toward radios and AMFs |
-| **Kubernetes nodes** | SCTP kernel module |
-
-Sizing for larger numbers of radios and UE connections is not measured yet.
+| **Capabilities** | `CAP_BPF`, `CAP_PERFMON`, `CAP_NET_ADMIN` and `CAP_NET_RAW` (if user-plane aggregation is enabled) |

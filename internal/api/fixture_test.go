@@ -40,6 +40,7 @@ func testConfig(t *testing.T, store *db.DB) api.Config {
 	return api.Config{
 		Auth:       store,
 		Operators:  store,
+		UserPlane:  true,
 		JWTSecret:  func() []byte { return testJWTSecret },
 		BcryptCost: bcrypt.MinCost,
 		Now:        func() time.Time { return testNow },
@@ -60,16 +61,16 @@ func openStore(t *testing.T, opts ...db.Option) *db.DB {
 	return store
 }
 
-func newTestAPI(t *testing.T) *testAPI {
+func newTestAPI(t *testing.T, opts ...func(*api.Config)) *testAPI {
 	t.Helper()
 
-	a := newUninitializedAPI(t)
+	a := newUninitializedAPI(t, opts...)
 	a.token = initialize(t, a.handler)
 
 	return a
 }
 
-func newUninitializedAPI(t *testing.T) *testAPI {
+func newUninitializedAPI(t *testing.T, opts ...func(*api.Config)) *testAPI {
 	t.Helper()
 
 	store := openStore(t)
@@ -78,6 +79,10 @@ func newUninitializedAPI(t *testing.T) *testAPI {
 	cfg := testConfig(t, store)
 	cfg.Now = func() time.Time { return a.now }
 	cfg.Logger = slog.New(slog.NewJSONHandler(&a.logs, nil))
+
+	for _, o := range opts {
+		o(&cfg)
+	}
 
 	a.handler = api.NewHandler(cfg)
 

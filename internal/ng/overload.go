@@ -28,11 +28,11 @@ var overloadActions = map[ngap.OverloadAction]OverloadAction{
 }
 
 func overloadResponseFrom(r *ngap.OverloadResponse) *OverloadAction {
-	if r == nil {
+	if r == nil || r.OverloadAction == nil {
 		return nil
 	}
 
-	if a, ok := overloadActions[r.OverloadAction]; ok {
+	if a, ok := overloadActions[*r.OverloadAction]; ok {
 		return &a
 	}
 
@@ -46,7 +46,7 @@ func overloadResponseTo(a *OverloadAction) *ngap.OverloadResponse {
 
 	for k, v := range overloadActions {
 		if v == *a {
-			return &ngap.OverloadResponse{OverloadAction: k}
+			return &ngap.OverloadResponse{OverloadAction: &k}
 		}
 	}
 

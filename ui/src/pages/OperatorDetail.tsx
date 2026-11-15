@@ -29,6 +29,7 @@ import {
   EditGNBIdentityDialog,
   EditPLMNsDialog,
   EditPWSOperatorDialog,
+  EditUserPlaneDialog,
   RenameOperatorDialog,
 } from "@/components/OperatorDialogs";
 import OneLine from "@/components/OneLine";
@@ -68,6 +69,11 @@ import {
   GNB_IDENTITY_LABEL,
   operatorPath,
   PWS_HELP,
+  USER_PLANE_ADDRESSES_HELP,
+  USER_PLANE_AGGREGATION_HELP,
+  USER_PLANE_INTERFACE_HELP,
+  USER_PLANE_REASONS,
+  USER_PLANE_STATUS_HELP,
 } from "@/utils/operators";
 
 export const OPERATOR_REFRESH_MS = 5000;
@@ -91,6 +97,7 @@ type Editing =
   | { type: "pws" }
   | { type: "enb" }
   | { type: "gnb" }
+  | { type: "userPlane" }
   | { type: "add" }
   | { type: "view"; kind: CoreNodeKind; key: string }
   | { type: "edit"; kind: CoreNodeKind; key: string }
@@ -208,22 +215,10 @@ function CoreNodes({
     {
       field: "label",
       headerName: "Name",
-      description: "The name the node gave itself. Open it to see its details.",
+      description: "The name the node gave itself.",
       flex: 0.8,
       minWidth: 90,
-      renderCell: ({ row }) => (
-        <OneLine title={row.label}>
-          <Link
-            component="button"
-            type="button"
-            variant="body2"
-            onClick={() => onView(row)}
-            sx={{ ...linkSx, verticalAlign: "baseline" }}
-          >
-            {row.label}
-          </Link>
-        </OneLine>
-      ),
+      renderCell: ({ row }) => <OneLine title={row.label} />,
     },
     {
       field: "ue_connections",
@@ -453,6 +448,7 @@ function OperatorSections({
       Not set
     </Box>
   );
+  const userPlane = operator.user_plane?.status;
 
   return (
     <>
@@ -500,6 +496,65 @@ function OperatorSections({
         ]}
       />
 
+      <SectionHeader
+        id="user-plane-title"
+        title="User Plane"
+        description="How this operator's user traffic reaches its gateways."
+      />
+      <SettingsTable
+        label="User Plane"
+        rows={[
+          {
+            label: "User-Plane Aggregation",
+            help: USER_PLANE_AGGREGATION_HELP,
+            value: (operator.user_plane?.aggregation ?? true) ? "On" : "Off",
+            onEdit: edit({ type: "userPlane" }),
+          },
+          {
+            label: "Status",
+            help: USER_PLANE_STATUS_HELP,
+            value: userPlane ? (
+              <Box
+                component="span"
+                sx={{ display: "inline-flex", alignItems: "center", gap: 1 }}
+              >
+                <StateChip
+                  state={userPlane.state}
+                  hint={`Since ${formatDateTime(userPlane.since, { seconds: true })}`}
+                />
+                {userPlane.reason && (
+                  <OneLine
+                    title={
+                      USER_PLANE_REASONS[userPlane.reason] ?? userPlane.reason
+                    }
+                  />
+                )}
+              </Box>
+            ) : (
+              NONE
+            ),
+          },
+          {
+            label: "Interface",
+            help: USER_PLANE_INTERFACE_HELP,
+            value: userPlane?.interface ? (
+              <OneLine title={userPlane.interface} />
+            ) : (
+              NONE
+            ),
+          },
+          {
+            label: "Addresses",
+            help: USER_PLANE_ADDRESSES_HELP,
+            value: userPlane?.addresses.length ? (
+              <OneLine title={userPlane.addresses.join(", ")} />
+            ) : (
+              NONE
+            ),
+          },
+        ]}
+      />
+
       <CoreNodes
         mmes={mmes}
         amfs={amfs}
@@ -530,6 +585,9 @@ function OperatorSections({
       )}
       {editing?.type === "pws" && (
         <EditPWSOperatorDialog operator={operator} onClose={close} />
+      )}
+      {editing?.type === "userPlane" && (
+        <EditUserPlaneDialog operator={operator} onClose={close} />
       )}
       {editing?.type === "enb" && (
         <EditENBIdentityDialog operator={operator} onClose={close} />

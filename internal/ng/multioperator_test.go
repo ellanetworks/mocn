@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ellanetworks/core/ngap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/ng"
 )
 
@@ -31,10 +32,10 @@ func TestPagingFanOut(t *testing.T) {
 	_ = amfsB
 
 	paging := &ngap.Paging{
-		FiveGSTMSI: &ngap.FiveGSTMSI{AMFSetID: 1, AMFPointer: 0, FiveGTMSI: 0xdeadbeef},
-		TAIListForPaging: []ngap.TAI{
-			{PLMNIdentity: plmnID(t, "001", "01"), TAC: 2},
-			{PLMNIdentity: plmnID(t, "002", "002"), TAC: 1},
+		UEPagingIdentity: &ngap.UEPagingIdentity{FiveGSTMSI: &ngap.FiveGSTMSI{AMFSetID: 1, AMFPointer: 0, FiveGTMSI: 0xdeadbeef}},
+		TAIListForPaging: ngap.TAIListForPaging{
+			{TAI: ngap.TAI{PLMNIdentity: plmnID(t, "001", "01"), TAC: 2}},
+			{TAI: ngap.TAI{PLMNIdentity: plmnID(t, "002", "002"), TAC: 1}},
 		},
 	}
 	amf.Send(t, paging)
@@ -74,7 +75,7 @@ func TestMultiOperatorSelectionAndScoping(t *testing.T) {
 	assertTAs(t, reqA.SupportedTAList, ngap.SupportedTAList{ta(t, 1, "00101")})
 	assertTAs(t, reqB.SupportedTAList, ngap.SupportedTAList{ta(t, 1, "002002")})
 
-	if reqB.GlobalRANNodeID.Value != 7 || reqB.GlobalRANNodeID.Bits != 32 {
+	if gnbValue(reqB.GlobalRANNodeID) != (ngap.GNBIDValue{Value: 7, Bits: 32}) {
 		t.Fatalf("operator B Global gNB ID = %+v", reqB.GlobalRANNodeID)
 	}
 
@@ -109,16 +110,16 @@ func TestMultiOperatorSelectionAndScoping(t *testing.T) {
 	}
 
 	amfA.Send(t, &ngap.NGReset{
-		Cause: &ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscOMIntervention}, ResetType: ngap.ResetType{All: true},
+		Cause: new(ngap.CauseMiscOMIntervention.Cause()), ResetType: ngap.ResetType{NGInterface: new(ngap.ResetAllResetAll)},
 	})
 	expect(t, amfA, "successful", ngap.ProcNGReset, ngap.ParseNGResetAcknowledge)
 
 	reset := expect(t, gnb, "initiating", ngap.ProcNGReset, ngap.ParseNGReset)
-	if len(reset.ResetType.Part) != 1 || *reset.ResetType.Part[0].AMFUENGAPID != ueA.ranAMFID {
+	if len(assoc.Items(reset.ResetType.PartOfNGInterface)) != 1 || *assoc.Items(reset.ResetType.PartOfNGInterface)[0].AMFUENGAPID != ueA.ranAMFID {
 		t.Fatalf("NG Reset = %+v, want only operator A's UE", reset)
 	}
 
-	gnb.Send(t, &ngap.NGResetAcknowledge{ConnectionList: reset.ResetType.Part})
+	gnb.Send(t, &ngap.NGResetAcknowledge{ConnectionList: assoc.Items(reset.ResetType.PartOfNGInterface)})
 
 	h.eventually(t, "only operator B's UE", func() bool {
 		ues := h.gw.UEs()
@@ -171,7 +172,7 @@ func TestSelectionWithinTheOperatorsAMFs(t *testing.T) {
 	attachWith(t, gnb, amf2, stmsi, 3)
 
 	amf1.Send(t, &ngap.OverloadStart{
-		AMFOverloadResponse:               &ngap.OverloadResponse{OverloadAction: ngap.OverloadActionRejectRRCCRSignalling},
+		AMFOverloadResponse:               &ngap.OverloadResponse{OverloadAction: new(ngap.OverloadActionRejectRRCCRSignalling)},
 		AMFTrafficLoadReductionIndication: ngap.Ptr(ngap.TrafficLoadReductionIndication(40)),
 		OverloadStartNSSAIList: ngap.OverloadStartNSSAIList{{
 			SliceOverloadList: []ngap.SliceOverloadItem{{SNSSAI: slice.SNSSAI}},
@@ -180,7 +181,7 @@ func TestSelectionWithinTheOperatorsAMFs(t *testing.T) {
 
 	start := expect(t, gnb, "initiating", ngap.ProcOverloadStart, ngap.ParseOverloadStart)
 	if len(start.GUAMIList) != 1 || start.GUAMIList[0].GUAMI != guami(t, "00101", 2, 1, 1) ||
-		start.AMFOverloadResponse == nil || start.AMFOverloadResponse.OverloadAction != ngap.OverloadActionRejectRRCCRSignalling ||
+		start.AMFOverloadResponse == nil || *start.AMFOverloadResponse.OverloadAction != ngap.OverloadActionRejectRRCCRSignalling ||
 		start.AMFTrafficLoadReductionIndication == nil || *start.AMFTrafficLoadReductionIndication != 40 ||
 		len(start.OverloadStartNSSAIList) != 1 {
 		t.Fatalf("Overload Start = %+v", start)
@@ -252,7 +253,7 @@ func TestRerouteNASRequestWithinTheOperator(t *testing.T) {
 		t.Fatalf("AMF Set ID = %d, %v, %v", set, ok, err)
 	}
 
-	if raw.Index(ngap.IDAllowedNSSAI) < 0 || raw.Index(ngap.IDAMFSetID) > raw.Index(ngap.IDAllowedNSSAI) {
+	if index(t, raw, ngap.IDAllowedNSSAI) < 0 || index(t, raw, ngap.IDAMFSetID) > index(t, raw, ngap.IDAllowedNSSAI) {
 		t.Fatalf("rerouted IEs = %+v", raw.IEs())
 	}
 
@@ -260,7 +261,7 @@ func TestRerouteNASRequestWithinTheOperator(t *testing.T) {
 		id   ngap.ProtocolIEID
 		crit ngap.Criticality
 	}{{ngap.IDAMFSetID, ngap.CriticalityIgnore}, {ngap.IDAllowedNSSAI, ngap.CriticalityReject}} {
-		if ie, err := raw.IE(raw.Index(want.id)); err != nil || ie.Criticality != want.crit {
+		if ie, err := raw.IE(index(t, raw, want.id)); err != nil || ie.Criticality != want.crit {
 			t.Fatalf("IE %d criticality = %v (%v), want %v", want.id, ie.Criticality, err, want.crit)
 		}
 	}

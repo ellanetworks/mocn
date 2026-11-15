@@ -1,6 +1,7 @@
 package ng_test
 
 import (
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -80,8 +81,8 @@ func TestNGSetupBothWays(t *testing.T) {
 
 	req := expect(t, amf, "initiating", ngap.ProcNGSetup, ngap.ParseNGSetupRequest)
 
-	want := ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: 0xabcde, Bits: 22}
-	if req.GlobalRANNodeID != want {
+	want := gnbNodeID(plmnID(t, "001", "01"), 0xabcde, 22)
+	if !req.GlobalRANNodeID.Equal(want) {
 		t.Fatalf("Global RAN Node ID = %+v, want %+v", req.GlobalRANNodeID, want)
 	}
 
@@ -202,9 +203,10 @@ ellamocn_core_associations{interface="ng",operator="A",state="connected"} 0
 ellamocn_core_associations{interface="ng",operator="A",state="disconnected"} 0
 ellamocn_core_associations{interface="ng",operator="A",state="setup_failed"} 0
 ellamocn_core_associations{interface="ng",operator="A",state="up"} 1
-# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded).
+# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded; setup_failed: SCTP association up, Ella MOCN rejected the last S1 or NG Setup).
 # TYPE ellamocn_radio_associations gauge
 ellamocn_radio_associations{interface="ng",state="connected"} 0
+ellamocn_radio_associations{interface="ng",state="setup_failed"} 0
 ellamocn_radio_associations{interface="ng",state="up"} 1
 # HELP ellamocn_setup_attempts_total Setup procedures (S1 Setup, NG Setup), by interface (s1, ng), side and result. side=radio: received from radios; result success, invalid (undecodable or invalid request), unknown_plmn (no operator serves a broadcast PLMN), no_mme, no_amf (no MME or AMF of the serving operators is up), mme_failure, amf_failure (the serving operators' MMEs or AMFs rejected the setup), error (the response could not be built or sent, or the radio left before the answer). side=core: sent to MMEs and AMFs; result success, failure (the MME or AMF rejected the request or answered with an invalid response), timeout (no answer from the MME or AMF), error (the request could not be built or sent, or the association dropped before the answer).
 # TYPE ellamocn_setup_attempts_total counter
@@ -252,12 +254,12 @@ func TestAMFConfigurationUpdateTNLAssociationsToAddFailToSetUp(t *testing.T) {
 
 	add := ngap.AMFTNLAssociationToAddList{
 		{
-			AMFTNLAssociationAddress: ngap.CPTransportLayerInformation{EndpointIPAddress: ngap.TransportLayerAddress{127, 0, 1, 85}},
+			AMFTNLAssociationAddress: ngap.CPTransportLayerInformation{EndpointIPAddress: new(tla(netip.MustParseAddr("127.0.1.85")))},
 			TNLAddressWeightFactor:   1,
 		},
 		{
 			AMFTNLAssociationAddress: ngap.CPTransportLayerInformation{EndpointIPAddressAndPort: &ngap.EndpointIPAddressAndPort{
-				EndpointIPAddress: ngap.TransportLayerAddress{127, 0, 1, 86}, PortNumber: 38413,
+				EndpointIPAddress: tla(netip.MustParseAddr("127.0.1.86")), PortNumber: 38413,
 			}},
 			TNLAssociationUsage:    ngap.Ptr(ngap.TNLAssociationUsageUE),
 			TNLAddressWeightFactor: 2,
@@ -280,7 +282,7 @@ func TestAMFConfigurationUpdateTNLAssociationsToAddFailToSetUp(t *testing.T) {
 			t.Fatalf("TNL Association Address %d = %+v, want %+v", i, item.TNLAssociationAddress, add[i].AMFTNLAssociationAddress)
 		}
 
-		if item.Cause.Group != ngap.CauseGroupTransport || item.Cause.Value != ngap.CauseTransportUnspecified {
+		if !item.Cause.Equal(ngap.CauseTransportUnspecified.Cause()) {
 			t.Fatalf("Cause %d = %v, want transport unspecified", i, item.Cause)
 		}
 	}
@@ -301,37 +303,57 @@ func TestNGSetupFailures(t *testing.T) {
 	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "00301")))
 
 	fail := expect(t, gnb, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
-	if fail.Cause == nil || fail.Cause.Group != ngap.CauseGroupMisc || fail.Cause.Value != ngap.CauseMiscUnknownPLMNOrSNPN {
+	if fail.Cause == nil || !fail.Cause.Equal(ngap.CauseMiscUnknownPLMNOrSNPN.Cause()) {
 		t.Fatalf("cause = %v, want unknown PLMN", fail.Cause)
+	}
+
+	nodes := h.gw.RANNodes()
+	if len(nodes) != 1 || nodes[0].State != ng.RANNodeSetupFailed || nodes[0].SetupFailure == nil ||
+		nodes[0].SetupFailure.Cause != "Unknown PLMN or SNPN" ||
+		nodes[0].SetupFailure.Reason != "no operator serves a broadcast PLMN" || nodes[0].SetupFailure.At.IsZero() ||
+		nodes[0].GlobalGNBID == nil || nodes[0].GlobalGNBID.ID != 1 || nodes[0].Name != "gnb1" ||
+		nodes[0].DefaultPagingDRX != 64 || len(nodes[0].SupportedTAs) != 1 ||
+		nodes[0].SupportedTAs[0].BroadcastPLMNs[0].PLMN.String() != "003-01" ||
+		len(nodes[0].SupportedTAs[0].BroadcastPLMNs[0].Slices) == 0 {
+		t.Fatalf("RAN nodes = %+v, want the rejected NG Setup Request kept", nodes)
 	}
 
 	amf.Quiet(t, 200*time.Millisecond)
 
 	enb := setupRequest(t, 1, "ng-enb", ngap.PagingDRXv64, ta(t, 1, "00101"))
-	enb.GlobalRANNodeID = ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDMacroNgENB, PLMNIdentity: plmnID(t, "001", "01"), Value: 1, Bits: 20}
+	enb.GlobalRANNodeID = ngap.GlobalRANNodeID{GlobalNgENBID: &ngap.GlobalNgENBID{
+		PLMNIdentity: plmnID(t, "001", "01"), NgENBID: ngap.NgENBID{MacroNgENBID: new(ngap.MacroNgENBID(1))},
+	}}
 	gnb.Send(t, enb)
 
 	fail = expect(t, gnb, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
-	if fail.Cause == nil || fail.Cause.Group != ngap.CauseGroupProtocol || fail.Cause.Value != ngap.CauseProtocolSemanticError {
+	if fail.Cause == nil || !fail.Cause.Equal(ngap.CauseProtocolSemanticError.Cause()) {
 		t.Fatalf("cause = %v, want semantic error", fail.Cause)
+	}
+
+	nodes = h.gw.RANNodes()
+	if len(nodes) != 1 || nodes[0].State != ng.RANNodeSetupFailed || nodes[0].SetupFailure == nil ||
+		nodes[0].SetupFailure.Cause != "Semantic error" || nodes[0].GlobalGNBID != nil || nodes[0].Name != "" ||
+		len(nodes[0].SupportedTAs) != 0 {
+		t.Fatalf("RAN nodes = %+v, want a setup failure without the undecodable request", nodes)
 	}
 
 	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "002002")))
 
 	fail = expect(t, gnb, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
-	if fail.Cause == nil || fail.Cause.Group != ngap.CauseGroupTransport || fail.TimeToWait == nil || *fail.TimeToWait != ngap.TimeToWaitV5s {
+	if fail.Cause == nil || fail.Cause.Transport == nil || fail.TimeToWait == nil || *fail.TimeToWait != ngap.TimeToWaitV5s {
 		t.Fatalf("NG Setup Failure = %+v, want transport resource unavailable and 5 s", fail)
 	}
 
 	gnb.Send(t, setupRequest(t, 1, "gnb1", ngap.PagingDRXv64, ta(t, 1, "00101")))
 	expect(t, amf, "initiating", ngap.ProcNGSetup, ngap.ParseNGSetupRequest)
 	amf.Send(t, &ngap.NGSetupFailure{
-		Cause:      &ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscUnknownPLMNOrSNPN},
+		Cause:      new(ngap.CauseMiscUnknownPLMNOrSNPN.Cause()),
 		TimeToWait: ngap.Ptr(ngap.TimeToWaitV10s),
 	})
 
 	fail = expect(t, gnb, "unsuccessful", ngap.ProcNGSetup, ngap.ParseNGSetupFailure)
-	if fail.Cause == nil || fail.Cause.Value != ngap.CauseMiscUnknownPLMNOrSNPN || fail.TimeToWait == nil ||
+	if fail.Cause == nil || !fail.Cause.Equal(ngap.CauseMiscUnknownPLMNOrSNPN.Cause()) || fail.TimeToWait == nil ||
 		*fail.TimeToWait != ngap.TimeToWaitV10s {
 		t.Fatalf("NG Setup Failure = %+v, want the AMF's cause and time to wait", fail)
 	}
@@ -339,6 +361,15 @@ func TestNGSetupFailures(t *testing.T) {
 	st, _ := h.gw.AMFStatus(1, []string{"127.0.1.3"})
 	if st.State != ng.AMFSetupFailed {
 		t.Fatalf("AMF state = %s", st.State)
+	}
+
+	nodes = h.gw.RANNodes()
+	if len(nodes) != 1 || nodes[0].State != ng.RANNodeSetupFailed || nodes[0].SetupFailure == nil ||
+		nodes[0].SetupFailure.Cause != "Unknown PLMN or SNPN" ||
+		nodes[0].SetupFailure.Reason != "the operator's AMFs refused the setup: Unknown PLMN or SNPN" ||
+		nodes[0].GlobalGNBID == nil ||
+		nodes[0].SupportedTAs[0].BroadcastPLMNs[0].PLMN.String() != "001-01" {
+		t.Fatalf("RAN nodes = %+v, want the latest rejection", nodes)
 	}
 }
 

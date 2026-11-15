@@ -2,6 +2,7 @@ package ng
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/ellanetworks/core/ngap"
@@ -26,24 +27,28 @@ func rewrite(p *ngap.RawPDU, amfID *ngap.AMFUENGAPID, ranID *ngap.RANUENGAPID) (
 	return p.Marshal()
 }
 
+var errUnknownUEIDs = errors.New("UE NGAP IDs in an unknown alternative")
+
 type ueIDs struct {
 	amf *ngap.AMFUENGAPID
 	ran *ngap.RANUENGAPID
 }
 
 func readUEIDs(p *ngap.RawPDU) (ueIDs, *ngap.UENGAPIDs, error) {
-	if p.Index(ngap.IDUENGAPIDs) >= 0 {
+	if present(p, ngap.IDUENGAPIDs) {
 		v, _, err := p.UENGAPIDs()
 		if err != nil {
 			return ueIDs{}, nil, err
 		}
 
-		ids := ueIDs{amf: &v.AMFUENGAPID}
-		if v.Pair {
-			ids.ran = &v.RANUENGAPID
+		switch {
+		case v.UENGAPIDPair != nil:
+			return ueIDs{amf: &v.UENGAPIDPair.AMFUENGAPID, ran: &v.UENGAPIDPair.RANUENGAPID}, &v, nil
+		case v.AMFUENGAPID != nil:
+			return ueIDs{amf: v.AMFUENGAPID}, &v, nil
 		}
 
-		return ids, &v, nil
+		return ueIDs{}, nil, errUnknownUEIDs
 	}
 
 	var ids ueIDs
@@ -141,7 +146,7 @@ func (r *relay) uplink(ctx context.Context, n *ranAssoc, log *slog.Logger, p *ng
 		return
 	}
 
-	if proc == ngap.ProcUEContextReleaseRequest && p.Index(ngap.IDGWContextReleaseIndication) >= 0 {
+	if proc == ngap.ProcUEContextReleaseRequest && present(p, ngap.IDGWContextReleaseIndication) {
 		r.ues.Remove(u)
 		r.mu.Unlock()
 
@@ -176,6 +181,13 @@ func (r *relay) uplink(ctx context.Context, n *ranAssoc, log *slog.Logger, p *ng
 	}
 
 	r.updateLocation(u, p)
+
+	if err := r.tnlUplinkLocked(u, p); err != nil {
+		r.mu.Unlock()
+		r.abort(ctx, log, u, p.ProcedureCode(), err)
+
+		return
+	}
 
 	amfID, amfRANID, amf := u.CoreID, u.CoreRANID, u.Core
 	r.mu.Unlock()
@@ -242,7 +254,7 @@ func (r *relay) downlink(ctx context.Context, a *amfAssoc, log *slog.Logger, p *
 
 	var newID *ngap.AMFUENGAPID
 
-	if p.Index(ngap.IDNewAMFUENGAPID) >= 0 {
+	if present(p, ngap.IDNewAMFUENGAPID) {
 		id, _, err := p.NewAMFUENGAPID()
 		if err != nil {
 			tracing.SpanFailed(ctx, assoc.ErrTypeInvalid)
@@ -295,6 +307,17 @@ func (r *relay) downlink(ctx context.Context, a *amfAssoc, log *slog.Logger, p *
 		r.ues.SetCoreID(u, *newID)
 	}
 
+	if err := r.tnlDownlinkLocked(u, p, stale); err != nil {
+		r.mu.Unlock()
+		r.abort(ctx, log, u, p.ProcedureCode(), err)
+
+		for _, o := range stale {
+			r.releaseRadioSide(ctx, o.RAN, o.RAN.Logger(r.log), o, causeSuccessfulHandover)
+		}
+
+		return
+	}
+
 	ranAMFID, ranID, ran, told, amfID := u.RANCoreID, u.RANID, u.RAN, u.Ext.told, u.CoreID
 	r.mu.Unlock()
 
@@ -315,7 +338,12 @@ func (r *relay) downlink(ctx context.Context, a *amfAssoc, log *slog.Logger, p *
 	switch {
 	case err != nil:
 	case pair != nil:
-		pair.AMFUENGAPID, pair.RANUENGAPID = ranAMFID, ranID
+		if pair.UENGAPIDPair != nil {
+			pair.UENGAPIDPair.AMFUENGAPID, pair.UENGAPIDPair.RANUENGAPID = ranAMFID, ranID
+		} else {
+			pair.AMFUENGAPID = &ranAMFID
+		}
+
 		if err = p.SetUENGAPIDs(*pair); err == nil {
 			out, err = p.Marshal()
 		}

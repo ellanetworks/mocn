@@ -75,7 +75,7 @@ func TestRerouteNASRequest(t *testing.T) {
 		t.Fatalf("MME Group ID = %v (%v, %v)", group, ok, err)
 	}
 
-	if i, j := rerouted.Index(s1ap.IDMMEGroupID), rerouted.Index(s1ap.IDUEUsageType); i < rerouted.Index(s1ap.IDRRCEstablishmentCause) ||
+	if i, j := indexOf(t, rerouted, s1ap.IDMMEGroupID), indexOf(t, rerouted, s1ap.IDUEUsageType); i < indexOf(t, rerouted, s1ap.IDRRCEstablishmentCause) ||
 		j != i+1 {
 		t.Fatalf("MME Group ID at %d and UE Usage Type at %d are out of order", i, j)
 	}
@@ -166,7 +166,7 @@ func TestErrorIndicationFromRadioForAReroutedUE(t *testing.T) {
 	expectRaw(t, mme2, "initiating", s1ap.ProcInitialUEMessage)
 
 	enb.Send(t, &s1ap.ErrorIndication{
-		MMEUES1APID: &ranMMEID, ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(5)), Cause: &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownPairUES1APID},
+		MMEUES1APID: &ranMMEID, ENBUES1APID: s1ap.Ptr(s1ap.ENBUES1APID(5)), Cause: s1ap.Ptr(s1ap.CauseRadioNetworkUnknownPairUES1APID.Cause()),
 	})
 
 	h.eventually(t, "the UE context released", func() bool { return len(h.gw.UEs()) == 0 })
@@ -184,7 +184,7 @@ func TestErrorIndicationWithOnlyTheMMEUEID(t *testing.T) {
 	enb, mme := upAndRunning(t, h, mmeListener)
 	ue := attach(t, enb, mme, 3, 77)
 
-	other := s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscUnspecified}
+	other := s1ap.CauseMiscUnspecified.Cause()
 	mme.Send(t, &s1ap.ErrorIndication{MMEUES1APID: &ue.mmeUEID, Cause: &other})
 	enb.Quiet(t, 200*time.Millisecond)
 
@@ -192,7 +192,7 @@ func TestErrorIndicationWithOnlyTheMMEUEID(t *testing.T) {
 		t.Fatal("UE released on an Error Indication without an AP ID cause")
 	}
 
-	cause := s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownENBUES1APID}
+	cause := s1ap.CauseRadioNetworkUnknownENBUES1APID.Cause()
 	mme.Send(t, &s1ap.ErrorIndication{MMEUES1APID: &ue.mmeUEID, Cause: &cause})
 
 	expectReset(t, enb, item(ue.ranMMEID, ue.enbUEID))
@@ -246,16 +246,23 @@ func TestDuplicateGlobalENBIDRejected(t *testing.T) {
 	enb2.Send(t, setupRequest(t, 1, "copy", s1ap.PagingDRXv128, ta(t, 2, "00101")))
 
 	fail := expect(t, enb2, "unsuccessful", s1ap.ProcS1Setup, s1ap.ParseS1SetupFailure)
-	if fail.Cause == nil || fail.Cause.Group != s1ap.CauseGroupProtocol || fail.Cause.Value != s1ap.CauseProtocolSemanticError {
+	if fail.Cause == nil || !fail.Cause.Equal(s1ap.CauseProtocolSemanticError.Cause()) {
 		t.Fatalf("S1 Setup Failure = %+v, want semantic error", fail)
 	}
 
 	nodes := h.gw.RANNodes()
-	if len(nodes) != 2 || nodes[0].State != s1.RANNodeUp || nodes[1].GlobalENBID != nil {
+	if len(nodes) != 2 || nodes[0].State != s1.RANNodeUp || nodes[1].State != s1.RANNodeSetupFailed ||
+		nodes[1].GlobalENBID == nil || *nodes[1].GlobalENBID != *nodes[0].GlobalENBID || nodes[1].Name != "copy" ||
+		nodes[1].SetupFailure == nil || nodes[1].SetupFailure.Cause != "Semantic error" {
 		t.Fatalf("RAN nodes = %+v", nodes)
 	}
 
 	setUpENB(t, enb2, setupRequest(t, 2, "enb2", s1ap.PagingDRXv128, ta(t, 2, "00101")))
+
+	nodes = h.gw.RANNodes()
+	if len(nodes) != 2 || nodes[1].State != s1.RANNodeUp || nodes[1].SetupFailure != nil || nodes[1].Name != "enb2" {
+		t.Fatalf("RAN nodes = %+v, want the second eNB up", nodes)
+	}
 }
 
 func TestDuplicateGlobalENBIDFromTheSameAddressesReplacesTheOldAssociation(t *testing.T) {
@@ -274,7 +281,7 @@ func TestDuplicateGlobalENBIDFromTheSameAddressesReplacesTheOldAssociation(t *te
 	enb.Closed(t)
 
 	r := expectReset(t, mme, item(100, ue.mmeENBID))
-	if r.Cause == nil || r.Cause.Group != s1ap.CauseGroupTransport || r.Cause.Value != s1ap.CauseTransportResourceUnavailable {
+	if r.Cause == nil || !r.Cause.Equal(s1ap.CauseTransportResourceUnavailable.Cause()) {
 		t.Fatalf("Reset cause = %v", r.Cause)
 	}
 

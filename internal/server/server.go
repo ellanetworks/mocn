@@ -16,6 +16,7 @@ import (
 	"github.com/ellanetworks/mocn/internal/api"
 	"github.com/ellanetworks/mocn/internal/config"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/ng"
 	"github.com/ellanetworks/mocn/internal/s1"
@@ -44,6 +45,7 @@ type Config struct {
 	Frontend       fs.FS
 	BcryptCost     int
 	Telemetry      config.Telemetry
+	UserPlane      config.UserPlane
 	TracerProvider trace.TracerProvider
 	Logger         *slog.Logger
 }
@@ -95,12 +97,28 @@ func Run(ctx context.Context, cfg Config) (err error) {
 
 	m := metrics.New()
 
+	plane := gtpu.New(gtpu.Config{
+		RANAddress: cfg.UserPlane.Address, RANInterface: cfg.UserPlane.Name, Enabled: cfg.UserPlane.Enabled,
+		Logger: cfg.Logger,
+	})
+
+	if err := plane.Start(ctx); err != nil {
+		return err
+	}
+
+	userPlane := planeReconciler{plane: plane, db: database}
+	if err := userPlane.Reconcile(ctx); err != nil {
+		cfg.Logger.ErrorContext(ctx, "failed to apply the user-plane settings of the operators", slog.Any("error", err))
+	}
+
 	s1Gateway := s1.New(s1.Config{
 		Listener: cfg.S1Listener, Operators: database.ListOperators, Metrics: m, TracerProvider: tp, Logger: cfg.Logger,
+		Plane: plane,
 	})
 
 	ngGateway := ng.New(ng.Config{
 		Listener: cfg.NGListener, Operators: database.ListOperators, Metrics: m, TracerProvider: tp, Logger: cfg.Logger,
+		Plane: plane,
 	})
 
 	gatewayCtx, stopGateways := context.WithCancel(ctx)
@@ -120,10 +138,12 @@ func Run(ctx context.Context, cfg Config) (err error) {
 		Handler: api.NewHandler(api.Config{
 			Frontend:       cfg.Frontend,
 			Ready:          readiness(database),
-			Metrics:        newRegistry(database, requests, m.Collectors(s1Gateway, ngGateway)),
+			Metrics:        newRegistry(database, requests, append(m.Collectors(s1Gateway, ngGateway), plane.Collectors()...)),
 			Requests:       requests,
 			Auth:           database,
-			Operators:      reconciling{DB: database, gateways: []reconciler{s1Gateway, ngGateway}, logger: cfg.Logger},
+			Operators:      reconciling{DB: database, gateways: []reconciler{userPlane, s1Gateway, ngGateway}, logger: cfg.Logger},
+			UserPlane:      cfg.UserPlane.Enabled,
+			Plane:          plane,
 			S1:             s1Gateway,
 			NG:             ngGateway,
 			SecureCookie:   cfg.TLS != nil,
@@ -256,6 +276,26 @@ func newRegistry(database *db.DB, requests *api.RequestMetrics, gateways []prome
 	registry.MustRegister(gateways...)
 
 	return registry
+}
+
+type planeReconciler struct {
+	plane *gtpu.Plane
+	db    *db.DB
+}
+
+func (r planeReconciler) Reconcile(ctx context.Context) error {
+	ops, err := r.db.ListOperators(ctx)
+	if err != nil {
+		return err
+	}
+
+	out := make([]gtpu.Operator, 0, len(ops))
+
+	for _, o := range ops {
+		out = append(out, gtpu.Operator{ID: o.ID, Name: o.Name, Aggregated: o.UserPlane.Aggregation && r.plane.Enabled()})
+	}
+
+	return r.plane.SetOperators(out)
 }
 
 type reconciler interface {

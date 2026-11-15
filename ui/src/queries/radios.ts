@@ -12,7 +12,13 @@ import {
   withQuery,
 } from "@/queries/utils";
 
-export type RadioState = "connected" | "up";
+export type RadioState = "connected" | "up" | "setup_failed";
+
+export interface RadioSetupFailure {
+  cause: string;
+  reason: string;
+  at: string;
+}
 
 export interface BroadcastPLMN {
   plmn: PLMN;
@@ -33,6 +39,7 @@ export interface Radio {
   supported_tas: SupportedTA[];
   default_paging_drx?: number;
   state: RadioState;
+  setup_failure?: RadioSetupFailure;
   connected_at: string;
   tnl_addresses: string[];
   ue_connections: number;

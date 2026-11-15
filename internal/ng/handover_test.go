@@ -10,7 +10,7 @@ import (
 func gnbID(t *testing.T, id uint32) ngap.GlobalRANNodeID {
 	t.Helper()
 
-	return ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: id, Bits: 24}
+	return gnbNodeID(plmnID(t, "001", "01"), id, 24)
 }
 
 func sourceToTarget(t *testing.T, nci ngap.NRCellIdentity) ngap.SourceToTargetTransparentContainer {
@@ -43,9 +43,9 @@ func handoverRequestTo(t *testing.T, amfID ngap.AMFUENGAPID, target *ngap.Global
 
 	return &ngap.HandoverRequest{
 		AMFUENGAPID: amfID, HandoverType: ngap.HandoverTypeIntra5GS,
-		Cause:                     &ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkHandoverDesirableForRadio},
+		Cause:                     new(ngap.CauseRadioNetworkHandoverDesirableForRadio.Cause()),
 		UEAggregateMaximumBitRate: ngap.UEAggregateMaximumBitRate{DL: 1000000000, UL: 1000000000},
-		UESecurityCapabilities:    ngap.UESecurityCapabilities{NREncryptionAlgorithms: 0x8000, NRIntegrityProtectionAlgorithms: 0x8000},
+		UESecurityCapabilities:    ngap.UESecurityCapabilities{NREncryptionAlgorithms: ngap.SecurityAlgorithmsFrom(0x8000), NRIntegrityProtectionAlgorithms: ngap.SecurityAlgorithmsFrom(0x8000)},
 		SecurityContext:           ngap.SecurityContext{NextHopChainingCount: 1, NextHopNH: securityKey()},
 		PDUSessionResourceSetupListHOReq: ngap.PDUSessionResourceSetupListHOReq{{
 			PDUSessionID: 5, SNSSAI: slice.SNSSAI, Transfer: ngap.TransferContainer{0x00},
@@ -62,7 +62,7 @@ func pathSwitchRequest(t *testing.T, sourceAMFID ngap.AMFUENGAPID, g *ngap.GUAMI
 
 	return &ngap.PathSwitchRequest{
 		RANUENGAPID: 9, SourceAMFUENGAPID: sourceAMFID, UserLocationInformation: new(uli(t, "00101", 0x2ab01)),
-		UESecurityCapabilities: &ngap.UESecurityCapabilities{NREncryptionAlgorithms: 0xe000, NRIntegrityProtectionAlgorithms: 0xe000},
+		UESecurityCapabilities: &ngap.UESecurityCapabilities{NREncryptionAlgorithms: ngap.SecurityAlgorithmsFrom(0xe000), NRIntegrityProtectionAlgorithms: ngap.SecurityAlgorithmsFrom(0xe000)},
 		PDUSessionResourceToBeSwitchedDLList: ngap.PDUSessionResourceToBeSwitchedDLList{
 			{PDUSessionID: 1, Transfer: ngap.TransferContainer{0x00}},
 		},
@@ -78,8 +78,8 @@ func withAMFUENGAPID2Before(t *testing.T, got frame, want ngap.AMFUENGAPID, next
 		t.Fatal(err)
 	}
 
-	i := p.Index(ngap.IDAMFUENGAPID2)
-	if i < 0 || i != p.Index(next)-1 {
+	i := index(t, p, ngap.IDAMFUENGAPID2)
+	if i < 0 || i != index(t, p, next)-1 {
 		t.Fatalf("AMF UE NGAP ID 2 at %d, want right before %s", i, next)
 	}
 
@@ -122,7 +122,7 @@ func TestHandoverBetweenRadiosOfTheGateway(t *testing.T) {
 
 	required := &ngap.HandoverRequired{
 		AMFUENGAPID: ue.ranAMFID, RANUENGAPID: ue.ranID, HandoverType: ngap.HandoverTypeIntra5GS,
-		Cause: &ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkHandoverDesirableForRadio},
+		Cause: new(ngap.CauseRadioNetworkHandoverDesirableForRadio.Cause()),
 		TargetID: ngap.TargetID{TargetRANNodeID: &ngap.TargetRANNodeID{
 			GlobalRANNodeID: gnbID(t, 2), SelectedTAI: ngap.TAI{PLMNIdentity: plmnID(t, "001", "01"), TAC: 1},
 		}},
@@ -202,8 +202,8 @@ func TestHandoverBetweenRadiosOfTheGateway(t *testing.T) {
 	assertRelayed(t, notify, f)
 
 	amf.Send(t, &ngap.UEContextReleaseCommand{
-		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: ue.amfID, RANUENGAPID: ue.amfRANID, Pair: true},
-		Cause:     &ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkSuccessfulHandover},
+		UENGAPIDs: ngap.UENGAPIDs{UENGAPIDPair: &ngap.UENGAPIDPair{AMFUENGAPID: ue.amfID, RANUENGAPID: ue.amfRANID}},
+		Cause:     new(ngap.CauseRadioNetworkSuccessfulHandover.Cause()),
 	})
 	expectRaw(t, gnb1, "initiating", ngap.ProcUEContextRelease)
 
@@ -235,7 +235,7 @@ func TestHandoverFailureFromTheTargetRadio(t *testing.T) {
 
 	fail := &ngap.HandoverFailure{
 		AMFUENGAPID: &targetAMFID,
-		Cause:       &ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkHOFailureInTarget},
+		Cause:       new(ngap.CauseRadioNetworkHOFailureInTarget.Cause()),
 	}
 	gnb.Send(t, fail)
 
@@ -266,7 +266,7 @@ func TestHandoverRequestWithoutATargetRadioRejected(t *testing.T) {
 
 		fail := expect(t, amf, "unsuccessful", ngap.ProcHandoverResourceAllocation, ngap.ParseHandoverFailure)
 		if fail.AMFUENGAPID == nil || *fail.AMFUENGAPID != 11 || fail.Cause == nil ||
-			fail.Cause.Group != ngap.CauseGroupRadioNetwork || fail.Cause.Value != ngap.CauseRadioNetworkUnknownTargetID {
+			!fail.Cause.Equal(ngap.CauseRadioNetworkUnknownTargetID.Cause()) {
 			t.Fatalf("Handover Failure = %+v", fail)
 		}
 	}
@@ -318,8 +318,8 @@ func pathSwitchBetweenRadios(t *testing.T, ip string, newAMFID ngap.AMFUENGAPID)
 	}
 
 	release := expect(t, gnb1, "initiating", ngap.ProcUEContextRelease, ngap.ParseUEContextReleaseCommand)
-	if ids := release.UENGAPIDs; !ids.Pair || ids.AMFUENGAPID != ue.ranAMFID || ids.RANUENGAPID != ue.ranID ||
-		release.Cause == nil || release.Cause.Value != ngap.CauseRadioNetworkSuccessfulHandover {
+	if ids := release.UENGAPIDs.UENGAPIDPair; ids == nil || ids.AMFUENGAPID != ue.ranAMFID || ids.RANUENGAPID != ue.ranID ||
+		release.Cause == nil || !release.Cause.Equal(ngap.CauseRadioNetworkSuccessfulHandover.Cause()) {
 		t.Fatalf("UE Context Release Command to the source = %+v", release)
 	}
 
@@ -329,21 +329,21 @@ func pathSwitchBetweenRadios(t *testing.T, ip string, newAMFID ngap.AMFUENGAPID)
 
 	gnb1.Send(t, &ngap.UEContextReleaseRequest{
 		AMFUENGAPID: ue.ranAMFID, RANUENGAPID: ue.ranID,
-		Cause: &ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkSuccessfulHandover},
+		Cause: new(ngap.CauseRadioNetworkSuccessfulHandover.Cause()),
 	})
 	gnb1.Send(t, &ngap.UEContextReleaseComplete{AMFUENGAPID: &ue.ranAMFID, RANUENGAPID: &ue.ranID})
 
 	amf.Quiet(t, 200*time.Millisecond)
 
 	amf.Send(t, &ngap.UEContextReleaseCommand{
-		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: newAMFID},
-		Cause:     &ngap.Cause{Group: ngap.CauseGroupNAS, Value: ngap.CauseNASNormalRelease},
+		UENGAPIDs: ngap.UENGAPIDs{AMFUENGAPID: new(newAMFID)},
+		Cause:     new(ngap.CauseNASNormalRelease.Cause()),
 	})
 
 	_, raw = expectRaw(t, gnb2, "initiating", ngap.ProcUEContextRelease)
 
 	got, _, err := raw.UENGAPIDs()
-	if err != nil || got.AMFUENGAPID != ranAMFID {
+	if err != nil || got.AMFUENGAPID == nil || *got.AMFUENGAPID != ranAMFID {
 		t.Fatalf("UE Context Release Command IDs = %+v, %v", got, err)
 	}
 
@@ -382,7 +382,7 @@ func TestPathSwitchRequestFailureReleasesTheNewConnection(t *testing.T) {
 	_, amfRANID := ueIDs(t, raw)
 
 	transfer, err := (&ngap.PathSwitchRequestUnsuccessfulTransfer{
-		Cause: ngap.Cause{Group: ngap.CauseGroupRadioNetwork, Value: ngap.CauseRadioNetworkUnspecified},
+		Cause: ngap.CauseRadioNetworkUnspecified.Cause(),
 	}).Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +404,7 @@ func TestPathSwitchRequestFailureReleasesTheNewConnection(t *testing.T) {
 	h.eventually(t, "the new connection released", func() bool { return len(h.gw.UEs()) == 0 })
 }
 
-func expectPathSwitchRejected(t *testing.T, gnb *peer, group ngap.CauseGroup, value int) {
+func expectPathSwitchRejected(t *testing.T, gnb *peer, want ngap.Cause) {
 	t.Helper()
 
 	psf := expect(t, gnb, "unsuccessful", ngap.ProcPathSwitchRequest, ngap.ParsePathSwitchRequestFailure)
@@ -414,7 +414,7 @@ func expectPathSwitchRejected(t *testing.T, gnb *peer, group ngap.CauseGroup, va
 	}
 
 	transfer, err := ngap.ParsePathSwitchRequestUnsuccessfulTransfer(psf.PDUSessionResourceReleased[0].Transfer)
-	if err != nil || transfer.Cause.Group != group || transfer.Cause.Value != value {
+	if err != nil || !transfer.Cause.Equal(want) {
 		t.Fatalf("Path Switch Request Unsuccessful Transfer = %+v, %v", transfer, err)
 	}
 }
@@ -463,17 +463,17 @@ func TestPathSwitchRequestWithoutAServingAMFRejected(t *testing.T) {
 
 	otherSet := guami(t, "00101", 2, 9, 0)
 	gnb.Send(t, pathSwitchRequest(t, 33, &otherSet))
-	expectPathSwitchRejected(t, gnb, ngap.CauseGroupTransport, ngap.CauseTransportResourceUnavailable)
+	expectPathSwitchRejected(t, gnb, ngap.CauseTransportResourceUnavailable.Cause())
 
 	req := &ngap.PathSwitchRequest{
 		RANUENGAPID: 9, SourceAMFUENGAPID: 33, UserLocationInformation: new(uli(t, "00202", 0x2ab01)),
-		UESecurityCapabilities: &ngap.UESecurityCapabilities{NREncryptionAlgorithms: 0xe000, NRIntegrityProtectionAlgorithms: 0xe000},
+		UESecurityCapabilities: &ngap.UESecurityCapabilities{NREncryptionAlgorithms: ngap.SecurityAlgorithmsFrom(0xe000), NRIntegrityProtectionAlgorithms: ngap.SecurityAlgorithmsFrom(0xe000)},
 		PDUSessionResourceToBeSwitchedDLList: ngap.PDUSessionResourceToBeSwitchedDLList{
 			{PDUSessionID: 1, Transfer: ngap.TransferContainer{0x00}},
 		},
 	}
 	gnb.Send(t, req)
-	expectPathSwitchRejected(t, gnb, ngap.CauseGroupMisc, ngap.CauseMiscUnknownPLMNOrSNPN)
+	expectPathSwitchRejected(t, gnb, ngap.CauseMiscUnknownPLMNOrSNPN.Cause())
 
 	amf.Quiet(t, 200*time.Millisecond)
 
@@ -501,7 +501,7 @@ func TestPathSwitchRequestWithoutASourceAMFGUAMIAndTwoAMFSetsRejected(t *testing
 	settle(t, h, gnb, "127.0.1.100", "127.0.1.101")
 
 	gnb.Send(t, pathSwitchRequest(t, 33, nil))
-	expectPathSwitchRejected(t, gnb, ngap.CauseGroupTransport, ngap.CauseTransportResourceUnavailable)
+	expectPathSwitchRejected(t, gnb, ngap.CauseTransportResourceUnavailable.Cause())
 
 	amf1.Quiet(t, 200*time.Millisecond)
 	amf2.Quiet(t, 0)
@@ -527,7 +527,7 @@ func TestHandoverRequestRoutedByTheTargetCell(t *testing.T) {
 		amf.Send(t, handoverRequestTo(t, 901, nil, sourceToTarget(t, nci)))
 
 		fail := expect(t, amf, "unsuccessful", ngap.ProcHandoverResourceAllocation, ngap.ParseHandoverFailure)
-		if fail.Cause == nil || fail.Cause.Value != ngap.CauseRadioNetworkUnknownTargetID {
+		if fail.Cause == nil || !fail.Cause.Equal(ngap.CauseRadioNetworkUnknownTargetID.Cause()) {
 			t.Fatalf("Handover Failure = %+v", fail)
 		}
 	}

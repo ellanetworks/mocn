@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Box, Link, Skeleton, useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import {
@@ -11,6 +11,7 @@ import { Link as RouterLink } from "react-router-dom";
 import OneLine from "@/components/OneLine";
 import PageHeader from "@/components/PageHeader";
 import QueryAlert from "@/components/QueryAlert";
+import RadioDetailsDialog from "@/components/RadioDetailsDialog";
 import StateChip from "@/components/StateChip";
 import {
   listRadios,
@@ -18,9 +19,16 @@ import {
   radioPath,
   type Radio,
 } from "@/queries/radios";
-import { formatDateTime } from "@/utils/dates";
 import { GRID_SX } from "@/utils/layout";
-import { formatRadioID, RADIO_TYPE_HELP, RADIO_TYPES } from "@/utils/radios";
+import {
+  formatRadioID,
+  RADIO_STATE_HELP,
+  RADIO_TYPE_HELP,
+  RADIO_TYPES,
+  radioRowID,
+  radioStateHint,
+  sameRadio,
+} from "@/utils/radios";
 
 export const RADIOS_REFRESH_MS = 5000;
 
@@ -38,7 +46,7 @@ const gridSx = {
 const rowLabel = (radio: Radio) =>
   radioLabel(radio, radio.ref ?? radio.tnl_addresses.join(", "));
 
-const columns: GridColDef<Radio>[] = [
+const radioColumns = (view: (radio: Radio) => void): GridColDef<Radio>[] => [
   {
     field: "name",
     headerName: "Name",
@@ -58,7 +66,15 @@ const columns: GridColDef<Radio>[] = [
             {rowLabel(row)}
           </Link>
         ) : (
-          rowLabel(row)
+          <Link
+            component="button"
+            type="button"
+            variant="body2"
+            onClick={() => view(row)}
+            sx={{ color: "link", textDecoration: "underline" }}
+          >
+            {rowLabel(row)}
+          </Link>
         )}
       </OneLine>
     ),
@@ -100,15 +116,11 @@ const columns: GridColDef<Radio>[] = [
   {
     field: "state",
     headerName: "Status",
-    description:
-      "Up: connected and ready. Connected: link up, setup not done yet (S1 Setup or NG Setup).",
+    description: RADIO_STATE_HELP,
     flex: 0.4,
     minWidth: 120,
     renderCell: ({ row }) => (
-      <StateChip
-        state={row.state}
-        hint={`Connected at ${formatDateTime(row.connected_at, { seconds: true })}`}
-      />
+      <StateChip state={row.state} hint={radioStateHint(row)} />
     ),
   },
 ];
@@ -134,6 +146,10 @@ export default function Radios() {
     placeholderData: (prev) => prev,
     refetchInterval: RADIOS_REFRESH_MS,
   });
+  const [viewed, setViewed] = useState<Radio>();
+  const columns = useMemo(() => radioColumns(setViewed), []);
+  const shown =
+    viewed && (radios.data?.items.find((r) => sameRadio(r, viewed)) ?? viewed);
 
   return (
     <Box component="section" aria-labelledby="radios-title">
@@ -149,7 +165,7 @@ export default function Radios() {
         <DataGrid<Radio>
           aria-label="Radios"
           rows={radios.data.items}
-          getRowId={(row) => row.ref ?? row.tnl_addresses.join(",")}
+          getRowId={radioRowID}
           columns={columns}
           columnVisibilityModel={phone ? HIDDEN_ON_PHONE : {}}
           paginationMode="server"
@@ -165,6 +181,13 @@ export default function Radios() {
           autoHeight
           localeText={{ noRowsLabel: "No radios." }}
           sx={gridSx}
+        />
+      )}
+      {shown && (
+        <RadioDetailsDialog
+          radio={shown}
+          label={rowLabel(shown)}
+          onClose={() => setViewed(undefined)}
         />
       )}
     </Box>

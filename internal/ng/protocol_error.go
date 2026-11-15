@@ -13,11 +13,9 @@ import (
 const errTypeUnsupported = "unsupported"
 
 var (
-	causeTransferSyntax = ngap.Cause{Group: ngap.CauseGroupProtocol, Value: ngap.CauseProtocolTransferSyntaxError}
-	causeAbstractReject = ngap.Cause{Group: ngap.CauseGroupProtocol, Value: ngap.CauseProtocolAbstractSyntaxErrorReject}
-	causeAbstractNotify = ngap.Cause{
-		Group: ngap.CauseGroupProtocol, Value: ngap.CauseProtocolAbstractSyntaxErrorIgnoreAndNotify,
-	}
+	causeTransferSyntax = ngap.CauseProtocolTransferSyntaxError.Cause()
+	causeAbstractReject = ngap.CauseProtocolAbstractSyntaxErrorReject.Cause()
+	causeAbstractNotify = ngap.CauseProtocolAbstractSyntaxErrorIgnoreAndNotify.Cause()
 )
 
 type sendable interface {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ellanetworks/core/s1ap"
 	"github.com/ellanetworks/mocn/internal/db"
+	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/uetable"
 )
 
@@ -41,6 +42,7 @@ type UE struct {
 	Since            time.Time
 	TAI              *TAI
 	ECGI             *ECGI
+	Tunnels          []gtpu.TunnelInfo
 }
 
 type ueInfo struct {
@@ -50,6 +52,8 @@ type ueInfo struct {
 	told      bool
 	switching bool
 	source    s1ap.MMEUES1APID
+	tunnels   gtpu.Session
+	path      *gtpu.Path
 }
 
 type (

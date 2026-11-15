@@ -4,9 +4,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ellanetworks/core/ngap"
+	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/ellanetworks/mocn/internal/plmnid"
 )
@@ -82,16 +84,18 @@ func backupNameFrom(name *ngap.Name, ext *ngap.ExtendedAMFName) amfName {
 
 // TS 38.413 clause 9.3.1.6
 func globalGNBIDFrom(id ngap.GlobalRANNodeID) (db.GlobalGNBID, error) {
-	if id.Kind != ngap.RANNodeIDGNB {
+	if id.GlobalGNBID == nil || id.GlobalGNBID.GNBID.GNBID == nil {
 		return db.GlobalGNBID{}, errNotGNB
 	}
 
-	plmn, err := plmnid.Decode(id.PLMNIdentity)
+	plmn, err := plmnid.Decode(id.GlobalGNBID.PLMNIdentity)
 	if err != nil {
 		return db.GlobalGNBID{}, err
 	}
 
-	return db.GlobalGNBID{PLMN: plmn, ID: id.Value, Length: id.Bits}, nil
+	g := id.GlobalGNBID.GNBID.GNBID
+
+	return db.GlobalGNBID{PLMN: plmn, ID: g.Value, Length: g.Bits}, nil
 }
 
 // TS 38.413 clause 9.3.1.6
@@ -101,7 +105,9 @@ func globalGNBIDTo(id db.GlobalGNBID) (ngap.GlobalRANNodeID, error) {
 		return ngap.GlobalRANNodeID{}, err
 	}
 
-	return ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmn, Value: id.ID, Bits: id.Length}, nil
+	return ngap.GlobalRANNodeID{GlobalGNBID: &ngap.GlobalGNBID{
+		PLMNIdentity: plmn, GNBID: ngap.GNBID{GNBID: &ngap.GNBIDValue{Value: id.ID, Bits: id.Length}},
+	}}, nil
 }
 
 // TS 38.413 clause 9.3.1.24
@@ -328,6 +334,15 @@ var timeToWait = map[ngap.TimeToWait]time.Duration{
 	ngap.TimeToWaitV10s: 10 * time.Second,
 	ngap.TimeToWaitV20s: 20 * time.Second,
 	ngap.TimeToWaitV60s: 60 * time.Second,
+}
+
+func causeLabel(c ngap.Cause) string {
+	_, name := c.Value()
+	if name == "" || strings.HasPrefix(name, "unknown(") {
+		name = "unknown"
+	}
+
+	return assoc.CauseLabel(name)
 }
 
 func causeText(c *ngap.Cause) string {

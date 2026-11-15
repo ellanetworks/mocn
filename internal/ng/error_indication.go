@@ -160,8 +160,7 @@ func rewriteRaw(msg []byte, amfID *ngap.AMFUENGAPID, ranID *ngap.RANUENGAPID) ([
 
 // TS 38.413 clause 10.6
 func releasesConnection(c *ngap.Cause) bool {
-	return c != nil && !c.Extended && c.Group == ngap.CauseGroupRadioNetwork &&
-		(c.Value == causeUnknownLocalID.Value || c.Value == causeInconsistentRemoteID.Value)
+	return c != nil && (c.Equal(causeUnknownLocalID) || c.Equal(causeInconsistentRemoteID))
 }
 
 // TS 38.413 clause 8.7.5.2

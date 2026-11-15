@@ -113,11 +113,16 @@ func initialUEIn(t *testing.T, enbUEID s1ap.ENBUES1APID, plmn string, tac uint16
 func paging(t *testing.T, tais ...s1ap.TAI) *s1ap.Paging {
 	t.Helper()
 
+	list := make(s1ap.TAIList, 0, len(tais))
+	for _, t := range tais {
+		list = append(list, s1ap.TAIItem{TAI: t})
+	}
+
 	return &s1ap.Paging{
 		UEIdentityIndexValue: s1ap.Ptr(uint16(77)),
-		STMSI:                &s1ap.STMSI{MMEC: 1, MTMSI: 0xc0ffee},
+		UEPagingID:           &s1ap.UEPagingID{STMSI: &s1ap.STMSI{MMEC: 1, MTMSI: 0xc0ffee}},
 		CNDomain:             s1ap.Ptr(s1ap.CNDomainPS),
-		TAIList:              tais,
+		TAIList:              list,
 	}
 }
 
@@ -150,7 +155,7 @@ func imsiPaging(t *testing.T, tais ...s1ap.TAI) []byte {
 	}
 
 	imsi := []byte{0x68, 0x00, 0x01, 0x10, 0x32, 0x54, 0x76, 0x98, 0xf0}
-	if err := p.SetValue(p.Index(s1ap.IDUEPagingID), imsi); err != nil {
+	if err := p.SetValue(indexOf(t, p, s1ap.IDUEPagingID), imsi); err != nil {
 		t.Fatal(err)
 	}
 
@@ -250,12 +255,12 @@ func TestMultiOperatorSelectionAndScoping(t *testing.T) {
 
 	x.mmeB.Send(t, &s1ap.ErrorIndication{
 		MMEUES1APID: s1ap.Ptr(s1ap.MMEUES1APID(500)), ENBUES1APID: &onA,
-		Cause: &s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnspecified},
+		Cause: s1ap.Ptr(s1ap.CauseRadioNetworkUnspecified.Cause()),
 	})
 	x.enbAB.Quiet(t, 200*time.Millisecond)
 
-	cause := &s1ap.Cause{Group: s1ap.CauseGroupMisc, Value: s1ap.CauseMiscOMIntervention}
-	x.mmeB.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{All: true}})
+	cause := s1ap.Ptr(s1ap.CauseMiscOMIntervention.Cause())
+	x.mmeB.Send(t, &s1ap.Reset{Cause: cause, ResetType: s1ap.ResetType{S1Interface: s1ap.Ptr(s1ap.ResetAllResetAll)}})
 	expect(t, x.mmeB, "successful", s1ap.ProcReset, s1ap.ParseResetAcknowledge)
 	expectReset(t, x.enbAB, item(ranB, 1))
 	x.mmeA.Quiet(t, 200*time.Millisecond)
@@ -309,7 +314,7 @@ func TestOverloadRelayedToTheOperatorsRadios(t *testing.T) {
 	}
 
 	x.mmeA.Send(t, &s1ap.OverloadStart{
-		OverloadResponse:               s1ap.OverloadResponse{OverloadAction: s1ap.OverloadActionRejectRRCCRSignalling},
+		OverloadResponse:               s1ap.OverloadResponse{OverloadAction: s1ap.Ptr(s1ap.OverloadActionRejectRRCCRSignalling)},
 		TrafficLoadReductionIndication: s1ap.Ptr(uint8(50)),
 	})
 
@@ -317,7 +322,7 @@ func TestOverloadRelayedToTheOperatorsRadios(t *testing.T) {
 
 	for _, enb := range []*peer{x.enbA, x.enbAB} {
 		start := expect(t, enb, "initiating", s1ap.ProcOverloadStart, s1ap.ParseOverloadStart)
-		if start.OverloadResponse.OverloadAction != s1ap.OverloadActionRejectRRCCRSignalling ||
+		if start.OverloadResponse.OverloadAction == nil || *start.OverloadResponse.OverloadAction != s1ap.OverloadActionRejectRRCCRSignalling ||
 			!reflect.DeepEqual(start.GUMMEIList, own) || start.TrafficLoadReductionIndication == nil ||
 			*start.TrafficLoadReductionIndication != 50 {
 			t.Fatalf("Overload Start = %+v", start)
@@ -352,7 +357,7 @@ func TestOverloadRelayedToTheOperatorsRadios(t *testing.T) {
 
 	other := []s1ap.GUMMEI{gummei(t, 7), gummei(t, 8)}
 	x.mmeA.Send(t, &s1ap.OverloadStart{
-		OverloadResponse: s1ap.OverloadResponse{OverloadAction: s1ap.OverloadActionRejectNonEmergencyMODT},
+		OverloadResponse: s1ap.OverloadResponse{OverloadAction: s1ap.Ptr(s1ap.OverloadActionRejectNonEmergencyMODT)},
 		GUMMEIList:       other,
 	})
 
@@ -364,7 +369,7 @@ func TestOverloadRelayedToTheOperatorsRadios(t *testing.T) {
 	}
 
 	x.mmeA.Send(t, &s1ap.OverloadStart{
-		OverloadResponse: s1ap.OverloadResponse{OverloadAction: s1ap.OverloadActionRejectRRCCRSignalling},
+		OverloadResponse: s1ap.OverloadResponse{OverloadAction: s1ap.Ptr(s1ap.OverloadActionRejectRRCCRSignalling)},
 		GUMMEIList:       other[1:],
 	})
 
@@ -459,7 +464,7 @@ func overloadA(t *testing.T, x twoOperators) {
 	t.Helper()
 
 	x.mmeA.Send(t, &s1ap.OverloadStart{
-		OverloadResponse:               s1ap.OverloadResponse{OverloadAction: s1ap.OverloadActionRejectRRCCRSignalling},
+		OverloadResponse:               s1ap.OverloadResponse{OverloadAction: s1ap.Ptr(s1ap.OverloadActionRejectRRCCRSignalling)},
 		TrafficLoadReductionIndication: s1ap.Ptr(uint8(50)),
 	})
 
@@ -479,7 +484,7 @@ func expectOverloadStartA(t *testing.T, enb *peer) {
 	t.Helper()
 
 	start := expect(t, enb, "initiating", s1ap.ProcOverloadStart, s1ap.ParseOverloadStart)
-	if start.OverloadResponse.OverloadAction != s1ap.OverloadActionRejectRRCCRSignalling ||
+	if start.OverloadResponse.OverloadAction == nil || *start.OverloadResponse.OverloadAction != s1ap.OverloadActionRejectRRCCRSignalling ||
 		!reflect.DeepEqual(start.GUMMEIList, []s1ap.GUMMEI{gummei(t, 1)}) ||
 		start.TrafficLoadReductionIndication == nil || *start.TrafficLoadReductionIndication != 50 {
 		t.Fatalf("Overload Start = %+v", start)

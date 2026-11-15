@@ -189,7 +189,11 @@ func reroutedInitialUEMessage(msg []byte, req *s1ap.RerouteNASRequest, enbID s1a
 	}
 
 	for _, id := range []s1ap.ProtocolIEID{s1ap.IDMMEGroupID, s1ap.IDUEUsageType} {
-		i := reroute.Index(id)
+		i, err := reroute.Index(id)
+		if err != nil {
+			return nil, err
+		}
+
 		if i < 0 {
 			continue
 		}
@@ -210,7 +214,12 @@ func reroutedInitialUEMessage(msg []byte, req *s1ap.RerouteNASRequest, enbID s1a
 }
 
 func setIE(p *s1ap.RawPDU, ie s1ap.RawIE, order []s1ap.ProtocolIEID) error {
-	if i := p.Index(ie.ID); i >= 0 {
+	i, err := p.Index(ie.ID)
+	if err != nil {
+		return err
+	}
+
+	if i >= 0 {
 		return p.SetValue(i, ie.Value)
 	}
 

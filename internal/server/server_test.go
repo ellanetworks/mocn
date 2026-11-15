@@ -219,6 +219,12 @@ func TestUsersOverHTTP(t *testing.T) {
 
 	ops[0].UEConnections = nil
 
+	if up := ops[0].UserPlane; up == nil || up.Aggregation == nil || *up.Aggregation {
+		t.Fatalf("operator user_plane = %+v, want no aggregation without ran.user_plane.enabled", up)
+	}
+
+	ops[0].UserPlane = nil
+
 	if !reflect.DeepEqual(ops[0], operator) {
 		t.Fatalf("list operators = %+v, want %+v", ops[0], operator)
 	}

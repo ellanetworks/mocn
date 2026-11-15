@@ -8,9 +8,9 @@ db:
   path: "/data/core.db"
 interfaces:
   n2:
-    address: "10.90.0.14"
+    address: "10.90.4.14"
   n3:
-    address: "10.90.1.14"
+    address: "10.90.4.14"
   n6:
     name: "n6"
   api:

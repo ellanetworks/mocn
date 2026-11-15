@@ -85,7 +85,8 @@ var migrations = []string{
 	CREATE TABLE operators (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE CHECK (name != ''),
-		pws_operator INTEGER NOT NULL DEFAULT 0 CHECK (pws_operator IN (0, 1))
+		pws_operator INTEGER NOT NULL DEFAULT 0 CHECK (pws_operator IN (0, 1)),
+		user_plane_aggregation INTEGER NOT NULL DEFAULT 1 CHECK (user_plane_aggregation IN (0, 1))
 	);
 	CREATE UNIQUE INDEX operators_pws_operator ON operators (pws_operator) WHERE pws_operator = 1;
 	CREATE TABLE operator_plmns (

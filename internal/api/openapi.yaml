@@ -1131,7 +1131,7 @@ components:
                 $ref: "#/components/schemas/ReadinessCheck"
     Status:
       type: object
-      required: [version, revision, initialized]
+      required: [version, revision, initialized, user_plane_aggregation]
       properties:
         version:
           type: string
@@ -1142,6 +1142,9 @@ components:
         initialized:
           type: boolean
           description: Whether the first user exists. Until then, POST /api/v1/init creates it.
+        user_plane_aggregation:
+          type: boolean
+          description: Whether operators can use user-plane aggregation (ran.user_plane.enabled in the configuration file).
     LoginParams:
       type: object
       required: [email, password]
@@ -1390,6 +1393,59 @@ components:
           maximum: 32
           description: The length of the gNB ID in bits, as in TS 29.571.
 
+    UserPlane:
+      type: object
+      additionalProperties: false
+      description: How user traffic reaches the operator. Missing means user-plane aggregation, with the defaults below.
+      properties:
+        aggregation:
+          type: boolean
+          description: >-
+            true: user-plane aggregation, user traffic goes through Ella MOCN. false: radios exchange user traffic
+            directly with the operator's gateways. Missing means true when user-plane aggregation is enabled on Ella
+            MOCN, false otherwise. true is rejected when it is not enabled. Responses give the effective state.
+        status:
+          $ref: "#/components/schemas/UserPlaneStatus"
+
+    UserPlaneStatus:
+      type: object
+      readOnly: true
+      required: [state, addresses, since]
+      description: >-
+        Runtime state of the operator's user plane, not stored. Present in responses. Ignored in requests.
+      properties:
+        state:
+          type: string
+          enum: [ready, unavailable, off]
+          description: >-
+            ready: Ella MOCN relays the operator's new sessions. unavailable: user-plane aggregation is on, but Ella
+            MOCN refuses the operator's new sessions; UEs still register. off: user-plane aggregation is off for the
+            operator.
+        reason:
+          type: string
+          enum: [not_connected, no_route, route_mismatch, no_address, interface_error, too_many_operators]
+          description: >-
+            Why the user plane is unavailable. not_connected: no association with the operator's MMEs or AMFs.
+            no_route: no route to an MME or AMF. route_mismatch: the route to an MME or AMF no longer leaves by the
+            interface its association uses, or two of them use different interfaces or addresses. no_address: the
+            route to an MME or AMF no longer has the association's address as its source. interface_error: Ella MOCN
+            cannot attach to the interface. too_many_operators: more operators use user-plane aggregation than Ella
+            MOCN supports.
+        interface:
+          type: string
+          description: The interface the host routes the operator's MMEs and AMFs through.
+        addresses:
+          type: array
+          description: >-
+            Ella MOCN's addresses toward the operator, at most one IPv4 and one IPv6: the source addresses of its
+            associations with the operator's MMEs and AMFs.
+          items:
+            type: string
+        since:
+          type: string
+          format: date-time
+          description: When the user plane entered its current state.
+
     Operator:
       type: object
       required: [name, plmns]
@@ -1448,6 +1504,8 @@ components:
             Needs a global_gnb_id. An address appears at most once across the operator's AMFs.
           items:
             $ref: "#/components/schemas/AMF"
+        user_plane:
+          $ref: "#/components/schemas/UserPlane"
         ue_connections:
           type: integer
           minimum: 0
@@ -1812,14 +1870,18 @@ components:
           type: string
           description: >-
             Identifies the radio in /api/v1/radios/{ref}. Present once the radio has a Global eNB ID or a Global gNB
-            ID.
+            ID, absent in the setup_failed state.
         type:
           $ref: "#/components/schemas/RANNodeType"
         global_enb_id:
-          description: From the S1 SETUP REQUEST. Absent for a gNB, before the radio sends one, or after it is rejected.
+          description: >-
+            From the S1 SETUP REQUEST, the rejected one in the setup_failed state. Absent for a gNB, before the
+            radio sends one, or when Ella MOCN cannot decode it.
           $ref: "#/components/schemas/GlobalENBID"
         global_gnb_id:
-          description: From the NG SETUP REQUEST. Absent for an eNB, before the radio sends one, or after it is rejected.
+          description: >-
+            From the NG SETUP REQUEST, the rejected one in the setup_failed state. Absent for an eNB, before the
+            radio sends one, or when Ella MOCN cannot decode it.
           $ref: "#/components/schemas/GlobalGNBID"
         name:
           type: string
@@ -1834,8 +1896,13 @@ components:
           description: Radio frames.
         state:
           type: string
-          enum: [connected, up]
-          description: "connected: SCTP association up, no successful S1 or NG Setup. up: S1 or NG Setup succeeded."
+          enum: [connected, up, setup_failed]
+          description: >-
+            connected: SCTP association up, no successful S1 or NG Setup. up: S1 or NG Setup succeeded. setup_failed:
+            SCTP association up, Ella MOCN rejected the last S1 or NG Setup; name, supported_tas, default_paging_drx and
+            the Global eNB ID or Global gNB ID are those of the rejected S1 or NG SETUP REQUEST.
+        setup_failure:
+          $ref: "#/components/schemas/RadioSetupFailure"
         connected_at:
           type: string
           format: date-time
@@ -1856,6 +1923,22 @@ components:
             radio, sorted by operator name. Present in GET /api/v1/radios/{ref} responses, absent when empty.
           items:
             $ref: "#/components/schemas/OperatorUEConnections"
+
+    RadioSetupFailure:
+      type: object
+      required: [cause, reason, at]
+      description: The last S1 or NG Setup that Ella MOCN rejected. Present in the setup_failed state only.
+      properties:
+        cause:
+          type: string
+          description: Cause of the S1 SETUP FAILURE or NG SETUP FAILURE, for example Unknown PLMN.
+        reason:
+          type: string
+          description: Why Ella MOCN rejected the setup.
+        at:
+          type: string
+          format: date-time
+          description: When Ella MOCN rejected the setup.
 
     OperatorUEConnections:
       type: object
@@ -1938,12 +2021,51 @@ components:
           maximum: 68719476735
           description: 36-bit NR Cell Identity.
 
+    UETunnel:
+      type: object
+      required: [bearer, direction, forwarding, address, teid, peer_address, peer_teid, packets, bytes]
+      properties:
+        bearer:
+          type: integer
+          description: E-RAB ID or PDU session ID.
+        direction:
+          type: string
+          enum: [uplink, downlink]
+        forwarding:
+          type: boolean
+          description: A handover data forwarding tunnel.
+        address:
+          type: string
+          description: Ella MOCN's address the peer sends to.
+        teid:
+          type: integer
+          description: Ella MOCN's TEID the peer sends to.
+        peer_address:
+          type: string
+          description: The address Ella MOCN forwards to.
+        peer_teid:
+          type: integer
+          description: The TEID Ella MOCN forwards to.
+        packets:
+          type: integer
+          description: G-PDUs relayed so far. End Marker and Tunnel Status messages are not counted.
+        bytes:
+          type: integer
+          description: >-
+            Octets of the T-PDUs of the G-PDUs relayed so far: the inner IP packet, without the GTP-U header and
+            extension headers.
+
     UEConnection:
       type: object
       required: [interface, radio, operator, plmn, since]
       description: >-
         A UE-associated logical S1-connection or NG-connection relayed by Ella MOCN. Learned at runtime, not stored.
       properties:
+        tunnels:
+          type: array
+          description: The user-plane tunnels Ella MOCN relays for the UE, with user-plane aggregation.
+          items:
+            $ref: "#/components/schemas/UETunnel"
         interface:
           type: string
           enum: [s1, ng]

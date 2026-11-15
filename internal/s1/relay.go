@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/ellanetworks/core/s1ap"
+	"github.com/ellanetworks/mocn/internal/gtpu"
+	"github.com/ellanetworks/mocn/internal/metrics"
 )
 
 const (
@@ -16,12 +18,12 @@ const (
 )
 
 var (
-	causeUnknownMMEUEID = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownMMEUES1APID}
-	causeUnknownENBUEID = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownENBUES1APID}
-	causeUnknownPair    = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnknownPairUES1APID}
-	causeEUTRANRelease  = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkReleaseDueToEUTRANGeneratedReason}
-	causeRadioUnspec    = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkUnspecified}
-	causeHOFailure      = s1ap.Cause{Group: s1ap.CauseGroupRadioNetwork, Value: s1ap.CauseRadioNetworkHOFailureInTarget}
+	causeUnknownMMEUEID = s1ap.CauseRadioNetworkUnknownMMEUES1APID.Cause()
+	causeUnknownENBUEID = s1ap.CauseRadioNetworkUnknownENBUES1APID.Cause()
+	causeUnknownPair    = s1ap.CauseRadioNetworkUnknownPairUES1APID.Cause()
+	causeEUTRANRelease  = s1ap.CauseRadioNetworkReleaseDueToEUTRANGeneratedReason.Cause()
+	causeRadioUnspec    = s1ap.CauseRadioNetworkUnspecified.Cause()
+	causeHOFailure      = s1ap.CauseRadioNetworkHOFailureInTarget.Cause()
 )
 
 type relay struct {
@@ -29,13 +31,28 @@ type relay struct {
 	log  *slog.Logger
 	intN func(int) int
 
+	plane *gtpu.Plane
+
 	mu      sync.Mutex
 	ues     *ueTable
 	sendMME func(context.Context, *mmeAssoc, []byte, uint16) error
 }
 
 func newRelay(g *Gateway) *relay {
-	return &relay{g: g, log: g.log, intN: g.cfg.IntN, ues: newUETable(), sendMME: sendMME}
+	r := &relay{g: g, log: g.log, intN: g.cfg.IntN, plane: g.cfg.Plane, ues: newUETable(), sendMME: sendMME}
+
+	if r.plane != nil {
+		r.ues.OnRemove(func(u *ueContext) { r.plane.ReleaseAll(&u.Ext.tunnels) })
+
+		labels := make([]string, 0, len(tunnelProcedures))
+		for _, proc := range tunnelProcedures {
+			labels = append(labels, procedureLabel(proc))
+		}
+
+		r.plane.TunnelProcedures(metrics.InterfaceS1, labels...)
+	}
+
+	return r
 }
 
 func (r *relay) countInitialUE(result string) {
@@ -152,7 +169,15 @@ func (r *relay) fromMME(ctx context.Context, from *mmeAssoc, pdu s1ap.PDU, msg [
 }
 
 func ueAssociated(p *s1ap.RawPDU) bool {
-	return p.Index(s1ap.IDMMEUES1APID) >= 0 || p.Index(s1ap.IDENBUES1APID) >= 0 || p.Index(s1ap.IDUES1APIDs) >= 0
+	return present(p, s1ap.IDMMEUES1APID) || present(p, s1ap.IDENBUES1APID) || present(p, s1ap.IDUES1APIDs)
+}
+
+func present(p *s1ap.RawPDU, id s1ap.ProtocolIEID) bool {
+	for range p.All(id) {
+		return true
+	}
+
+	return false
 }
 
 func (r *relay) ranLost(ctx context.Context, from *ranAssoc, cause s1ap.Cause) {
@@ -161,6 +186,10 @@ func (r *relay) ranLost(ctx context.Context, from *ranAssoc, cause s1ap.Cause) {
 	r.mu.Lock()
 	gone := r.ues.Remove(r.ues.Where(func(u *ueContext) bool { return u.RAN == from })...)
 	r.mu.Unlock()
+
+	if ref := from.Ref(); r.plane != nil && ref != "" {
+		r.plane.ForgetRadio(ref)
+	}
 
 	if len(gone) > 0 {
 		from.Logger(r.log).InfoContext(ctx, "radio UE contexts released", slog.Int("ues", len(gone)),
@@ -190,7 +219,12 @@ func (r *relay) snapshot() []UE {
 
 	out := make([]UE, 0, len(ues))
 	for _, u := range ues {
-		out = append(out, snapshotUE(u))
+		s := snapshotUE(u)
+		if r.plane != nil {
+			s.Tunnels = r.plane.Describe(&u.Ext.tunnels)
+		}
+
+		out = append(out, s)
 	}
 
 	r.mu.Unlock()

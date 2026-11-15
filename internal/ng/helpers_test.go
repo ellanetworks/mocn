@@ -2,10 +2,12 @@ package ng_test
 
 import (
 	"bytes"
+	"net/netip"
 	"testing"
 	"time"
 
 	"github.com/ellanetworks/core/ngap"
+	"github.com/ellanetworks/core/per/ap"
 	"github.com/ellanetworks/mocn/internal/db"
 	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/ng"
@@ -90,7 +92,7 @@ func withAMFUENGAPID2(t *testing.T, got frame, want ngap.AMFUENGAPID) frame {
 		t.Fatal(err)
 	}
 
-	i := p.Index(ngap.IDAMFUENGAPID2)
+	i := index(t, p, ngap.IDAMFUENGAPID2)
 	if i != p.Len()-1 {
 		t.Fatalf("AMF UE NGAP ID 2 at %d of %d IEs, want last", i, p.Len())
 	}
@@ -332,7 +334,7 @@ func setupRequest(t *testing.T, gnbID uint32, name string, drx ngap.PagingDRX, t
 	t.Helper()
 
 	return &ngap.NGSetupRequest{
-		GlobalRANNodeID: ngap.GlobalRANNodeID{Kind: ngap.RANNodeIDGNB, PLMNIdentity: plmnID(t, "001", "01"), Value: gnbID, Bits: 24},
+		GlobalRANNodeID: gnbNodeID(plmnID(t, "001", "01"), gnbID, 24),
 		RANNodeName:     &name, SupportedTAList: tas, DefaultPagingDRX: &drx,
 	}
 }
@@ -382,4 +384,33 @@ func upAndRunning(t *testing.T, h *harness, amfs *fakeAMF) (*peer, *peer) {
 	expect(t, gnb, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
 
 	return gnb, amf
+}
+
+func gnbNodeID(plmn ngap.PLMNIdentity, id uint32, bits int) ngap.GlobalRANNodeID {
+	return ngap.GlobalRANNodeID{GlobalGNBID: &ngap.GlobalGNBID{
+		PLMNIdentity: plmn, GNBID: ngap.GNBID{GNBID: &ngap.GNBIDValue{Value: id, Bits: bits}},
+	}}
+}
+
+func index(t *testing.T, p *ngap.RawPDU, id ngap.ProtocolIEID) int {
+	t.Helper()
+
+	i, err := p.Index(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return i
+}
+
+func tla(a netip.Addr) ngap.TransportLayerAddress {
+	return ap.TransportLayerAddressFromOctets(a.AsSlice())
+}
+
+func gnbValue(id ngap.GlobalRANNodeID) ngap.GNBIDValue {
+	if id.GlobalGNBID == nil || id.GlobalGNBID.GNBID.GNBID == nil {
+		return ngap.GNBIDValue{}
+	}
+
+	return *id.GlobalGNBID.GNBID.GNBID
 }

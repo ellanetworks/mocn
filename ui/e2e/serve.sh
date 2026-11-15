@@ -20,12 +20,11 @@ db:
 api:
   address: 127.0.0.1
   port: $port
-s1:
-  address: 127.0.0.1
-  port: ${ELLA_E2E_S1_PORT:-36499}
-ng:
-  address: 127.0.0.1
-  port: ${ELLA_E2E_NG_PORT:-38499}
+ran:
+  signalling:
+    address: 127.0.0.1
+    s1_port: ${ELLA_E2E_S1_PORT:-36499}
+    ng_port: ${ELLA_E2E_NG_PORT:-38499}
 YAML
 
 exec "$build/mocn" --config "$build/mocn.yaml"

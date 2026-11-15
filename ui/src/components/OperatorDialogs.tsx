@@ -17,12 +17,13 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EditDialog from "@/components/EditDialog";
 import { errorMessage, useSnackbar } from "@/contexts/SnackbarContext";
 import { useOperatorUpdate } from "@/hooks/useOperatorUpdate";
 import { useTouched } from "@/hooks/useTouched";
+import { getStatus } from "@/queries/status";
 import {
   CORE_NODE_KINDS,
   type CoreNode,
@@ -730,6 +731,7 @@ export function EditPWSOperatorDialog({
   return (
     <EditDialog
       title="Edit PWS Operator"
+      description="Ella MOCN broadcasts public warnings, such as emergency alerts, only from the PWS operator, on every radio in the warning area."
       failure="Could not update the PWS operator"
       valid={checked !== operator.pws_operator}
       pending={mutation.isPending}
@@ -746,6 +748,68 @@ export function EditPWSOperatorDialog({
         }
         label="PWS operator"
       />
+    </EditDialog>
+  );
+}
+
+export function EditUserPlaneDialog({
+  operator,
+  onClose,
+}: {
+  operator: Operator;
+  onClose: () => void;
+}) {
+  const current = operator.user_plane;
+  const { data: status } = useQuery({
+    queryKey: ["status"],
+    queryFn: getStatus,
+    staleTime: Infinity,
+  });
+  const available = status?.user_plane_aggregation ?? false;
+  const [aggregation, setAggregation] = useState(current?.aggregation ?? true);
+  const mutation = useOperatorUpdate(
+    operator,
+    "User plane saved successfully.",
+    onClose,
+  );
+
+  return (
+    <EditDialog
+      title="Edit User Plane"
+      description="With user-plane aggregation, this operator's subscriber traffic goes through Ella MOCN, so the operator sees Ella MOCN's address instead of the radios'."
+      submitLabel="Save"
+      pendingLabel="Saving…"
+      failure="Could not save the user plane"
+      valid
+      pending={mutation.isPending}
+      error={mutation.error}
+      onSubmit={() =>
+        mutation.mutate({
+          user_plane: { aggregation: available && aggregation },
+        })
+      }
+      onClose={onClose}
+    >
+      <Tooltip
+        title={
+          available
+            ? ""
+            : "User-plane aggregation is not enabled on this Ella MOCN."
+        }
+      >
+        <span>
+          <FormControlLabel
+            disabled={!available}
+            control={
+              <Switch
+                checked={available && aggregation}
+                onChange={(e) => setAggregation(e.target.checked)}
+              />
+            }
+            label="User-plane aggregation"
+          />
+        </span>
+      </Tooltip>
     </EditDialog>
   );
 }

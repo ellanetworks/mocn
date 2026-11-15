@@ -50,6 +50,13 @@ This path returns the UE connections, oldest first.
 | `tai`                  | object | The last TAI the radio reported for the UE: `plmn` and `tac`, 6 lower-case hexadecimal digits. Absent when none. |
 | `ecgi`                 | object | S1 only. The last E-UTRAN CGI the radio reported for the UE: `plmn` and `cell_id`, the 28-bit E-UTRAN Cell Identity. Absent when none. |
 | `nr_cgi`               | object | NG only. The last NR CGI the radio reported for the UE: `plmn` and `cell_id`, the 36-bit NR Cell Identity. Absent when none. |
+| `tunnels`              | array  | With user-plane aggregation, the GTP-U tunnels Ella MOCN relays for the UE. Absent when none. |
+| `tunnels[].bearer`     | int    | E-RAB ID or PDU session ID. |
+| `tunnels[].direction`  | string | `uplink` (from the radio) or `downlink` (from the operator). |
+| `tunnels[].forwarding` | boolean | Handover data forwarding tunnel. |
+| `tunnels[].address`, `tunnels[].teid` | string, int | Ella MOCN's endpoint the sender uses. |
+| `tunnels[].peer_address`, `tunnels[].peer_teid` | string, int | The endpoint Ella MOCN forwards to. |
+| `tunnels[].packets`, `tunnels[].bytes` | int | G-PDUs relayed so far, and the octets of their T-PDUs: the inner IP packet, without the GTP-U header and extension headers. End Marker and Tunnel Status messages are not counted. |
 
 ### Sample Response
 

@@ -90,6 +90,34 @@ const NODES: Radio[] = [
   },
 ];
 
+const REFUSED: Radio = {
+  type: "gNB",
+  global_gnb_id: {
+    plmn: { mcc: "001", mnc: "03" },
+    gnb_id: 2,
+    bit_length: 22,
+  },
+  name: "gnb-west",
+  supported_tas: [
+    {
+      tac: "000001",
+      broadcast_plmns: [
+        { plmn: { mcc: "001", mnc: "03" }, snssais: [{ sst: 1 }] },
+      ],
+    },
+  ],
+  default_paging_drx: 128,
+  state: "setup_failed",
+  setup_failure: {
+    cause: "Unknown PLMN or SNPN",
+    reason: "no operator serves a broadcast PLMN",
+    at: "2026-11-12T10:00:21Z",
+  },
+  connected_at: "2026-11-12T10:00:20Z",
+  tnl_addresses: ["10.0.0.10"],
+  ue_connections: 0,
+};
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -215,6 +243,90 @@ describe("Radios", () => {
     ).toHaveAttribute(
       "title",
       expect.stringMatching(/^Connected at Nov 12, \d\d:\d\d:00$/),
+    );
+  });
+
+  it("shows a radio whose setup failed, with the reason", async () => {
+    serve(() => [NODES[0], REFUSED]);
+
+    renderPage();
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Radios (2)" }),
+    ).toBeInTheDocument();
+    expect(rows()[1]).toEqual([
+      "gnb-west",
+      "gNB (5G)",
+      "001-03 · 2 (22 bits)",
+      "10.0.0.10",
+      "0",
+      "Setup failed",
+    ]);
+    expect(
+      within(screen.getByRole("grid", { name: "Radios" }))
+        .getByText("Setup failed")
+        .closest(".MuiChip-root"),
+    ).toHaveAttribute(
+      "title",
+      expect.stringMatching(
+        /^Unknown PLMN or SNPN: no operator serves a broadcast PLMN\. Refused at Nov 12, \d\d:\d\d:21$/,
+      ),
+    );
+    expect(
+      screen.queryByRole("link", { name: "gnb-west" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the details of a radio without a ref in a dialog", async () => {
+    serve(() => [REFUSED]);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "gnb-west" }));
+
+    const dialog = within(
+      await screen.findByRole("dialog", { name: "gnb-west" }),
+    );
+    const overview = within(dialog.getByRole("table", { name: "Overview" }));
+    const valueOf = (label: string) =>
+      overview.getByText(label).closest("tr")!.querySelectorAll("td")[1]
+        .textContent;
+    expect(valueOf("Global gNB ID")).toBe("001-03 · 2 (22 bits)");
+    expect(valueOf("Status")).toBe(
+      "Setup failedUnknown PLMN or SNPN: no operator serves a broadcast PLMN",
+    );
+    expect(valueOf("Supported TAs")).toBe("TAC 000001: 001-03 (SST 1)");
+    expect(screen.getByTestId("location").textContent).toBe("/radios");
+
+    fireEvent.click(dialog.getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps a radio's dialog open while the radio redials", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let nodes: Radio[] = [REFUSED];
+    serve(() => nodes);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "gnb-west" }));
+    await screen.findByRole("dialog", { name: "gnb-west" });
+
+    nodes = [];
+    await vi.advanceTimersByTimeAsync(5000);
+    await waitFor(() => expect(screen.getByText("No radios.")).toBeVisible());
+    expect(screen.getByRole("dialog", { name: "gnb-west" })).toBeVisible();
+
+    nodes = [{ ...REFUSED, connected_at: "2026-11-12T10:00:30Z" }];
+    await vi.advanceTimersByTimeAsync(5000);
+    const dialog = within(screen.getByRole("dialog", { name: "gnb-west" }));
+    await waitFor(() =>
+      expect(
+        dialog
+          .getByText("Connected At")
+          .closest("tr")!
+          .querySelectorAll("td")[1].textContent,
+      ).toMatch(/^Nov 12, \d\d:\d\d:30$/),
     );
   });
 
@@ -385,7 +497,7 @@ describe("Radios", () => {
     fireEvent.mouseOver(overview.getByText("Status"));
     expect(
       await screen.findByRole("tooltip", {
-        name: "Up: connected and ready. Connected: link up, setup not done yet (NG Setup Request).",
+        name: "Up: connected and ready. Connected: link up, setup not done yet (S1 Setup or NG Setup). Setup failed: link up, Ella MOCN refused the radio's last setup.",
       }),
     ).toBeInTheDocument();
     expect(

@@ -14,29 +14,32 @@ import (
 )
 
 var (
-	causeUnknownPLMN            = ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscUnknownPLMNOrSNPN}
-	causeMiscUnspecified        = ngap.Cause{Group: ngap.CauseGroupMisc, Value: ngap.CauseMiscUnspecified}
-	causeSemanticError          = ngap.Cause{Group: ngap.CauseGroupProtocol, Value: ngap.CauseProtocolSemanticError}
-	causeNotCompatibleWithState = ngap.Cause{Group: ngap.CauseGroupProtocol, Value: ngap.CauseProtocolMessageNotCompatible}
-	causeTransportUnavailable   = ngap.Cause{Group: ngap.CauseGroupTransport, Value: ngap.CauseTransportResourceUnavailable}
-	causeTransportUnspecified   = ngap.Cause{Group: ngap.CauseGroupTransport, Value: ngap.CauseTransportUnspecified}
+	causeUnknownPLMN            = ngap.CauseMiscUnknownPLMNOrSNPN.Cause()
+	causeMiscUnspecified        = ngap.CauseMiscUnspecified.Cause()
+	causeSemanticError          = ngap.CauseProtocolSemanticError.Cause()
+	causeNotCompatibleWithState = ngap.CauseProtocolMessageNotCompatible.Cause()
+	causeTransportUnavailable   = ngap.CauseTransportResourceUnavailable.Cause()
+	causeTransportUnspecified   = ngap.CauseTransportUnspecified.Cause()
 )
 
 const noAMFTimeToWait = ngap.TimeToWaitV5s
 
 func ranNodeLocked(n *ranAssoc) RANNode {
 	r := RANNode{
-		State:          RANNodeConnected,
+		State:          n.StateLocked(),
 		ConnectedSince: n.ConnectedAt(),
 		TNLAddresses:   n.TNLAddresses(),
 		SupportedTAs:   []TA{},
 	}
 
-	if n.Up {
-		r.State = RANNodeUp
+	s := n.Setup
+
+	if f := n.Failure; r.State == RANNodeSetupFailed {
+		r.SetupFailure = &SetupFailure{Cause: f.Cause, Reason: f.Reason, At: f.At}
+		s = f.Request
 	}
 
-	if s := n.Setup; s != nil {
+	if s != nil {
 		id := s.globalGNBID
 		r.GlobalGNBID = &id
 		r.Name = s.name
@@ -125,14 +128,14 @@ func (p protocol) handleNGSetup(ctx context.Context, n *ranAssoc, value []byte) 
 	req, err := ngap.ParseNGSetupRequest(value)
 	if err != nil {
 		cause, diag := failureCause(err)
-		p.rejectNGSetup(ctx, n, assoc.SetupInvalid, cause, nil, diag, err.Error())
+		p.rejectNGSetup(ctx, n, nil, assoc.SetupInvalid, cause, nil, diag, err.Error())
 
 		return
 	}
 
 	setup, err := ranSetupFrom(req)
 	if err != nil {
-		p.rejectNGSetup(ctx, n, assoc.SetupInvalid, causeSemanticError, nil, nil, err.Error())
+		p.rejectNGSetup(ctx, n, nil, assoc.SetupInvalid, causeSemanticError, nil, nil, err.Error())
 		return
 	}
 
@@ -140,12 +143,12 @@ func (p protocol) handleNGSetup(ctx context.Context, n *ranAssoc, value []byte) 
 
 	switch {
 	case errors.Is(err, assoc.ErrNodeInUse):
-		p.rejectNGSetup(ctx, n, assoc.SetupInvalid, causeSemanticError, nil, nil,
+		p.rejectNGSetup(ctx, n, &setup, assoc.SetupInvalid, causeSemanticError, nil, nil,
 			"the Global gNB ID "+setup.Ref()+" is used by another radio")
 
 		return
 	case err != nil:
-		p.rejectNGSetup(ctx, n, assoc.SetupUnknownPLMN, causeUnknownPLMN, nil, nil, err.Error())
+		p.rejectNGSetup(ctx, n, &setup, assoc.SetupUnknownPLMN, causeUnknownPLMN, nil, nil, err.Error())
 		return
 	}
 
@@ -157,9 +160,9 @@ func (p protocol) handleNGSetup(ctx context.Context, n *ranAssoc, value []byte) 
 	switch outcome, failures := p.core.AwaitCore(ctx, n, serving, accept, failed); outcome {
 	case assoc.AwaitCoreFailed:
 		cause, ttw := setupFailure(failures)
-		p.rejectNGSetup(ctx, n, names.CoreFailure, cause, ttw, nil, "NG Setup toward the operator's AMFs failed: "+cause.String())
+		p.rejectNGSetup(ctx, n, &setup, names.CoreFailure, cause, ttw, nil, "the operator's AMFs refused the setup: "+causeLabel(cause))
 	case assoc.AwaitNoCore:
-		p.rejectNGSetup(ctx, n, names.NoCore, causeTransportUnavailable, ngap.Ptr(noAMFTimeToWait), nil,
+		p.rejectNGSetup(ctx, n, &setup, names.NoCore, causeTransportUnavailable, ngap.Ptr(noAMFTimeToWait), nil,
 			"no AMF of the serving operators is up")
 	case assoc.AwaitDone:
 	}
@@ -224,10 +227,12 @@ func ngSetupResponse(cfg amfConfig, diag *ngap.CriticalityDiagnostics) ([]byte, 
 	return out, nil
 }
 
-func (p protocol) rejectNGSetup(ctx context.Context, n *ranAssoc, result string, cause ngap.Cause,
+func (p protocol) rejectNGSetup(ctx context.Context, n *ranAssoc, req *ranSetup, result string, cause ngap.Cause,
 	ttw *ngap.TimeToWait, diag *ngap.CriticalityDiagnostics, reason string,
 ) {
-	p.core.SetupRejected(ctx, n, result)
+	p.core.SetupRejected(ctx, n, result, assoc.RadioSetupFailure[ranSetup]{
+		Request: req, Cause: causeLabel(cause), Reason: reason,
+	})
 
 	n.Logger(p.log).WarnContext(ctx, "radio NG Setup rejected", slog.String("cause", cause.String()),
 		slog.String("reason", reason))

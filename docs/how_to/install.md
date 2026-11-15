@@ -71,12 +71,11 @@ Choose one of the installation methods below.
           api:
             address: 0.0.0.0
             port: 5030
-          s1:
-            address: 0.0.0.0
-            port: 36412
-          ng:
-            address: 0.0.0.0
-            port: 38412
+          ran:
+            signalling:
+              address: 0.0.0.0
+              s1_port: 36412
+              ng_port: 38412
 
     services:
       ella-mocn:

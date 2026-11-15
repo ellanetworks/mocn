@@ -173,6 +173,16 @@ export const operatorWithStatus = (): Operator => ({
       },
     },
   ],
+  user_plane: {
+    aggregation: true,
+    status: {
+      state: "unavailable",
+      reason: "route_mismatch",
+      interface: "xfrm-a",
+      addresses: ["10.9.0.1", "2001:db8::1"],
+      since: "2026-11-12T10:05:00Z",
+    },
+  },
   ue_connections: 3,
   ue_connections_by_radio: [
     {
@@ -210,9 +220,11 @@ export const operatorB = (): Operator => ({
 export const serve = ({
   operators = [operatorA(), operatorB()],
   answer,
+  userPlane = true,
 }: {
   operators?: Operator[];
   answer?: (req: Request) => Response | undefined;
+  userPlane?: boolean;
 } = {}) => {
   const requests: Request[] = [];
   const handle =
@@ -253,6 +265,15 @@ export const serve = ({
         })(url, init);
       }
       return stubApi({
+        "/api/v1/status": () =>
+          json(200, {
+            result: {
+              version: "v0.0.1",
+              revision: "",
+              initialized: true,
+              user_plane_aggregation: userPlane,
+            },
+          }),
         "/api/v1/operators": handle((req) => {
           if (req.method !== "POST") {
             return json(200, { result: { items: [...store.values()] } });

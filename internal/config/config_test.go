@@ -22,7 +22,7 @@ func writeConfig(t *testing.T, content string) string {
 }
 
 func TestLoad(t *testing.T) {
-	cfg, err := Load(writeConfig(t, "logging:\n  level: debug\ndb:\n  path: /var/lib/mocn/mocn.db\napi:\n  address: 127.0.0.1\n  port: 8080\ns1:\n  address: 10.0.0.1\n  port: 36413\nng:\n  address: 10.0.0.2\n  port: 38413\n"))
+	cfg, err := Load(writeConfig(t, "logging:\n  level: debug\ndb:\n  path: /var/lib/mocn/mocn.db\napi:\n  address: 127.0.0.1\n  port: 8080\nran:\n  signalling:\n    address: 10.0.0.1\n    s1_port: 36413\n    ng_port: 38413\n"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -43,12 +43,8 @@ func TestLoad(t *testing.T) {
 		t.Errorf("API.ListenAddress() = %q, want 127.0.0.1:8080", got)
 	}
 
-	if want := (Endpoint{Address: netip.MustParseAddr("10.0.0.1"), Port: 36413}); cfg.S1 != want {
-		t.Errorf("S1 = %+v, want %+v", cfg.S1, want)
-	}
-
-	if want := (Endpoint{Address: netip.MustParseAddr("10.0.0.2"), Port: 38413}); cfg.NG != want {
-		t.Errorf("NG = %+v, want %+v", cfg.NG, want)
+	if want := (Signalling{Address: netip.MustParseAddr("10.0.0.1"), S1Port: 36413, NGPort: 38413}); cfg.RAN.Signalling != want {
+		t.Errorf("RAN.Signalling = %+v, want %+v", cfg.RAN.Signalling, want)
 	}
 }
 
@@ -70,12 +66,12 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("API.TLS = %+v, want nil", cfg.API.TLS)
 	}
 
-	if want := (Endpoint{Address: netip.IPv4Unspecified(), Port: 36412}); cfg.S1 != want {
-		t.Errorf("S1 = %+v, want %+v", cfg.S1, want)
+	if want := (Signalling{Address: netip.IPv4Unspecified(), S1Port: 36412, NGPort: 38412}); cfg.RAN.Signalling != want {
+		t.Errorf("RAN.Signalling = %+v, want %+v", cfg.RAN.Signalling, want)
 	}
 
-	if want := (Endpoint{Address: netip.IPv4Unspecified(), Port: 38412}); cfg.NG != want {
-		t.Errorf("NG = %+v, want %+v", cfg.NG, want)
+	if cfg.RAN.UserPlane != (UserPlane{}) {
+		t.Errorf("RAN.UserPlane = %+v, want disabled", cfg.RAN.UserPlane)
 	}
 }
 
@@ -91,11 +87,26 @@ func TestLoadErrors(t *testing.T) {
 		"missing db path": {content: "logging:\n  level: info\n", want: "db.path is required"},
 		"port too high":   {content: "db:\n  path: mocn.db\napi:\n  port: 70000\n", want: "api.port"},
 		"negative port":   {content: "db:\n  path: mocn.db\napi:\n  port: -1\n", want: "api.port"},
-		"s1 port":         {content: "db:\n  path: mocn.db\ns1:\n  port: 65536\n", want: "s1.port"},
-		"s1 address":      {content: "db:\n  path: mocn.db\ns1:\n  address: 36412\n", want: "parse config"},
-		"s1 zone":         {content: "db:\n  path: mocn.db\ns1:\n  address: fe80::1%eth0\n", want: "s1.address"},
-		"ng port":         {content: "db:\n  path: mocn.db\nng:\n  port: 65536\n", want: "ng.port"},
-		"ng zone":         {content: "db:\n  path: mocn.db\nng:\n  address: fe80::1%eth0\n", want: "ng.address"},
+		"s1 port":         {content: "db:\n  path: mocn.db\nran:\n  signalling:\n    s1_port: 65536\n", want: "ran.signalling.s1_port"},
+		"ng port":         {content: "db:\n  path: mocn.db\nran:\n  signalling:\n    ng_port: 65536\n", want: "ran.signalling.ng_port"},
+		"signalling zone": {content: "db:\n  path: mocn.db\nran:\n  signalling:\n    address: fe80::1%eth0\n", want: "ran.signalling.address"},
+		"old s1 key":      {content: "db:\n  path: mocn.db\ns1:\n  port: 36412\n", want: "parse config"},
+		"user plane without interface": {
+			content: "db:\n  path: mocn.db\nran:\n  user_plane:\n    enabled: true\n",
+			want:    "ran.user_plane.name or ran.user_plane.address is required",
+		},
+		"user plane name and address": {
+			content: "db:\n  path: mocn.db\nran:\n  user_plane:\n    enabled: true\n    name: eth1\n    address: 10.0.0.1\n",
+			want:    "not both",
+		},
+		"user plane loopback": {
+			content: "db:\n  path: mocn.db\nran:\n  user_plane:\n    enabled: true\n    address: 127.0.0.1\n",
+			want:    "ran.user_plane.address",
+		},
+		"user plane interface name": {
+			content: "db:\n  path: mocn.db\nran:\n  user_plane:\n    enabled: true\n    name: a/b\n",
+			want:    "ran.user_plane.name",
+		},
 	}
 
 	for name, tc := range tests {
@@ -195,5 +206,59 @@ func TestNoGatewayImports(t *testing.T) {
 		if imp == "github.com/ellanetworks/mocn/internal/s1" || imp == "github.com/ellanetworks/mocn/internal/ng" {
 			t.Fatalf("config imports %s", imp)
 		}
+	}
+}
+
+func fakeHost(t *testing.T) {
+	t.Helper()
+
+	orig := hostAddresses
+	hostAddresses = func() (map[string][]netip.Addr, error) {
+		return map[string][]netip.Addr{
+			"eth1": {netip.MustParseAddr("fe80::1"), netip.MustParseAddr("2001:db8::1"), netip.MustParseAddr("10.0.0.1")},
+			"eth2": {netip.MustParseAddr("fe80::2"), netip.MustParseAddr("2001:db8::2")},
+			"eth3": {netip.MustParseAddr("fe80::3")},
+		}, nil
+	}
+
+	t.Cleanup(func() { hostAddresses = orig })
+}
+
+func TestLoadUserPlane(t *testing.T) {
+	fakeHost(t)
+
+	const base = "db:\n  path: mocn.db\nran:\n  user_plane:\n    enabled: true\n"
+
+	for name, tc := range map[string]struct {
+		content string
+		want    UserPlane
+	}{
+		"name prefers IPv4":   {base + "    name: eth1\n", UserPlane{Enabled: true, Name: "eth1", Address: netip.MustParseAddr("10.0.0.1")}},
+		"name with IPv6 only": {base + "    name: eth2\n", UserPlane{Enabled: true, Name: "eth2", Address: netip.MustParseAddr("2001:db8::2")}},
+		"address":             {base + "    address: 2001:db8::1\n", UserPlane{Enabled: true, Name: "eth1", Address: netip.MustParseAddr("2001:db8::1")}},
+		"disabled":            {"db:\n  path: mocn.db\nran:\n  user_plane:\n    name: eth9\n", UserPlane{Name: "eth9"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := Load(writeConfig(t, tc.content))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if cfg.RAN.UserPlane != tc.want {
+				t.Fatalf("ran.user_plane = %+v, want %+v", cfg.RAN.UserPlane, tc.want)
+			}
+		})
+	}
+
+	for name, tc := range map[string]struct{ content, want string }{
+		"unknown interface":   {base + "    name: eth9\n", "interface eth9 does not exist"},
+		"no global address":   {base + "    name: eth3\n", "interface eth3 has no unicast address"},
+		"address not on host": {base + "    address: 10.0.0.9\n", "no interface on the host has the address 10.0.0.9"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(writeConfig(t, tc.content)); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
