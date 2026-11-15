@@ -1,0 +1,27 @@
+name: Benchmark Smoke
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+
+jobs:
+  bench-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: "go.mod"
+
+      - name: Load the SCTP kernel module
+        run: |
+          sudo modprobe sctp || { sudo apt-get update && sudo apt-get install -y "linux-modules-extra-$(uname -r)" && sudo modprobe sctp; }
+
+      - name: Smoke-test every end-to-end benchmark scenario under the race detector
+        run: go test -race -count=1 -run '^TestE2EBenchSmoke$' ./internal/e2ebench
+
+      - name: Run every micro-benchmark once under the race detector
+        run: go test -race -count=1 -run '^$' -bench '^Benchmark(UEIDRewrite|TNLRewrite|InitialUERouting)$' -benchtime 1x ./internal/s1 ./internal/ng

@@ -52,6 +52,10 @@ type Gateway[S Setup, R RadioConfig[R], I any, C Equaler[C]] struct {
 	restarts      map[string][]restart
 	restartRadios []string
 	changed       chan struct{}
+	configGen     uint64
+	radioGen      uint64
+	configs       *configView[C]
+	paging        *pagingView[S, R]
 }
 
 type loop struct {
@@ -173,7 +177,7 @@ func (g *Gateway[S, R, I, C]) reconcileLoop(ctx context.Context, l *loop) {
 				g.startClientLocked(ctx, c)
 			}
 
-			g.kickLocked()
+			g.configChangedLocked()
 			g.mu.Unlock()
 
 			close(req.done)
@@ -220,7 +224,7 @@ func (g *Gateway[S, R, I, C]) Reconcile(ctx context.Context) error {
 	if !g.submit(ctx, l, ops) {
 		g.mu.Lock()
 		g.applyLocked(ops, false)
-		g.kickLocked()
+		g.configChangedLocked()
 		g.mu.Unlock()
 	}
 
@@ -415,18 +419,14 @@ func (g *Gateway[S, R, I, C]) UpLocked(operatorID int64) []*Client[I, C] {
 	return out
 }
 
-func (g *Gateway[S, R, I, C]) kickLocked() {
-	for _, c := range g.cores {
-		c.kick()
-	}
-}
-
 func (g *Gateway[S, R, I, C]) changedLocked(ctx context.Context) {
 	close(g.changed)
 	g.changed = make(chan struct{})
 
+	cfg := g.proto.RadioConfigLocked()
+
 	for _, n := range g.radios {
-		g.syncRadioLocked(ctx, n)
+		g.syncRadioLocked(ctx, n, cfg)
 	}
 
 	g.sendRestartsLocked(ctx)

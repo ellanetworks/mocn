@@ -80,6 +80,18 @@ func (s ranSetup) Serves(tai assoc.TAI) bool {
 	return false
 }
 
+func (s ranSetup) TAIs() []assoc.TAI {
+	var out []assoc.TAI
+
+	for _, ta := range s.tas {
+		for _, p := range ta.BroadcastPLMNs {
+			out = append(out, assoc.TAI{PLMN: p, TAC: uint32(ta.TAC)})
+		}
+	}
+
+	return out
+}
+
 func (protocol) CoreConfig(plmns []db.PLMN, setups []ranSetup) (enbConfig, bool) {
 	return enbConfigFor(plmns, setups)
 }

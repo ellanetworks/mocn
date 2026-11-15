@@ -23,9 +23,14 @@ type (
 	testSetup struct {
 		ref   string
 		plmns []db.PLMN
+		tacs  []uint32
 	}
-	testRadio  struct{}
-	testCore   struct{}
+	testRadio struct{}
+	testCore  struct{ served []servedTAI }
+	servedTAI struct {
+		ref string
+		tai TAI
+	}
 	testInfo   struct{}
 	testClient = Client[testInfo, testCore]
 )
@@ -36,7 +41,17 @@ func (s testSetup) Broadcasts(plmns []db.PLMN) bool {
 	return slices.ContainsFunc(s.plmns, func(p db.PLMN) bool { return slices.Contains(plmns, p) })
 }
 
-func (s testSetup) Serves(tai TAI) bool { return slices.Contains(s.plmns, tai.PLMN) }
+func (s testSetup) TAIs() []TAI {
+	var out []TAI
+
+	for _, tac := range s.tacs {
+		for _, p := range s.plmns {
+			out = append(out, TAI{PLMN: p, TAC: tac})
+		}
+	}
+
+	return out
+}
 
 func (testRadio) Equal(testRadio) bool { return true }
 
@@ -67,8 +82,18 @@ func (testProtocol) Nodes(o db.Operator) []Node[testCore] {
 	return nodes
 }
 
-func (testProtocol) CoreConfig(_ []db.PLMN, setups []testSetup) (testCore, bool) {
-	return testCore{}, len(setups) > 0
+func (testProtocol) CoreConfig(plmns []db.PLMN, setups []testSetup) (testCore, bool) {
+	var c testCore
+
+	for _, s := range setups {
+		for _, tai := range s.TAIs() {
+			if slices.Contains(plmns, tai.PLMN) {
+				c.served = append(c.served, servedTAI{ref: s.ref, tai: tai})
+			}
+		}
+	}
+
+	return c, len(setups) > 0
 }
 
 func (testProtocol) ConfigurationUpdate(testCore, testCore) ([]byte, error) { return nil, nil }

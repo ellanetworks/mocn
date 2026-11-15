@@ -62,7 +62,7 @@ func TestRejectedSetupIsKeptForDisplayOnly(t *testing.T) {
 	t.Parallel()
 
 	g := newTestGateway(t)
-	setup := testSetup{ref: "eNB:001-01:MacroeNB-00001", plmns: []db.PLMN{plmnA}}
+	setup := testSetup{ref: "eNB:001-01:MacroeNB-00001", plmns: []db.PLMN{plmnA}, tacs: []uint32{1}}
 
 	up := addRadio(g, "10.0.0.1")
 	setUp(t, g, up, setup)

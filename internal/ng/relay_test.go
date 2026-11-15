@@ -3,6 +3,7 @@ package ng_test
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/ellanetworks/core/ngap"
 	"github.com/ellanetworks/core/per"
+	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/assoc"
 	"github.com/ellanetworks/mocn/internal/ng"
 )
@@ -460,5 +462,77 @@ func TestNewAMFUENGAPID(t *testing.T) {
 
 	if got := h.gw.UEs(); len(got) != 1 || *got[0].AMFUENGAPID != 11 {
 		t.Fatalf("UEs = %+v", got)
+	}
+}
+
+func TestAMFThatStopsReadingDuringABurstKeepsItsAssociation(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	const (
+		radios   = 8
+		perRadio = 500
+	)
+
+	amfs := listenAMF(t, "127.0.1.120")
+	h := startGatewayWith(t, ng.Config{CorePort: amfs.Port(), ResponseTimeout: time.Minute}, operatorA("127.0.1.120"))
+	gnb, amf := upAndRunning(t, h, amfs)
+	gnbs := []*peer{gnb}
+
+	for i := 2; i <= radios; i++ {
+		n := h.connectGNB(t)
+		n.Send(t, setupRequest(t, uint32(i), fmt.Sprintf("gnb%d", i), ngap.PagingDRXv128, ta(t, 1, "00101")))
+		expect(t, n, "successful", ngap.ProcNGSetup, ngap.ParseNGSetupResponse)
+		gnbs = append(gnbs, n)
+	}
+
+	msgs := make([][]byte, perRadio)
+	for i := range msgs {
+		b, err := initialUE(t, ngap.RANUENGAPID(i+1), "00101").Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		msgs[i] = b
+	}
+
+	sent := make(chan error, radios)
+
+	for _, n := range gnbs {
+		go func() {
+			info := &sctp.SndRcvInfo{Stream: 1, PPID: sctp.PPIDWireOrder(ng.PPID)}
+
+			for _, b := range msgs {
+				if _, err := n.Conn.WriteMsgWait(t.Context(), b, info); err != nil {
+					sent <- err
+					return
+				}
+			}
+
+			sent <- nil
+		}()
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	for range radios * perRadio {
+		expectRaw(t, amf, "initiating", ngap.ProcInitialUEMessage)
+	}
+
+	for range radios {
+		if err := <-sent; err != nil {
+			t.Fatalf("burst from a radio: %v", err)
+		}
+	}
+
+	amf.Quiet(t, 100*time.Millisecond)
+
+	for _, n := range gnbs {
+		n.Quiet(t, 100*time.Millisecond)
+	}
+
+	if ues := h.gw.UEs(); len(ues) != radios*perRadio {
+		t.Fatalf("UEs = %d, want %d", len(ues), radios*perRadio)
 	}
 }

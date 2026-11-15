@@ -1,0 +1,16 @@
+gve-ntfy-blk0@pci:0000:00:04.0 cpu 0
+gve-ntfy-blk1@pci:0000:00:04.0 cpu 1
+gve-ntfy-blk2@pci:0000:00:04.0 cpu 2
+gve-ntfy-blk3@pci:0000:00:04.0 cpu 3
+gve-ntfy-blk4@pci:0000:00:04.0 cpu 4
+gve-ntfy-blk5@pci:0000:00:04.0 cpu 5
+gve-ntfy-blk6@pci:0000:00:04.0 cpu 6
+gve-ntfy-blk7@pci:0000:00:04.0 cpu 7
+gve-ntfy-blk0@pci:0000:00:05.0 cpu 0
+gve-ntfy-blk1@pci:0000:00:05.0 cpu 9
+gve-ntfy-blk2@pci:0000:00:05.0 cpu 2
+gve-ntfy-blk3@pci:0000:00:05.0 cpu 3
+gve-ntfy-blk4@pci:0000:00:05.0 cpu 0
+gve-ntfy-blk5@pci:0000:00:05.0 cpu 13
+gve-ntfy-blk6@pci:0000:00:05.0 cpu 2
+gve-ntfy-blk7@pci:0000:00:05.0 cpu 3

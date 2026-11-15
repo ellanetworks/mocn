@@ -6,4 +6,5 @@ This section provides reference material for Ella MOCN, from configuration optio
 - [Configuration File](config_file.md)
 - [Connectivity](connectivity.md)
 - [Observability](observability.md)
+- [Performance](performance.md)
 - [System Requirements](system_reqs.md)

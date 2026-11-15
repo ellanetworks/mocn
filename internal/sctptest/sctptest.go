@@ -128,7 +128,7 @@ func (p *Peer[P]) Closed(t *testing.T) {
 	}
 }
 
-func SkipWithoutSCTP(t *testing.T) {
+func SkipWithoutSCTP(t testing.TB) {
 	t.Helper()
 
 	var lc sctp.ListenConfig
@@ -224,7 +224,7 @@ type Gateway struct {
 	Stop func()
 }
 
-func Listen(t *testing.T) *sctp.Listener {
+func Listen(t testing.TB) *sctp.Listener {
 	t.Helper()
 
 	var lc sctp.ListenConfig
@@ -237,7 +237,7 @@ func Listen(t *testing.T) *sctp.Listener {
 	return ln
 }
 
-func Start(t *testing.T, ln *sctp.Listener, ops *Operators, run func(ctx context.Context)) *Gateway {
+func Start(t testing.TB, ln *sctp.Listener, ops *Operators, run func(ctx context.Context)) *Gateway {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(t.Context())

@@ -25,6 +25,7 @@ const (
 	dropNoEgressInterface    = "no_egress_interface"
 	dropWrongEgressInterface = "wrong_egress_interface" // #nosec G101
 	dropSendFailed           = "send_failed"
+	dropReceiveBufferFull    = "receive_buffer_full"
 
 	originReceived  = "received"
 	originGenerated = "generated"
@@ -34,7 +35,6 @@ const (
 	resultNoReturnAddress = "no_return_address"
 	resultMalformed       = "malformed"
 	resultSent            = "sent"
-	resultRateLimited     = "rate_limited"
 )
 
 var (
@@ -47,11 +47,12 @@ var (
 
 	unattributedSlowDrops = []string{
 		dropNoTunnel, dropQuarantined, dropMalformed, dropWrongInterface, dropUnknownMessage, dropExtensionNotif,
+		dropReceiveBufferFull,
 	}
 
 	errorIndicationResults = map[string][]string{
 		originReceived:  {resultTranslated, resultNoTunnel, resultNoReturnAddress, resultMalformed},
-		originGenerated: {resultSent, resultRateLimited},
+		originGenerated: {resultSent},
 	}
 
 	states             = []State{StateReady, StateUnavailable, StateOff}
@@ -150,7 +151,8 @@ var (
 			"(an extension header that must be comprehended), no_egress_interface, wrong_egress_interface, "+
 			"send_failed. path=slow, with no operator: no_tunnel (unknown TEID), quarantined (TEID of a tunnel "+
 			"closed less than 10 s ago), malformed, wrong_interface (Echo Request on an interface Ella MOCN does not "+
-			"relay), unknown_message, supported_extension_headers_notification.",
+			"relay), unknown_message, supported_extension_headers_notification, receive_buffer_full (dropped by the kernel "+
+			"because the receive buffer of the slow path's socket was full).",
 		[]string{"operator", "path", "reason"}, nil)
 	passesDesc = prometheus.NewDesc("ellamocn_user_plane_slow_path_packets_total",
 		"Packets on user-plane interfaces that the fast path left to the kernel, by reason (ip_fragment: an IP "+
@@ -169,7 +171,7 @@ var (
 		"GTP-U Error Indications, by origin and result. origin=received: from a peer; result translated (sent "+
 			"to the other side of the matching tunnels), no_tunnel (no matching tunnel), no_return_address (no "+
 			"address known for the other side), malformed. origin=generated: by Ella MOCN, for a G-PDU to an unknown "+
-			"TEID; result sent, rate_limited (over 100 per second).",
+			"TEID other than 0; result sent.",
 		[]string{"origin", "result"}, nil)
 	peerUpDesc = prometheus.NewDesc("ellamocn_user_plane_peer_up",
 		"Whether a GTP-U peer answers Echo Requests, by operator, side (radio, core) and peer address: 0 once 3 "+
@@ -320,6 +322,13 @@ func (s *stats) unattributedDrop(reason string) {
 	defer s.mu.Unlock()
 
 	s.drops[reason]++
+}
+
+func (s *stats) socketDrops(n uint32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.drops[dropReceiveBufferFull] += uint64(n)
 }
 
 func (s *stats) errorIndication(origin, result string) {

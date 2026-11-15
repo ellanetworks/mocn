@@ -18,6 +18,8 @@ concurrency:
 jobs:
   go-unit-test:
     uses: ./.github/workflows/go-unittest.yaml
+  bench-smoke:
+    uses: ./.github/workflows/bench-smoke.yaml
   go-lint:
     uses: ./.github/workflows/go-lint.yaml
   go-sec:
@@ -48,7 +50,7 @@ jobs:
     uses: ./.github/workflows/k8s-smoke.yaml
   image-publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [go-unit-test, go-lint, go-sec, gtpu-ebpf-tests, bpf-generate, clang-format, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, image-build, k8s-smoke]
+    needs: [go-unit-test, bench-smoke, go-lint, go-sec, gtpu-ebpf-tests, bpf-generate, clang-format, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, image-build, k8s-smoke]
     permissions:
       contents: read
       packages: write

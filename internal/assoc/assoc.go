@@ -58,7 +58,7 @@ type TAI struct {
 type Setup interface {
 	Ref() string
 	Broadcasts(plmns []db.PLMN) bool
-	Serves(tai TAI) bool
+	TAIs() []TAI
 }
 
 type Equaler[T any] interface {

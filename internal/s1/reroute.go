@@ -99,10 +99,9 @@ func (r *relay) rerouteNASRequest(ctx context.Context, a *mmeAssoc, log *slog.Lo
 	r.ues.Rebind(u, target)
 	r.superviseLocked(ctx, u, log, "INITIAL UE MESSAGE")
 
-	send := r.sendMME
 	r.mu.Unlock()
 
-	if err := send(ctx, target, out, ueStream); err != nil {
+	if err := target.Send(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send the rerouted INITIAL UE MESSAGE to MME", slog.Any("error", err))
 		return
 	}

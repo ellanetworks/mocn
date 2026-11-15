@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ellanetworks/core/s1ap"
+	"github.com/ellanetworks/core/sctp"
 	"github.com/ellanetworks/mocn/internal/s1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -1024,5 +1025,76 @@ ellamocn_initial_ue_messages_total{interface="s1",result="unknown_plmn"} 0
 `
 	if err := testutil.GatherAndCompare(registry, strings.NewReader(want), "ellamocn_initial_ue_messages_total"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMMEThatStopsReadingDuringABurstKeepsItsAssociation(t *testing.T) {
+	t.Parallel()
+
+	skipWithoutSCTP(t)
+
+	const (
+		radios   = 8
+		perRadio = 500
+	)
+
+	mmeListener := listenMME(t, "127.0.0.120")
+	h := startGatewayWith(t, s1.Config{CorePort: mmeListener.Port(), ResponseTimeout: time.Minute}, operatorA("127.0.0.120"))
+	enb, mme := upAndRunning(t, h, mmeListener)
+	enbs := []*peer{enb}
+
+	for i := 2; i <= radios; i++ {
+		n := h.connectENB(t)
+		setUpENB(t, n, setupRequest(t, uint32(i), fmt.Sprintf("enb%d", i), s1ap.PagingDRXv128, ta(t, 1, "00101")))
+		enbs = append(enbs, n)
+	}
+
+	msgs := make([][]byte, perRadio)
+	for i := range msgs {
+		b, err := initialUE(t, s1ap.ENBUES1APID(i+1)).Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		msgs[i] = b
+	}
+
+	sent := make(chan error, radios)
+
+	for _, n := range enbs {
+		go func() {
+			info := &sctp.SndRcvInfo{Stream: 1, PPID: sctp.PPIDWireOrder(s1.PPID)}
+
+			for _, b := range msgs {
+				if _, err := n.Conn.WriteMsgWait(t.Context(), b, info); err != nil {
+					sent <- err
+					return
+				}
+			}
+
+			sent <- nil
+		}()
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	for range radios * perRadio {
+		expectRaw(t, mme, "initiating", s1ap.ProcInitialUEMessage)
+	}
+
+	for range radios {
+		if err := <-sent; err != nil {
+			t.Fatalf("burst from a radio: %v", err)
+		}
+	}
+
+	mme.Quiet(t, 100*time.Millisecond)
+
+	for _, n := range enbs {
+		n.Quiet(t, 100*time.Millisecond)
+	}
+
+	if ues := h.gw.UEs(); len(ues) != radios*perRadio {
+		t.Fatalf("UEs = %d, want %d", len(ues), radios*perRadio)
 	}
 }

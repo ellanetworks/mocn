@@ -161,3 +161,21 @@ func TestPagingDRXAndTimeToWait(t *testing.T) {
 		t.Fatalf("v60s = %v", got)
 	}
 }
+
+func TestTAIsAreTheServedTAIs(t *testing.T) {
+	t.Parallel()
+
+	s := ranSetup{tas: []TA{
+		{TAC: 1, BroadcastPLMNs: []BroadcastPLMN{{PLMN: plmnA, Slices: []SNSSAI{sst1}}, {PLMN: plmnB}}},
+		{TAC: 7, BroadcastPLMNs: []BroadcastPLMN{{PLMN: plmnB, Slices: []SNSSAI{sst2}}}},
+	}}
+
+	for _, p := range []db.PLMN{plmnA, plmnB, plmnC} {
+		for _, tac := range []uint32{0, 1, 7, 8} {
+			tai := assoc.TAI{PLMN: p, TAC: tac}
+			if got, want := slices.Contains(s.TAIs(), tai), s.Serves(tai); got != want {
+				t.Errorf("TAI %v listed = %v, served = %v", tai, got, want)
+			}
+		}
+	}
+}

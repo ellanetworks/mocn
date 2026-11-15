@@ -18,11 +18,10 @@ import (
 )
 
 const (
-	echoInterval       = 60 * time.Second
-	echoMissesForDown  = 3
-	errorIndicationsPS = 100
-	maxDatagram        = 65535
-	oobSize            = 128
+	echoInterval      = 60 * time.Second
+	echoMissesForDown = 3
+	maxDatagram       = 65535
+	oobSize           = 128
 )
 
 var supportedExtensionHeaders = []byte{0x03, 0x04, 0x20, 0x40, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0xc0}
@@ -32,6 +31,7 @@ type inbound struct {
 	from    netip.AddrPort
 	ifindex int
 	tos     uint8
+	dropped uint32
 	b       []byte
 }
 
@@ -54,10 +54,8 @@ type slowPath struct {
 	log *slog.Logger
 	out sender
 
-	mu     sync.Mutex
-	peers  map[netip.Addr]*peerState
-	tokens int
-	refill time.Time
+	mu    sync.Mutex
+	peers map[netip.Addr]*peerState
 }
 
 func newSlowPath(p *Plane, out sender) *slowPath {
@@ -85,6 +83,10 @@ func (s *slowPath) close() {
 }
 
 func (s *slowPath) handle(in inbound) {
+	if in.dropped > 0 {
+		s.p.stats.socketDrops(in.dropped)
+	}
+
 	h, err := parseHeader(in.b)
 	if err != nil {
 		s.p.stats.unattributedDrop(dropMalformed)
@@ -119,24 +121,6 @@ func (s *slowPath) send(local netip.Addr, ifindex int, to netip.Addr, msg []byte
 	_ = s.out.udp(local, ifindex, netip.AddrPortFrom(to, Port), msg)
 }
 
-func (s *slowPath) allowErrorIndication() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	now := s.p.cfg.Now()
-	if now.Sub(s.refill) >= time.Second {
-		s.tokens, s.refill = errorIndicationsPS, now
-	}
-
-	if s.tokens == 0 {
-		return false
-	}
-
-	s.tokens--
-
-	return true
-}
-
 // TS 29.281 clause 7.3.1
 // TS 29.281 clause 7.3.2.1
 func (s *slowPath) unknownTunnel(in inbound, h header) {
@@ -148,11 +132,6 @@ func (s *slowPath) unknownTunnel(in inbound, h header) {
 	s.p.stats.unattributedDrop(reason)
 
 	if h.msg != msgGPDU || h.teid == 0 || !s.p.knownInterface(in.ifindex) {
-		return
-	}
-
-	if !s.allowErrorIndication() {
-		s.p.stats.errorIndication(originGenerated, resultRateLimited)
 		return
 	}
 
@@ -405,6 +384,8 @@ func (k *sockets) listen(a netip.Addr, deliver func(inbound)) error {
 		opts = [][2]int{{unix.IPPROTO_IPV6, unix.IPV6_RECVPKTINFO}, {unix.IPPROTO_IPV6, unix.IPV6_RECVTCLASS}}
 	}
 
+	opts = append(opts, [2]int{unix.SOL_SOCKET, unix.SO_RXQ_OVFL})
+
 	for _, o := range opts {
 		if err := setsockopt(c, o[0], o[1], 1); err != nil {
 			_ = c.Close()
@@ -423,6 +404,8 @@ func read(local netip.Addr, c *net.UDPConn, deliver func(inbound)) {
 	buf := make([]byte, maxDatagram)
 	oob := make([]byte, oobSize)
 
+	var drops uint32
+
 	for {
 		n, oobn, _, from, err := c.ReadMsgUDPAddrPort(buf, oob)
 		if err != nil {
@@ -435,6 +418,11 @@ func read(local netip.Addr, c *net.UDPConn, deliver func(inbound)) {
 
 		in := inbound{local: local, from: from, b: buf[:n]}
 		parseControl(oob[:oobn], &in)
+
+		if in.dropped != 0 {
+			in.dropped, drops = in.dropped-drops, in.dropped
+		}
+
 		deliver(in)
 	}
 }
@@ -457,6 +445,8 @@ func parseControl(oob []byte, in *inbound) {
 			in.ifindex = int(binary.NativeEndian.Uint32(m.Data[16:20]))
 		case m.Header.Level == unix.IPPROTO_IPV6 && m.Header.Type == unix.IPV6_TCLASS && len(m.Data) >= 4:
 			in.tos = uint8(binary.NativeEndian.Uint32(m.Data[0:4]))
+		case m.Header.Level == unix.SOL_SOCKET && m.Header.Type == unix.SO_RXQ_OVFL && len(m.Data) >= 4:
+			in.dropped = binary.NativeEndian.Uint32(m.Data[0:4])
 		}
 	}
 }

@@ -62,6 +62,10 @@ func (a *Core) Send(ctx context.Context, msg []byte, stream uint16) error {
 	return a.tx.Send(ctx, metrics.SideCore, a.conn, a.Operator(), msg, stream)
 }
 
+func (a *Core) SendWait(ctx context.Context, msg []byte, stream uint16) error {
+	return a.tx.send(ctx, metrics.SideCore, a.conn, a.Operator(), msg, stream, true)
+}
+
 func (a *Core) Conn() *sctp.SCTPConn {
 	return a.conn
 }
@@ -138,6 +142,7 @@ type Session[S Setup, R RadioConfig[R], I any, C Equaler[C]] struct {
 	setupDone bool
 	acked     C
 	pending   procedure
+	settled   uint64
 	sent      C
 	sentMsg   []byte
 	deadline  time.Time
@@ -488,9 +493,11 @@ func (g *Gateway[S, R, I, C]) step(ctx context.Context, s *Session[S, R, I, C]) 
 
 	g.mu.Lock()
 	want, ok := g.coreConfigLocked(s.c.operatorID)
+	gen := g.configGen
 	g.mu.Unlock()
 
-	if !ok || (s.setupDone && want.Equal(s.acked)) {
+	if !ok || (s.setupDone && (s.settled == gen || want.Equal(s.acked))) {
+		s.settled = gen
 		return nil
 	}
 
@@ -502,21 +509,9 @@ func (g *Gateway[S, R, I, C]) step(ctx context.Context, s *Session[S, R, I, C]) 
 }
 
 func (g *Gateway[S, R, I, C]) coreConfigLocked(operatorID int64) (C, bool) {
-	o, ok := g.OperatorLocked(operatorID)
-	if !ok {
-		var none C
-		return none, false
-	}
+	c := g.configsLocked()[operatorID]
 
-	setups := make([]S, 0, len(g.radios))
-
-	for _, n := range g.radios {
-		if n.Setup != nil {
-			setups = append(setups, *n.Setup)
-		}
-	}
-
-	return g.proto.CoreConfig(o.PLMNs, setups)
+	return c.cfg, c.ok
 }
 
 // TS 36.413 clause 8.7.3

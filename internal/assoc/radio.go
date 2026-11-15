@@ -149,7 +149,7 @@ func (g *Gateway[S, R, I, C]) removeLocked(n *Radio[S, R]) {
 	n.stopPush()
 
 	if n.Setup != nil {
-		g.kickLocked()
+		g.configChangedLocked()
 	}
 }
 
@@ -225,6 +225,10 @@ func (g *Gateway[S, R, I, C]) TakeDown(n *Radio[S, R]) bool {
 	wasUp := n.Up
 	n.Up = false
 
+	if wasUp {
+		g.radiosChangedLocked()
+	}
+
 	return wasUp
 }
 
@@ -278,7 +282,7 @@ func (g *Gateway[S, R, I, C]) BeginSetup(ctx context.Context, n *Radio[S, R], se
 		n.Setup, n.Up, n.Failure, n.push = &setup, false, nil, push[R]{}
 		n.ref.Store(&ref)
 
-		g.kickLocked()
+		g.configChangedLocked()
 	}
 
 	g.mu.Unlock()
@@ -328,7 +332,7 @@ func (g *Gateway[S, R, I, C]) Reconfigure(ctx context.Context, n *Radio[S, R], u
 	}
 
 	commit(added)
-	g.kickLocked()
+	g.configChangedLocked()
 
 	return nil
 }
@@ -438,14 +442,15 @@ func (g *Gateway[S, R, I, C]) setUpLocked(ctx context.Context, n *Radio[S, R], c
 	n.Up = true
 	n.push.acked = cfg.Pushed()
 
+	g.radiosChangedLocked()
 	g.countSetup(metrics.SideRadio, SetupSuccess)
-	g.syncRadioLocked(ctx, n)
+	g.syncRadioLocked(ctx, n, g.proto.RadioConfigLocked())
 	g.proto.RadioUpLocked(ctx, n)
 }
 
 func (g *Gateway[S, R, I, C]) clearSetupLocked(n *Radio[S, R]) {
 	if n.Setup != nil {
-		g.kickLocked()
+		g.configChangedLocked()
 	}
 
 	n.stopPush()
@@ -468,13 +473,12 @@ func (g *Gateway[S, R, I, C]) SetupRejected(ctx context.Context, n *Radio[S, R],
 
 // TS 36.413 clause 8.7.5
 // TS 38.413 clause 8.7.3
-func (g *Gateway[S, R, I, C]) syncRadioLocked(ctx context.Context, n *Radio[S, R]) {
+func (g *Gateway[S, R, I, C]) syncRadioLocked(ctx context.Context, n *Radio[S, R], cfg R) {
 	p := &n.push
 	if !n.Up || p.pending != nil || g.cfg.Now().Before(p.retryAt) {
 		return
 	}
 
-	cfg := g.proto.RadioConfigLocked()
 	if cfg.Empty() {
 		return
 	}
@@ -524,7 +528,7 @@ func (g *Gateway[S, R, I, C]) RadioUpdateAcknowledged(ctx context.Context, n *Ra
 
 	p.acked, p.pending = *p.pending, nil
 
-	g.syncRadioLocked(ctx, n)
+	g.syncRadioLocked(ctx, n, g.proto.RadioConfigLocked())
 }
 
 func (g *Gateway[S, R, I, C]) RadioUpdateRejected(ctx context.Context, n *Radio[S, R], wait *time.Duration) {
@@ -551,7 +555,7 @@ func (g *Gateway[S, R, I, C]) RadioUpdateRejected(ctx context.Context, n *Radio[
 		defer g.mu.Unlock()
 
 		if g.radios[n.conn] == n {
-			g.syncRadioLocked(retryCtx, n)
+			g.syncRadioLocked(retryCtx, n, g.proto.RadioConfigLocked())
 		}
 	})
 }
@@ -562,19 +566,22 @@ func (g *Gateway[S, R, I, C]) pagingTargetsLocked(operatorID int64, list []TAI) 
 		return nil
 	}
 
-	var tais []TAI
-
-	for _, t := range list {
-		if slices.Contains(o.PLMNs, t.PLMN) {
-			tais = append(tais, t)
-		}
-	}
+	index := g.pagingLocked()
 
 	var out []*Radio[S, R]
 
-	for _, n := range g.radios {
-		if n.Up && n.Setup != nil && slices.ContainsFunc(tais, (*n.Setup).Serves) {
-			out = append(out, n)
+	seen := map[*Radio[S, R]]bool{}
+
+	for _, t := range list {
+		if !slices.Contains(o.PLMNs, t.PLMN) {
+			continue
+		}
+
+		for _, n := range index[t] {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
 		}
 	}
 
