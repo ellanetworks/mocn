@@ -1,8 +1,39 @@
 ---
-description: Ella MOCN configuration file keys and defaults.
+description: Reference of the configuration file of Ella MOCN.
 ---
 
 # Configuration File
+
+Ella MOCN is configured using a YAML file. Start Ella MOCN with the `--config` flag to specify its path. Unknown keys are rejected. Changes take effect on restart.
+
+The operators and radios are not in this file: they are in the database, and set with the UI or the [API](api/index.md).
+
+## Parameters
+
+- `logging` (object, optional): The logging configuration.
+    - `level` (string, optional): The log level: `debug`, `info`, `warn`, or `error`. Default `info`.
+- `db` (object): The database configuration.
+    - `path` (string): The path to the SQLite database file.
+- `api` (object, optional): The HTTP API and UI.
+    - `address` (string, optional): The IP address to listen on. Default `0.0.0.0`.
+    - `port` (int, optional): The TCP port to listen on. Default `5030`.
+    - `tls` (object, optional): Serve over HTTPS, TLS 1.2 or later. Default: plain HTTP.
+        - `cert` (string): The path to the PEM certificate chain, the server's certificate first.
+        - `key` (string): The path to the PEM private key.
+- `ran` (object, optional): The radios.
+    - `signalling` (object, optional): The S1 and NG listeners that radios connect to.
+        - `address` (string, optional): The IP address to listen on. Default `0.0.0.0`.
+        - `s1_port` (int, optional): The SCTP port of S1. Default `36412`.
+        - `ng_port` (int, optional): The SCTP port of NG. Default `38412`.
+    - `user_plane` (object, optional): The user plane towards the radios.
+        - `enabled` (boolean, optional): Allow [user-plane aggregation](../explanation/user_plane_aggregation_with_ebpf.md). When `true`, Ella MOCN sets `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` to `1` at startup and needs the capabilities in the [system requirements](system_reqs.md). When `false`, every operator uses the direct user plane. Default `false`.
+        - `name` (string): The network interface that radios' user traffic arrives on. Ella MOCN's address is its first global IPv4 address, or else its first global IPv6 address. Either `name` or `address` must be set when `enabled` is `true`, not both.
+        - `address` (string): Ella MOCN's user-plane address towards the radios. A unicast address of an interface of the host. Either `name` or `address` must be set when `enabled` is `true`, not both.
+- `telemetry` (object, optional): The [traces](observability.md#traces).
+    - `enabled` (boolean, optional): Export traces. Default `false`.
+    - `otlp_endpoint` (string): The `host:port` of an OTLP/gRPC collector, over plain gRPC. Required when `enabled` is `true`.
+
+## Example
 
 ```yaml
 logging:
@@ -27,22 +58,3 @@ telemetry:
   enabled: true
   otlp_endpoint: localhost:4317
 ```
-
-| Key | Default | Description |
-|---|---|---|
-| `logging.level` | `info` | `debug`, `info`, `warn` or `error`. |
-| `db.path` | | Path of the database file. Required. |
-| `api.address` | `0.0.0.0` | Address of the API and UI listener. |
-| `api.port` | `5030` | Port of the API and UI listener. |
-| `api.tls.cert` | | Path of the PEM certificate chain, the server's certificate first. With `api.tls.key`, the API and UI are served over HTTPS (TLS 1.2 or later). Without `api.tls`, over plain HTTP. |
-| `api.tls.key` | | Path of the PEM private key. Required with `api.tls.cert`. |
-| `ran.signalling.address` | `0.0.0.0` | Address of the S1 and NG SCTP listeners that radios connect to. |
-| `ran.signalling.s1_port` | `36412` | Port of the S1 SCTP listener. |
-| `ran.signalling.ng_port` | `38412` | Port of the NG SCTP listener. |
-| `ran.user_plane.enabled` | `false` | Allow [user-plane aggregation](../explanation/user_plane_aggregation_with_ebpf.md). When `true`, Ella MOCN sets `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` to `1` at startup and needs the capabilities in the [system requirements](system_reqs.md). When `false`, every operator uses the direct user plane. |
-| `ran.user_plane.name` | | Interface radios' user traffic arrives on. Set either `name` or `address`, not both. Required when `ran.user_plane.enabled` is `true`. |
-| `ran.user_plane.address` | | Ella MOCN's user-plane address toward the radios. Default: the first IPv4 address of `name`, or else its first global IPv6 address. Without `name`, the interface is the one that holds this address. |
-| `telemetry.enabled` | `false` | Export [traces](observability.md#traces). |
-| `telemetry.otlp_endpoint` | | The `host:port` of an OTLP/gRPC collector, over plain gRPC. Required when `telemetry.enabled` is `true`. |
-
-See [Connectivity](connectivity.md) for the ports Ella MOCN uses.

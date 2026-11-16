@@ -6,7 +6,7 @@ description: How Ella MOCN can carry subscriber traffic between the radios and e
 
 While signalling always goes through Ella MOCN, you can choose to have subscriber traffic go through Ella MOCN too. This is called user-plane aggregation.
 
-## Direct vs Aggregated
+## Direct vs aggregated
 
 ```
 Direct:        Radios ══════════════════════════► operator network
@@ -21,11 +21,11 @@ Each radio sends its traffic straight to the operator's network. The radios and 
 
 Ella MOCN carries the traffic between the radios and the operator's network. The operator sees only Ella MOCN's address, and the radios stay on the neutral host's private network. Subscriber traffic follows the same path as Ella MOCN's signalling to that operator, typically its IPsec tunnel. All of that operator's traffic then depends on Ella MOCN's capacity and availability.
 
-## How Ella MOCN Forwards Traffic
+## How Ella MOCN forwards traffic
 
 Ella MOCN uses eBPF to relay subscriber traffic between the radios and the operators' networks in the kernel. With Traffic Control, it puts its own tunnel endpoints in place of the radios' and the operators', so each side only ever sees Ella MOCN. It never touches the traffic inside the tunnels.
 
-## More Information
+## More information
 
 - [How to Enable User-Plane Aggregation](../how_to/enable_user_plane_aggregation.md).
 - [How to Connect an Operator over IPsec](../how_to/connect_an_operator_over_ipsec.md).

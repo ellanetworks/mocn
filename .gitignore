@@ -17,3 +17,4 @@ ui/test-results/
 ui/playwright-report/
 ui/e2e/.auth/
 ui/e2e/.build/
+perf/results/
