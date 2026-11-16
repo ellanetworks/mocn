@@ -1,0 +1,128 @@
+[project]
+site_name = "Ella MOCN Documentation"
+site_description = "A MOCN gateway that integrates your neutral host radio network with mobile operators."
+site_url = "https://docs.ellanetworks.com/mocn/"
+docs_dir = "docs"
+repo_url = "https://github.com/ellanetworks/mocn"
+repo_name = "ellanetworks/mocn"
+copyright = "Copyright &copy; 2026 Ella Networks"
+extra_css = ["stylesheets/extra.css"]
+exclude_docs = """
+overrides/
+"""
+nav = [
+  { "Home" = "index.md" },
+  { "Tutorials" = [
+    "tutorials/index.md",
+    { "Connect Your First Radio" = "tutorials/connect_your_first_radio.md" },
+  ] },
+  { "How-to Guides" = [
+    "how_to/index.md",
+    { "Install" = "how_to/install.md" },
+    { "Connect a Radio" = "how_to/connect_a_radio.md" },
+    { "Connect an Operator" = "how_to/connect_an_operator.md" },
+    { "Connect an Operator over IPsec" = "how_to/connect_an_operator_over_ipsec.md" },
+    { "Enable User-Plane Aggregation" = "how_to/enable_user_plane_aggregation.md" },
+    { "Back Up and Restore" = "how_to/back_up_and_restore.md" },
+    { "Upgrade" = "how_to/upgrade.md" },
+  ] },
+  { "Reference" = [
+    "reference/index.md",
+    { "API" = [
+      "reference/api/index.md",
+      { "Initialize" = "reference/api/initialize.md" },
+      { "Authentication" = "reference/api/auth.md" },
+      { "Users" = "reference/api/users.md" },
+      { "Operators" = "reference/api/operators.md" },
+      { "Radios" = "reference/api/radios.md" },
+      { "UE Connections" = "reference/api/ue_connections.md" },
+      { "Status" = "reference/api/status.md" },
+      { "Metrics" = "reference/api/metrics.md" },
+      { "Pprof" = "reference/api/pprof.md" },
+    ] },
+    { "Configuration File" = "reference/config_file.md" },
+    { "Observability" = "reference/observability.md" },
+    { "Connectivity" = "reference/connectivity.md" },
+    { "Performance" = "reference/performance.md" },
+    { "System Requirements" = "reference/system_reqs.md" },
+    { "3GPP Compliance" = "reference/3gpp_compliance.md" },
+  ] },
+  { "Explanation" = [
+    "explanation/index.md",
+    { "Architecture" = "explanation/architecture.md" },
+    { "Security" = "explanation/security.md" },
+    { "User-Plane Aggregation with eBPF" = "explanation/user_plane_aggregation_with_ebpf.md" },
+  ] },
+]
+
+[project.theme]
+variant = "classic"
+custom_dir = "docs/overrides"
+logo = "images/logo-mark.svg"
+favicon = "images/favicon.svg"
+features = [
+  "navigation.sections",
+  "navigation.footer",
+  "navigation.indexes",
+  "content.code.copy",
+  "content.tabs.link",
+]
+
+[project.theme.palette]
+primary = "custom"
+
+[project.theme.font]
+text = "Source Code Pro"
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[project.extra]
+generator = false
+
+[[project.extra.social]]
+icon = "fontawesome/solid/globe"
+link = "https://www.ellanetworks.com"
+name = "Ella Networks website"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/youtube"
+link = "https://www.youtube.com/@ellanetworks"
+name = "Ella Networks on YouTube"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/linkedin"
+link = "https://www.linkedin.com/company/ellanetworks"
+name = "Ella Networks on LinkedIn"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://www.github.com/ellanetworks/mocn"
+name = "Ella Networks on GitHub"
+
+[project.markdown_extensions]
+attr_list = {}
+md_in_html = {}
+admonition = {}
+tables = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.superfences = {}
+pymdownx.tabbed.alternate_style = true
+pymdownx.blocks.caption = {}
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+
+[project.plugins.glightbox]
+
+[project.plugins.social]
+cards_layout_options.background_color = "#26374a"
+
+[project.plugins.llmstxt]
+markdown_description = "A MOCN gateway that integrates your neutral host radio network with mobile operators."
+full_output = "llms-full.txt"
+sections."Home" = ["index.md"]
+sections."Tutorials" = ["tutorials/*.md"]
+sections."How-to Guides" = ["how_to/*.md"]
+sections."Reference" = ["reference/*.md", "reference/api/*.md"]
+sections."Explanation" = ["explanation/*.md"]

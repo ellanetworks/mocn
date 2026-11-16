@@ -1,19 +1,16 @@
 ---
-description: Reach an operator through a route-based IPsec tunnel on the Ella MOCN host.
+description: Step-by-step instructions to reach an operator through a route-based IPsec tunnel on the Ella MOCN host.
 ---
 
 # Connect an Operator over IPsec
 
 This guide connects the Ella MOCN host to an operator's security gateway through a route-based IPsec tunnel, using strongSwan.
 
-## Pre-requisites
+## Prerequisites
 
-To follow this guide, you will need:
-
-- Ubuntu Server 26.04
-- The address of the operator's security gateway and its CA certificate
-- A certificate and private key for the host, signed by a CA the operator trusts
-- The operator's networks that hold its MMEs, AMFs, S-GWs and UPFs
+- **Host**: Ubuntu Server 26.04, with a certificate and private key signed by a CA the operator trusts.
+- **Operator's security gateway**: its address and its CA certificate.
+- **Operator's networks**: the networks that hold the operator's MMEs, AMFs, S-GWs and UPFs.
 
 ## 1. Install strongSwan
 

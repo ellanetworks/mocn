@@ -18,7 +18,7 @@ The following table outlines Ella MOCN's user-plane throughput at 0% loss, in mi
 <table>
   <thead>
     <tr>
-      <th rowspan="2">Path</th>
+      <th rowspan="2">Network</th>
       <th rowspan="2">Direction</th>
       <th colspan="3">Throughput (Mpps)</th>
       <th colspan="3">Throughput (Gbps)</th>
@@ -33,16 +33,12 @@ The following table outlines Ella MOCN's user-plane throughput at 0% loss, in mi
     </tr>
   </thead>
   <tbody>
-    <tr><td rowspan="2">Through Ella MOCN, 4G</td><td>Uplink</td><td>1.95</td><td>1.87</td><td>1.29</td><td>0.72</td><td>7.41</td><td>15.0</td></tr>
+    <tr><td rowspan="2">4G</td><td>Uplink</td><td>1.95</td><td>1.87</td><td>1.29</td><td>0.72</td><td>7.41</td><td>15.0</td></tr>
     <tr><td>Downlink</td><td>1.64</td><td>1.92</td><td>1.38</td><td>0.60</td><td>7.60</td><td>16.1</td></tr>
   </tbody>
   <tbody>
-    <tr><td rowspan="2">Through Ella MOCN, 5G</td><td>Uplink</td><td></td><td></td><td>1.20</td><td></td><td></td><td>14.0</td></tr>
-    <tr><td>Downlink</td><td></td><td></td><td>1.32</td><td></td><td></td><td>15.3</td></tr>
-  </tbody>
-  <tbody>
-    <tr><td rowspan="2">Direct</td><td>Uplink</td><td>2.85</td><td></td><td>1.72+</td><td>1.05</td><td></td><td>20.0+</td></tr>
-    <tr><td>Downlink</td><td>4.19+</td><td></td><td>2.39+</td><td>1.54+</td><td></td><td>27.8+</td></tr>
+    <tr><td rowspan="2">5G</td><td>Uplink</td><td>1.76</td><td>1.36</td><td>1.20</td><td>0.65</td><td>5.37</td><td>14.0</td></tr>
+    <tr><td>Downlink</td><td>1.85</td><td>1.38</td><td>1.32</td><td>0.68</td><td>5.46</td><td>15.3</td></tr>
   </tbody>
 </table>
 </div>
@@ -52,8 +48,6 @@ User-plane throughput at 0% loss
 ///
 
 The packet size represents only the IP packet for the subscribers and ignores Ethernet and GTP-U encapsulation.
-
-Direct is the same traffic between the radios' host and the operator's host, without Ella MOCN. `+` marks a rate limited by the traffic generator.
 
 All packets through Ella MOCN were relayed by the eBPF fast path: `ellamocn_user_plane_slow_path_packets_total` and `ellamocn_user_plane_dropped_packets_total` stayed at 0.
 

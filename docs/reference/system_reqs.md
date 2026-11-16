@@ -4,7 +4,7 @@ description: System requirements for running Ella MOCN.
 
 # System Requirements
 
-Ella MOCN runs on any Linux distribution.
+Ella MOCN runs on any Linux distribution, on amd64 and arm64.
 
 |  | Up to 10,000 subscribers | Up to 100,000 subscribers |
 |------------|-------------|-------------|

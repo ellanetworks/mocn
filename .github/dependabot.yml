@@ -33,3 +33,14 @@ updates:
       npm_dependencies:
         patterns:
           - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore: "
+    groups:
+      docs_dependencies:
+        patterns:
+          - "*"

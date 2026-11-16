@@ -4,10 +4,10 @@ go 1.27.3
 
 require (
 	github.com/cilium/ebpf v0.22.0
-	github.com/ellanetworks/core/ngap v0.0.0-20261115205958-ee82dcb74d67
-	github.com/ellanetworks/core/per v0.0.0-20261115205958-ee82dcb74d67
-	github.com/ellanetworks/core/s1ap v0.0.0-20261115205958-ee82dcb74d67
-	github.com/ellanetworks/core/sctp v0.0.0-20261115205958-ee82dcb74d67
+	github.com/ellanetworks/core/ngap v0.0.0-20261116132157-d3610fa894ba
+	github.com/ellanetworks/core/per v0.0.0-20261116132157-d3610fa894ba
+	github.com/ellanetworks/core/s1ap v0.0.0-20261116132157-d3610fa894ba
+	github.com/ellanetworks/core/sctp v0.0.0-20261116132157-d3610fa894ba
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/prometheus/client_golang v1.25.0

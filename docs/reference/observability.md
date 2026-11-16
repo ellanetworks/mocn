@@ -80,44 +80,6 @@ With [user-plane aggregation](../explanation/user_plane_aggregation_with_ebpf.md
 | `ellamocn_user_plane_bpf_map_max_entries` | Gauge | `map` (`tunnels`, `tunnel_stats`, `ifaces`, `path_stats`) | Capacity of a map of the user-plane datapath. |
 | `ellamocn_user_plane_bpf_map_memory_bytes` | Gauge | `map` (`tunnels`, `tunnel_stats`, `ifaces`, `config`, `path_stats`, `drops`, `passes`) | Kernel memory locked by a map of the user-plane datapath. |
 
-| Label | Values |
-|---|---|
-| `operator` | Operator name. Series follow a rename and are removed with the operator. |
-| `direction` | `uplink`: received from a radio. `downlink`: received from the operator. |
-| `radio` | `ref`, in the [Radios API](api/radios.md), of the radio that carries the traffic. After a handover or path switch, later traffic counts under the target radio. Series are removed when the radio disconnects. |
-| `procedure` | `initial_context_setup`, `erab_setup`, `erab_modify`, `erab_modification_indication`, `handover_preparation`, `handover_resource_allocation`, `path_switch_request` (`s1`); `initial_context_setup`, `pdu_session_resource_setup`, `pdu_session_resource_modify`, `pdu_session_resource_modify_indication`, `handover_preparation`, `handover_resource_allocation`, `path_switch_request` (`ng`). |
-| `peer` | Address of the eNB, gNB, S-GW or UPF. |
-
-`ellamocn_user_plane_dropped_packets_total` reasons:
-
-| `path` | `operator` | `reason` |
-|---|---|---|
-| `fast` | Set | `wrong_interface`: received on an interface of another operator. `wrong_egress_interface`: routed out of another interface than the tunnel's. `fib_blackhole`, `fib_unreachable`, `fib_prohibit`: route type toward the peer. `rewrite_failed`: the packet could not be rewritten. |
-| `slow` | Set | `wrong_interface`: received on an interface of another operator. `malformed`: invalid extension headers. `unsupported_extension_header`: an extension header that must be comprehended. `no_egress_interface`: the tunnel has no egress interface. `wrong_egress_interface`: the route toward the peer leaves by another interface than the tunnel's. `send_failed`: the kernel refused the packet. |
-| `slow` | Empty | `no_tunnel`: unknown TEID. `quarantined`: TEID of a tunnel closed less than 10 s ago. `malformed`: invalid GTP-U header. `wrong_interface`: Echo Request on an interface Ella MOCN does not relay. `unknown_message`: unsupported message type. `supported_extension_headers_notification`: received from a peer. `receive_buffer_full`: dropped by the kernel because the receive buffer of the slow path's socket was full. |
-
-`ellamocn_user_plane_slow_path_packets_total` reasons:
-
-| `reason` | Packet |
-|---|---|
-| `ip_fragment` | An IP fragment, of any protocol. Counted before UDP and GTP-U parsing. |
-| `no_tunnel` | Unknown TEID. |
-| `not_local` | Not addressed to the tunnel's address. |
-| `extension_header` | An extension header the fast path does not relay. |
-| `zero_checksum` | IPv6 with a zero UDP checksum. |
-| `merged` | A GRO aggregate. |
-| `frag_needed` | Larger than the egress MTU. |
-| `forwarding_disabled` | IP forwarding is off on the ingress interface. |
-| `ipsec_policy` | An IPsec policy with a template and no XFRM interface ID, or a blocking default policy, is installed, and the ingress or egress interface is not an XFRM interface. |
-| `fib_other` | Another route lookup result. |
-
-`ellamocn_user_plane_error_indications_total` labels:
-
-| `origin` | `result` |
-|---|---|
-| `received`: from a peer | `translated`: sent to the other side of the matching tunnels. `no_tunnel`: no matching tunnel. `no_return_address`: no address known for the other side. `malformed`. |
-| `generated`: by Ella MOCN, for a G-PDU to an unknown TEID other than 0 | `sent`. |
-
 ## Traces
 
 Ella MOCN exports [OpenTelemetry](https://opentelemetry.io/) traces when `telemetry.enabled` is set in the [configuration file](config_file.md).

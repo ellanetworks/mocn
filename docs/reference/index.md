@@ -8,3 +8,4 @@ This section provides reference material for Ella MOCN, from configuration optio
 - [Observability](observability.md)
 - [Performance](performance.md)
 - [System Requirements](system_reqs.md)
+- [3GPP Compliance](3gpp_compliance.md)

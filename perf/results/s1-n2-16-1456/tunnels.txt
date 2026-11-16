@@ -1,3 +1,0 @@
-ellamocn_user_plane_datapath_loaded 1
-ellamocn_user_plane_tunnels{direction="downlink",operator="perf"} 1024
-ellamocn_user_plane_tunnels{direction="uplink",operator="perf"} 1024

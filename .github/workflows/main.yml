@@ -16,6 +16,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  docs-build:
+    uses: ./.github/workflows/docs-build.yaml
   go-unit-test:
     uses: ./.github/workflows/go-unittest.yaml
   bench-smoke:
