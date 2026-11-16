@@ -213,7 +213,7 @@ func (r *relay) uplink(ctx context.Context, n *ranAssoc, log *slog.Logger, p *ng
 
 	log.DebugContext(ctx, "relayed NGAP message to AMF", slog.Uint64("amf_ran_ue_ngap_id", uint64(amfRANID)))
 
-	if err := amf.Send(ctx, out, ueStream); err != nil {
+	if err := amf.SendWait(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send NGAP message to AMF", slog.Any("error", err))
 	}
 }

@@ -160,6 +160,7 @@ func TestMetricsForgetARemovedOperator(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	h.symmetric(t)
 	h.p.TunnelSetupFailed(7, "s1", "initial_context_setup", ErrNoTEID)
 	wantSample(t, h.p, "ellamocn_user_plane_packets_total",
 		map[string]string{"operator": "op", "radio": "eNB:1", "direction": "uplink"}, 5)
@@ -169,6 +170,7 @@ func TestMetricsForgetARemovedOperator(t *testing.T) {
 	}
 
 	wantNoOperator(t, h.p, "op")
+	h.symmetric(t)
 
 	if len(h.p.stats.retired) != 0 || len(h.p.stats.paths) != 0 || len(h.p.stats.operators) != 0 ||
 		len(h.p.paths) != 0 || len(h.p.peers) != 0 {
@@ -217,6 +219,8 @@ func TestMetricsForgetARadioThatLeft(t *testing.T) {
 	if len(h.p.paths) != 1 || len(h.p.freePaths) != 1 || h.p.freePaths[0] != first.path {
 		t.Fatalf("paths %v, free %v, want the radio's path freed", h.p.paths, h.p.freePaths)
 	}
+
+	h.symmetric(t)
 
 	h.dp.pathStats[first.path] = Counters{Packets: 9, Bytes: 90}
 
@@ -270,4 +274,6 @@ func TestAdoptedTunnelsCountUnderTheNewRadio(t *testing.T) {
 	if len(h.p.paths) != 1 || len(h.p.freePaths) != 1 || h.p.freePaths[0] != old.path {
 		t.Fatalf("paths %v, free %v, want the source radio's path freed", h.p.paths, h.p.freePaths)
 	}
+
+	h.symmetric(t)
 }

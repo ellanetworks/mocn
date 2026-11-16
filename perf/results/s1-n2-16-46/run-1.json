@@ -1,0 +1,1795 @@
+{
+  "started": "2026-11-15T18:14:14.117166456Z",
+  "finished": "2026-11-15T18:17:14.738164219Z",
+  "config": {
+    "gen": "http://10.60.0.10:7000",
+    "sink": "http://10.61.0.30:7000",
+    "mocn": "http://10.60.0.20:7000",
+    "ran": "http://10.60.0.10:7001",
+    "core": "http://10.61.0.30:7002",
+    "metrics": "http://10.60.0.20:5030/api/v1/metrics",
+    "proto": "s1",
+    "direct_sink": "10.60.0.30",
+    "sizes": [
+      46
+    ],
+    "directions": [
+      "uplink",
+      "downlink"
+    ],
+    "paths": [
+      "aggregated"
+    ],
+    "trial": 5000000000,
+    "confirm": 10000000000,
+    "precision": 0.02,
+    "gen_cpus": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "sink_cpus": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "batch": 32,
+    "modes": [
+      "native",
+      "generic"
+    ],
+    "ping_count": 0,
+    "ping_interval": 10000000,
+    "ping_size": 84
+  },
+  "sessions": 1024,
+  "radios": 64,
+  "gateways": 16,
+  "results": [
+    {
+      "path": "aggregated",
+      "direction": "uplink",
+      "size": 46,
+      "frame_len": 96,
+      "pps": 1953092.237448322,
+      "inner_gbps": 0.7187379433809824,
+      "wire_gbps": 1.4999748383603113,
+      "limit": "loss",
+      "confirmed": {
+        "rate": 1953062.0123390052,
+        "sent": 19531008,
+        "received": 19531008,
+        "elapsed_s": 10.000043841,
+        "behind": false,
+        "rx_mode": "generic",
+        "lossless": true,
+        "achieved": true,
+        "mocn": {
+          "avg_pct": 17.263387297633873,
+          "max_pct": 76.46326276463262,
+          "softirq_pct": 17.247820672478205,
+          "cores": 2.7621419676214196
+        },
+        "sender": {
+          "avg_pct": 76.3794466403162,
+          "max_pct": 100,
+          "softirq_pct": 1.5889328063241108,
+          "cores": 12.220711462450593
+        },
+        "receiver": {
+          "avg_pct": 0.2526075619295958,
+          "max_pct": 1.2269938650306749,
+          "softirq_pct": 0.2526075619295958,
+          "cores": 0.04041720990873533
+        },
+        "metrics": {
+          "ellamocn_user_plane_dropped_packets_total": 0,
+          "ellamocn_user_plane_packets_total": 19531008,
+          "ellamocn_user_plane_slow_path_packets_total": 0,
+          "ellamocn_user_plane_slow_path_relayed_total": 0
+        },
+        "mocn_net": {
+          "ens4": {
+            "rx_packets": 0,
+            "rx_dropped": 0,
+            "tx_packets": 0,
+            "tx_dropped": 0
+          },
+          "ens5": {
+            "rx_packets": 0,
+            "rx_dropped": 0,
+            "tx_packets": 0,
+            "tx_dropped": 0
+          }
+        },
+        "sender_interface": "ens4",
+        "counter_interface": "ens4",
+        "when": "2026-11-15T18:15:38.126248613Z",
+        "mocn_per_cpu": [
+          0,
+          0,
+          0,
+          0,
+          53.41614906832298,
+          76.46326276463262,
+          60.39850560398505,
+          37.53117206982544,
+          11.45703611457036,
+          16.68742216687422,
+          12.468827930174564,
+          7.721046077210461,
+          0,
+          0,
+          0,
+          0
+        ],
+        "mocn_softnet": {
+          "processed": 19531065,
+          "dropped": 0,
+          "squeezed": 0
+        }
+      },
+      "trials": [
+        {
+          "rate": 0,
+          "sent": 34475584,
+          "received": 17481916,
+          "elapsed_s": 5.000045168,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 0.02072538860103627,
+            "max_pct": 0.33112582781456956,
+            "softirq_pct": 0,
+            "cores": 0.003316062176165803
+          },
+          "sender": {
+            "avg_pct": 0,
+            "max_pct": 0,
+            "softirq_pct": 0,
+            "cores": 0
+          },
+          "receiver": {
+            "avg_pct": 0.020729684908789386,
+            "max_pct": 0.33112582781456956,
+            "softirq_pct": 0,
+            "cores": 0.003316749585406302
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 17485238,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:14:14.122203593Z",
+          "mocn_per_cpu": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0.33112582781456956,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 17485382,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 3426424.5830508866,
+          "sent": 17132544,
+          "received": 15358341,
+          "elapsed_s": 5.000053319,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 26.557648519975157,
+            "max_pct": 100,
+            "softirq_pct": 26.536948871869175,
+            "cores": 4.249223763196025
+          },
+          "sender": {
+            "avg_pct": 77.1531607976241,
+            "max_pct": 100,
+            "softirq_pct": 2.8425965210012727,
+            "cores": 12.344505727619856
+          },
+          "receiver": {
+            "avg_pct": 0.4438526409232135,
+            "max_pct": 2.727272727272727,
+            "softirq_pct": 0.4438526409232135,
+            "cores": 0.07101642254771416
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 15358341,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:14:24.681458646Z",
+          "mocn_per_cpu": [
+            0.33112582781456956,
+            0,
+            0,
+            0,
+            92.05298013245033,
+            100,
+            100,
+            63.24503311258278,
+            17.275747508305646,
+            19.867549668874172,
+            19.867549668874172,
+            12.29235880398671,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 15358421,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1713212.2915254433,
+          "sent": 8566656,
+          "received": 8566656,
+          "elapsed_s": 5.000175718,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 15.942028985507244,
+            "max_pct": 66.22516556291392,
+            "softirq_pct": 14.865424430641822,
+            "cores": 2.550724637681159
+          },
+          "sender": {
+            "avg_pct": 76.05958875367185,
+            "max_pct": 100,
+            "softirq_pct": 1.4477549307595468,
+            "cores": 12.169534200587496
+          },
+          "receiver": {
+            "avg_pct": 0.19425857975393912,
+            "max_pct": 1.1952191235059761,
+            "softirq_pct": 0.19425857975393912,
+            "cores": 0.03108137276063026
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 8566656,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:14:32.287173153Z",
+          "mocn_per_cpu": [
+            0.6644518272425249,
+            0.6622516556291391,
+            0.6600660066006601,
+            0.9966777408637874,
+            46.84385382059801,
+            66.22516556291392,
+            52.823920265780735,
+            33.11258278145696,
+            9.634551495016613,
+            13.2013201320132,
+            11.221122112211221,
+            14.90066225165563,
+            0.9933774834437087,
+            0.6622516556291391,
+            1.6556291390728477,
+            0.9933774834437087
+          ],
+          "mocn_softnet": {
+            "processed": 8566884,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 2569818.437288165,
+          "sent": 12849792,
+          "received": 12786747,
+          "elapsed_s": 5.000164833,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 22.505175983436853,
+            "max_pct": 100,
+            "softirq_pct": 22.463768115942027,
+            "cores": 3.6008281573498966
+          },
+          "sender": {
+            "avg_pct": 77.11882229232387,
+            "max_pct": 100,
+            "softirq_pct": 2.7339642481598316,
+            "cores": 12.33901156677182
+          },
+          "receiver": {
+            "avg_pct": 0.3956913607386239,
+            "max_pct": 2.127659574468085,
+            "softirq_pct": 0.3956913607386239,
+            "cores": 0.06331061771817982
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 12786747,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:14:39.896383656Z",
+          "mocn_per_cpu": [
+            0,
+            0,
+            0.33112582781456956,
+            0,
+            71.52317880794702,
+            100,
+            79.47019867549669,
+            48.34437086092716,
+            14.285714285714285,
+            19.5364238410596,
+            16.225165562913908,
+            10.264900662251655,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 12786790,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 2141515.364406804,
+          "sent": 10708224,
+          "received": 10708015,
+          "elapsed_s": 5.000176388,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 18.833711106532043,
+            "max_pct": 84.15841584158416,
+            "softirq_pct": 18.79249948485473,
+            "cores": 3.0133937770451267
+          },
+          "sender": {
+            "avg_pct": 76.5184721352536,
+            "max_pct": 100,
+            "softirq_pct": 2.128991859737007,
+            "cores": 12.242955541640576
+          },
+          "receiver": {
+            "avg_pct": 0.26098303610265333,
+            "max_pct": 1.6666666666666667,
+            "softirq_pct": 0.26098303610265333,
+            "cores": 0.041757285776424534
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 10708123,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:14:47.500727959Z",
+          "mocn_per_cpu": [
+            0,
+            0,
+            0,
+            0,
+            57.56578947368421,
+            84.15841584158416,
+            67.43421052631578,
+            39.273927392739274,
+            12.211221122112212,
+            18.543046357615893,
+            13.531353135313532,
+            8.25082508250825,
+            0.33003300330033003,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 10708205,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1927363.8279661238,
+          "sent": 9637248,
+          "received": 9637248,
+          "elapsed_s": 5.000053622,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 17.253521126760564,
+            "max_pct": 77.15231788079471,
+            "softirq_pct": 17.23280861640431,
+            "cores": 2.76056338028169
+          },
+          "sender": {
+            "avg_pct": 76.36097152428812,
+            "max_pct": 100,
+            "softirq_pct": 1.968174204355109,
+            "cores": 12.217755443886098
+          },
+          "receiver": {
+            "avg_pct": 0.23824994585228504,
+            "max_pct": 1.214574898785425,
+            "softirq_pct": 0.23824994585228504,
+            "cores": 0.03811999133636561
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 9637248,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:14:55.102891012Z",
+          "mocn_per_cpu": [
+            0,
+            0,
+            0.33112582781456956,
+            0,
+            53.820598006644516,
+            77.15231788079471,
+            60.59602649006622,
+            35.76158940397351,
+            12.29235880398671,
+            15.894039735099339,
+            12.91390728476821,
+            7.308970099667775,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 9637284,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 2034439.596186464,
+          "sent": 10172576,
+          "received": 10172576,
+          "elapsed_s": 5.000182513,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 17.995444191343964,
+            "max_pct": 80.73089700996677,
+            "softirq_pct": 17.954027749016362,
+            "cores": 2.8792710706150344
+          },
+          "sender": {
+            "avg_pct": 76.3979057591623,
+            "max_pct": 100,
+            "softirq_pct": 2.0523560209424083,
+            "cores": 12.223664921465968
+          },
+          "receiver": {
+            "avg_pct": 0.2821180555555555,
+            "max_pct": 1.646090534979424,
+            "softirq_pct": 0.2821180555555555,
+            "cores": 0.04513888888888888
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 10172576,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:15:02.70342212Z",
+          "mocn_per_cpu": [
+            0.33003300330033003,
+            0,
+            0.33112582781456956,
+            0,
+            54.63576158940398,
+            80.73089700996677,
+            63.78737541528239,
+            37.74834437086093,
+            12.251655629139073,
+            17.218543046357617,
+            12.624584717607974,
+            8.609271523178808,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 10172603,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 2087977.4802966341,
+          "sent": 10440288,
+          "received": 10435899,
+          "elapsed_s": 5.000173332,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 18.77720207253886,
+            "max_pct": 82.05980066445183,
+            "softirq_pct": 18.756476683937823,
+            "cores": 3.0043523316062175
+          },
+          "sender": {
+            "avg_pct": 76.19348054679284,
+            "max_pct": 100,
+            "softirq_pct": 1.7245005257623556,
+            "cores": 12.190956887486855
+          },
+          "receiver": {
+            "avg_pct": 0.3049444565454149,
+            "max_pct": 1.6736401673640167,
+            "softirq_pct": 0.3049444565454149,
+            "cores": 0.04879111304726638
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 10440288,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:15:10.308809722Z",
+          "mocn_per_cpu": [
+            0,
+            0,
+            0,
+            0,
+            57.94701986754966,
+            82.05980066445183,
+            65.23178807947019,
+            40.397350993377486,
+            13.245033112582782,
+            16.887417218543046,
+            14.90066225165563,
+            9.666666666666666,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 10440329,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 2061208.538241549,
+          "sent": 10306560,
+          "received": 10306337,
+          "elapsed_s": 5.000103045,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 18.381742738589214,
+            "max_pct": 81.72757475083057,
+            "softirq_pct": 18.36099585062241,
+            "cores": 2.941078838174274
+          },
+          "sender": {
+            "avg_pct": 76.29083245521602,
+            "max_pct": 100,
+            "softirq_pct": 1.6227608008429928,
+            "cores": 12.206533192834563
+          },
+          "receiver": {
+            "avg_pct": 0.28303940779446984,
+            "max_pct": 1.6597510373443984,
+            "softirq_pct": 0.28303940779446984,
+            "cores": 0.045286305247115174
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 10306337,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:15:17.917009578Z",
+          "mocn_per_cpu": [
+            0,
+            0,
+            0,
+            0,
+            56.622516556291394,
+            81.72757475083057,
+            64.78405315614619,
+            39.0728476821192,
+            11.589403973509933,
+            17.60797342192691,
+            14.285714285714285,
+            8.305647840531561,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 10306412,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 2034439.596186464,
+          "sent": 20345088,
+          "received": 20344238,
+          "elapsed_s": 10.000171518,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 18.339181286549707,
+            "max_pct": 81.6708229426434,
+            "softirq_pct": 18.31578947368421,
+            "cores": 2.9342690058479532
+          },
+          "sender": {
+            "avg_pct": 76.39746634996041,
+            "max_pct": 100,
+            "softirq_pct": 1.6468725257323833,
+            "cores": 12.223594615993665
+          },
+          "receiver": {
+            "avg_pct": 0.28611133818360174,
+            "max_pct": 1.5384615384615385,
+            "softirq_pct": 0.26158750919643586,
+            "cores": 0.04577781410937628
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 20344238,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:15:25.519198381Z",
+          "mocn_per_cpu": [
+            0.24906600249066002,
+            0,
+            0,
+            0,
+            56.98254364089775,
+            81.6708229426434,
+            62.421972534332085,
+            40.324594257178525,
+            11.471321695760599,
+            18.453865336658353,
+            13.358302122347066,
+            8.354114713216958,
+            0.12484394506866417,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 20344397,
+            "dropped": 0,
+            "squeezed": 1
+          }
+        },
+        {
+          "rate": 1953062.0123390052,
+          "sent": 19531008,
+          "received": 19531008,
+          "elapsed_s": 10.000043841,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 17.263387297633873,
+            "max_pct": 76.46326276463262,
+            "softirq_pct": 17.247820672478205,
+            "cores": 2.7621419676214196
+          },
+          "sender": {
+            "avg_pct": 76.3794466403162,
+            "max_pct": 100,
+            "softirq_pct": 1.5889328063241108,
+            "cores": 12.220711462450593
+          },
+          "receiver": {
+            "avg_pct": 0.2526075619295958,
+            "max_pct": 1.2269938650306749,
+            "softirq_pct": 0.2526075619295958,
+            "cores": 0.04041720990873533
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 19531008,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:15:38.126248613Z",
+          "mocn_per_cpu": [
+            0,
+            0,
+            0,
+            0,
+            53.41614906832298,
+            76.46326276463262,
+            60.39850560398505,
+            37.53117206982544,
+            11.45703611457036,
+            16.68742216687422,
+            12.468827930174564,
+            7.721046077210461,
+            0,
+            0,
+            0,
+            0
+          ],
+          "mocn_softnet": {
+            "processed": 19531065,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        }
+      ]
+    },
+    {
+      "path": "aggregated",
+      "direction": "downlink",
+      "size": 46,
+      "frame_len": 96,
+      "pps": 1640887.031500374,
+      "inner_gbps": 0.6038464275921376,
+      "wire_gbps": 1.2602012401922873,
+      "limit": "loss",
+      "confirmed": {
+        "rate": 1640854.6310664418,
+        "sent": 16409088,
+        "received": 16409088,
+        "elapsed_s": 10.000132663,
+        "behind": false,
+        "rx_mode": "generic",
+        "lossless": true,
+        "achieved": true,
+        "mocn": {
+          "avg_pct": 14.336889650338758,
+          "max_pct": 59.153175591531756,
+          "softirq_pct": 14.31352698387976,
+          "cores": 2.2939023440542012
+        },
+        "sender": {
+          "avg_pct": 76.02297765187284,
+          "max_pct": 100,
+          "softirq_pct": 1.3456090651558072,
+          "cores": 12.163676424299654
+        },
+        "receiver": {
+          "avg_pct": 0.18643106103590823,
+          "max_pct": 1.0416666666666665,
+          "softirq_pct": 0.18643106103590823,
+          "cores": 0.029828969765745318
+        },
+        "metrics": {
+          "ellamocn_user_plane_dropped_packets_total": 0,
+          "ellamocn_user_plane_packets_total": 16409088,
+          "ellamocn_user_plane_slow_path_packets_total": 0,
+          "ellamocn_user_plane_slow_path_relayed_total": 0
+        },
+        "mocn_net": {
+          "ens4": {
+            "rx_packets": 0,
+            "rx_dropped": 0,
+            "tx_packets": 0,
+            "tx_dropped": 0
+          },
+          "ens5": {
+            "rx_packets": 0,
+            "rx_dropped": 0,
+            "tx_packets": 0,
+            "tx_dropped": 0
+          }
+        },
+        "sender_interface": "ens4",
+        "counter_interface": "ens4",
+        "when": "2026-11-15T18:17:02.13191099Z",
+        "mocn_per_cpu": [
+          12.718204488778055,
+          13.341645885286782,
+          7.605985037406484,
+          7.73067331670823,
+          0,
+          0.12437810945273632,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.12468827930174563,
+          58.35411471321695,
+          59.153175591531756,
+          35.66084788029925,
+          34.66334164588529
+        ],
+        "mocn_softnet": {
+          "processed": 16409213,
+          "dropped": 0,
+          "squeezed": 0
+        }
+      },
+      "trials": [
+        {
+          "rate": 0,
+          "sent": 38815840,
+          "received": 17567045,
+          "elapsed_s": 5.000052308,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 17.34784936641085,
+            "max_pct": 56.99999999999999,
+            "softirq_pct": 17.338925575584508,
+            "cores": 2.7756558986257356
+          },
+          "sender": {
+            "avg_pct": 0.02073398299813394,
+            "max_pct": 0.33112582781456956,
+            "softirq_pct": 0,
+            "cores": 0.0033174372797014308
+          },
+          "receiver": {
+            "avg_pct": 0,
+            "max_pct": 0,
+            "softirq_pct": 0,
+            "cores": 0
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 17575393,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:15:50.731160062Z",
+          "mocn_per_cpu": [
+            11.015736766809727,
+            12.428571428571429,
+            13.714285714285715,
+            12.142857142857142,
+            0.14265335235378032,
+            0.14245014245014245,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            56.99999999999999,
+            56.99999999999999,
+            56.98005698005698,
+            56.99999999999999
+          ],
+          "mocn_softnet": {
+            "processed": 17575510,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 3443104.7996148285,
+          "sent": 17215872,
+          "received": 15267260,
+          "elapsed_s": 5.000049808,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 27.003520397597846,
+            "max_pct": 100,
+            "softirq_pct": 26.94139573410644,
+            "cores": 4.3205632636156555
+          },
+          "sender": {
+            "avg_pct": 77.11792252022137,
+            "max_pct": 100,
+            "softirq_pct": 2.7032779906343127,
+            "cores": 12.33886760323542
+          },
+          "receiver": {
+            "avg_pct": 1.2197826569084054,
+            "max_pct": 6.787330316742081,
+            "softirq_pct": 0.9092925260589931,
+            "cores": 0.19516522510534487
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 15269904,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:16:01.285093518Z",
+          "mocn_per_cpu": [
+            21.92691029900332,
+            21.85430463576159,
+            16.831683168316832,
+            17.880794701986755,
+            0,
+            0,
+            0,
+            0,
+            0.6622516556291391,
+            0,
+            0,
+            0,
+            100,
+            100,
+            76.49006622516556,
+            76.82119205298014
+          ],
+          "mocn_softnet": {
+            "processed": 15269960,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1721552.3998074143,
+          "sent": 8608128,
+          "received": 8604963,
+          "elapsed_s": 5.000030998,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 14.916096954630206,
+            "max_pct": 63,
+            "softirq_pct": 14.874663351978453,
+            "cores": 2.386575512740833
+          },
+          "sender": {
+            "avg_pct": 75.96899224806202,
+            "max_pct": 100,
+            "softirq_pct": 1.2151686570291222,
+            "cores": 12.155038759689923
+          },
+          "receiver": {
+            "avg_pct": 0.259123299503347,
+            "max_pct": 1.2,
+            "softirq_pct": 0.23752969121140144,
+            "cores": 0.04145972792053552
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 8604963,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:16:08.891221722Z",
+          "mocn_per_cpu": [
+            11.589403973509933,
+            11.960132890365449,
+            6.95364238410596,
+            7.6158940397351,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0.33112582781456956,
+            0.33003300330033003,
+            63,
+            62.251655629139066,
+            38.41059602649007,
+            36.423841059602644
+          ],
+          "mocn_softnet": {
+            "processed": 8605011,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 860776.1999037071,
+          "sent": 4304256,
+          "received": 4304256,
+          "elapsed_s": 5.000044995,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 7.40356698465367,
+            "max_pct": 31.22923588039867,
+            "softirq_pct": 7.382828701783492,
+            "cores": 1.1845707175445872
+          },
+          "sender": {
+            "avg_pct": 75.49019607843137,
+            "max_pct": 100,
+            "softirq_pct": 0.7509386733416771,
+            "cores": 12.07843137254902
+          },
+          "receiver": {
+            "avg_pct": 0.1271186440677966,
+            "max_pct": 1.090909090909091,
+            "softirq_pct": 0.0635593220338983,
+            "cores": 0.020338983050847456
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 4304256,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:16:16.49704652Z",
+          "mocn_per_cpu": [
+            7.6158940397351,
+            6.64451827242525,
+            3.9735099337748347,
+            3.6544850498338874,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            31.22923588039867,
+            29.900332225913623,
+            17.275747508305646,
+            18.211920529801322
+          ],
+          "mocn_softnet": {
+            "processed": 4304327,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1291164.2998555608,
+          "sent": 6456192,
+          "received": 6456192,
+          "elapsed_s": 5.000025828,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 11.150259067357512,
+            "max_pct": 47.019867549668874,
+            "softirq_pct": 11.10880829015544,
+            "cores": 1.7840414507772018
+          },
+          "sender": {
+            "avg_pct": 75.64907872696818,
+            "max_pct": 100,
+            "softirq_pct": 1.0050251256281406,
+            "cores": 12.10385259631491
+          },
+          "receiver": {
+            "avg_pct": 0.1285071749839366,
+            "max_pct": 0.7604562737642585,
+            "softirq_pct": 0.1285071749839366,
+            "cores": 0.020561147997429856
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 6456192,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:16:24.101706501Z",
+          "mocn_per_cpu": [
+            10.596026490066226,
+            10.299003322259136,
+            5.647840531561462,
+            5.3156146179401995,
+            0,
+            0,
+            0,
+            0.33112582781456956,
+            0,
+            0,
+            0,
+            0.33112582781456956,
+            45.6953642384106,
+            47.019867549668874,
+            26.158940397350992,
+            26.910299003322258
+          ],
+          "mocn_softnet": {
+            "processed": 6456355,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1506358.3498314875,
+          "sent": 7532160,
+          "received": 7532160,
+          "elapsed_s": 5.000046559,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 13.175885643256683,
+            "max_pct": 55.29801324503312,
+            "softirq_pct": 13.155168841930806,
+            "cores": 2.108141702921069
+          },
+          "sender": {
+            "avg_pct": 75.9623430962343,
+            "max_pct": 100,
+            "softirq_pct": 1.297071129707113,
+            "cores": 12.15397489539749
+          },
+          "receiver": {
+            "avg_pct": 0.1505700150570015,
+            "max_pct": 0.78125,
+            "softirq_pct": 0.08604000860400086,
+            "cores": 0.024091202409120237
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 7532160,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:16:31.707990242Z",
+          "mocn_per_cpu": [
+            11.258278145695364,
+            12.582781456953644,
+            5.629139072847682,
+            7.28476821192053,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0.33003300330033003,
+            0,
+            0,
+            55.29801324503312,
+            55.14950166112956,
+            31.788079470198678,
+            31.561461794019934
+          ],
+          "mocn_softnet": {
+            "processed": 7532220,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1613955.374819451,
+          "sent": 8070144,
+          "received": 8070144,
+          "elapsed_s": 5.000027731,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 13.605301304617933,
+            "max_pct": 58.139534883720934,
+            "softirq_pct": 13.56388486229033,
+            "cores": 2.1768482087388694
+          },
+          "sender": {
+            "avg_pct": 75.85340314136126,
+            "max_pct": 100,
+            "softirq_pct": 1.3193717277486912,
+            "cores": 12.1365445026178
+          },
+          "receiver": {
+            "avg_pct": 0.17245095925846088,
+            "max_pct": 0.7936507936507936,
+            "softirq_pct": 0.15089458935115327,
+            "cores": 0.02759215348135374
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 8070144,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:16:39.316993516Z",
+          "mocn_per_cpu": [
+            11.258278145695364,
+            12.251655629139073,
+            5.980066445182724,
+            6.291390728476822,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0.33003300330033003,
+            58.08580858085809,
+            58.139534883720934,
+            33.11258278145696,
+            32.11920529801324
+          ],
+          "mocn_softnet": {
+            "processed": 8070210,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1667753.8873134325,
+          "sent": 8339328,
+          "received": 8339151,
+          "elapsed_s": 5.000146679,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": false,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 14.472049689440993,
+            "max_pct": 60.264900662251655,
+            "softirq_pct": 14.451345755693582,
+            "cores": 2.315527950310559
+          },
+          "sender": {
+            "avg_pct": 76.03599832565926,
+            "max_pct": 100,
+            "softirq_pct": 1.3394725826705736,
+            "cores": 12.165759732105482
+          },
+          "receiver": {
+            "avg_pct": 0.21565667457407808,
+            "max_pct": 1.1952191235059761,
+            "softirq_pct": 0.21565667457407808,
+            "cores": 0.03450506793185249
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 8339151,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:16:46.924883279Z",
+          "mocn_per_cpu": [
+            12.541254125412541,
+            12.582781456953644,
+            7.28476821192053,
+            7.308970099667775,
+            0.33112582781456956,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            59.800664451827245,
+            60.264900662251655,
+            34.98349834983499,
+            36.544850498338874
+          ],
+          "mocn_softnet": {
+            "processed": 8339224,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1640854.6310664418,
+          "sent": 8204928,
+          "received": 8204928,
+          "elapsed_s": 5.000210239,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 14.330089045351006,
+            "max_pct": 59.60264900662252,
+            "softirq_pct": 14.309380824187201,
+            "cores": 2.292814247256161
+          },
+          "sender": {
+            "avg_pct": 76.12065354000838,
+            "max_pct": 100,
+            "softirq_pct": 1.5710096355257646,
+            "cores": 12.17930456640134
+          },
+          "receiver": {
+            "avg_pct": 0.7102884201463625,
+            "max_pct": 3.11284046692607,
+            "softirq_pct": 0.4304778303917348,
+            "cores": 0.113646147223418
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 8204928,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:16:54.529315083Z",
+          "mocn_per_cpu": [
+            13.953488372093023,
+            11.920529801324504,
+            7.6158940397351,
+            7.28476821192053,
+            0,
+            0,
+            0.33112582781456956,
+            0,
+            0,
+            0,
+            0,
+            0,
+            59.60264900662252,
+            58.609271523178805,
+            35.973597359735976,
+            33.77483443708609
+          ],
+          "mocn_softnet": {
+            "processed": 8205020,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        },
+        {
+          "rate": 1640854.6310664418,
+          "sent": 16409088,
+          "received": 16409088,
+          "elapsed_s": 10.000132663,
+          "behind": false,
+          "rx_mode": "generic",
+          "lossless": true,
+          "achieved": true,
+          "mocn": {
+            "avg_pct": 14.336889650338758,
+            "max_pct": 59.153175591531756,
+            "softirq_pct": 14.31352698387976,
+            "cores": 2.2939023440542012
+          },
+          "sender": {
+            "avg_pct": 76.02297765187284,
+            "max_pct": 100,
+            "softirq_pct": 1.3456090651558072,
+            "cores": 12.163676424299654
+          },
+          "receiver": {
+            "avg_pct": 0.18643106103590823,
+            "max_pct": 1.0416666666666665,
+            "softirq_pct": 0.18643106103590823,
+            "cores": 0.029828969765745318
+          },
+          "metrics": {
+            "ellamocn_user_plane_dropped_packets_total": 0,
+            "ellamocn_user_plane_packets_total": 16409088,
+            "ellamocn_user_plane_slow_path_packets_total": 0,
+            "ellamocn_user_plane_slow_path_relayed_total": 0
+          },
+          "mocn_net": {
+            "ens4": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            },
+            "ens5": {
+              "rx_packets": 0,
+              "rx_dropped": 0,
+              "tx_packets": 0,
+              "tx_dropped": 0
+            }
+          },
+          "sender_interface": "ens4",
+          "counter_interface": "ens4",
+          "when": "2026-11-15T18:17:02.13191099Z",
+          "mocn_per_cpu": [
+            12.718204488778055,
+            13.341645885286782,
+            7.605985037406484,
+            7.73067331670823,
+            0,
+            0.12437810945273632,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0.12468827930174563,
+            58.35411471321695,
+            59.153175591531756,
+            35.66084788029925,
+            34.66334164588529
+          ],
+          "mocn_softnet": {
+            "processed": 16409213,
+            "dropped": 0,
+            "squeezed": 0
+          }
+        }
+      ]
+    }
+  ],
+  "pings": null
+}

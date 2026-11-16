@@ -94,7 +94,7 @@ With [user-plane aggregation](../explanation/user_plane_aggregation_with_ebpf.md
 |---|---|---|
 | `fast` | Set | `wrong_interface`: received on an interface of another operator. `wrong_egress_interface`: routed out of another interface than the tunnel's. `fib_blackhole`, `fib_unreachable`, `fib_prohibit`: route type toward the peer. `rewrite_failed`: the packet could not be rewritten. |
 | `slow` | Set | `wrong_interface`: received on an interface of another operator. `malformed`: invalid extension headers. `unsupported_extension_header`: an extension header that must be comprehended. `no_egress_interface`: the tunnel has no egress interface. `wrong_egress_interface`: the route toward the peer leaves by another interface than the tunnel's. `send_failed`: the kernel refused the packet. |
-| `slow` | Empty | `no_tunnel`: unknown TEID. `quarantined`: TEID of a tunnel closed less than 10 s ago. `malformed`: invalid GTP-U header. `wrong_interface`: Echo Request on an interface Ella MOCN does not relay. `unknown_message`: unsupported message type. `supported_extension_headers_notification`: received from a peer. |
+| `slow` | Empty | `no_tunnel`: unknown TEID. `quarantined`: TEID of a tunnel closed less than 10 s ago. `malformed`: invalid GTP-U header. `wrong_interface`: Echo Request on an interface Ella MOCN does not relay. `unknown_message`: unsupported message type. `supported_extension_headers_notification`: received from a peer. `receive_buffer_full`: dropped by the kernel because the receive buffer of the slow path's socket was full. |
 
 `ellamocn_user_plane_slow_path_packets_total` reasons:
 
@@ -116,7 +116,7 @@ With [user-plane aggregation](../explanation/user_plane_aggregation_with_ebpf.md
 | `origin` | `result` |
 |---|---|
 | `received`: from a peer | `translated`: sent to the other side of the matching tunnels. `no_tunnel`: no matching tunnel. `no_return_address`: no address known for the other side. `malformed`. |
-| `generated`: by Ella MOCN, for a G-PDU to an unknown TEID | `sent`. `rate_limited`: over 100 per second. |
+| `generated`: by Ella MOCN, for a G-PDU to an unknown TEID other than 0 | `sent`. |
 
 ## Traces
 

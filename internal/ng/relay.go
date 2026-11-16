@@ -58,7 +58,7 @@ func newRelay(g *Gateway) *relay {
 }
 
 func sendAMF(ctx context.Context, a *amfAssoc, msg []byte, stream uint16) error {
-	return a.Send(ctx, msg, stream)
+	return a.SendWait(ctx, msg, stream)
 }
 
 // TS 38.300 clause 4.10.2.3

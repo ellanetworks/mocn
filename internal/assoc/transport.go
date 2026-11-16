@@ -111,14 +111,20 @@ func spanKind(info SpanInfo, receive bool) trace.SpanKind {
 func (t *Transport) Send(ctx context.Context, side string, conn *sctp.SCTPConn, operator string, msg []byte,
 	stream uint16,
 ) error {
+	return t.send(ctx, side, conn, operator, msg, stream, false)
+}
+
+func (t *Transport) send(ctx context.Context, side string, conn *sctp.SCTPConn, operator string, msg []byte,
+	stream uint16, wait bool,
+) error {
 	if t.tracer == nil {
-		return t.write(conn, msg, stream)
+		return t.write(ctx, conn, msg, stream, wait)
 	}
 
 	_, span := t.start(ctx, false, side, conn, t.inspect(msg), len(msg), operator)
 	defer span.End()
 
-	err := t.write(conn, msg, stream)
+	err := t.write(ctx, conn, msg, stream, wait)
 	if err != nil {
 		errType := errTypeSendFail
 		if errors.Is(err, net.ErrClosed) {
@@ -131,12 +137,19 @@ func (t *Transport) Send(ctx context.Context, side string, conn *sctp.SCTPConn, 
 	return err
 }
 
-func (t *Transport) write(conn *sctp.SCTPConn, msg []byte, stream uint16) error {
+func (t *Transport) write(ctx context.Context, conn *sctp.SCTPConn, msg []byte, stream uint16, wait bool) error {
 	if conn == nil {
 		return net.ErrClosed
 	}
 
-	_, err := conn.WriteMsg(msg, &sctp.SndRcvInfo{Stream: stream, PPID: sctp.PPIDWireOrder(t.ppid)})
+	info := &sctp.SndRcvInfo{Stream: stream, PPID: sctp.PPIDWireOrder(t.ppid)}
+
+	if wait {
+		_, err := conn.WriteMsgWait(ctx, msg, info)
+		return err
+	}
+
+	_, err := conn.WriteMsg(msg, info)
 
 	return err
 }

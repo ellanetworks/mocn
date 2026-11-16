@@ -2,6 +2,7 @@ package s1
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/ellanetworks/core/s1ap"
@@ -192,5 +193,20 @@ func TestPagingDRXAndTimeToWait(t *testing.T) {
 
 	if len(timeToWait) != 6 || timeToWait[s1ap.TimeToWaitV60s].Seconds() != 60 {
 		t.Fatalf("Time to Wait = %v", timeToWait)
+	}
+}
+
+func TestTAIsAreTheServedTAIs(t *testing.T) {
+	t.Parallel()
+
+	s := ranSetup{tas: []TA{{TAC: 1, BroadcastPLMNs: []db.PLMN{p1, p2}}, {TAC: 7, BroadcastPLMNs: []db.PLMN{p2}}}}
+
+	for _, p := range []db.PLMN{p1, p2, p3} {
+		for _, tac := range []uint32{0, 1, 7, 8} {
+			tai := assoc.TAI{PLMN: p, TAC: tac}
+			if got, want := slices.Contains(s.TAIs(), tai), s.Serves(tai); got != want {
+				t.Errorf("TAI %v listed = %v, served = %v", tai, got, want)
+			}
+		}
 	}
 }

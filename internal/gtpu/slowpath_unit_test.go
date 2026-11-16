@@ -3,9 +3,12 @@ package gtpu
 import (
 	"bytes"
 	"encoding/binary"
+	"net"
 	"net/netip"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func (h *harness) uplink(t *testing.T) Tunnel {
@@ -130,27 +133,37 @@ func TestSlowPathErrorIndicationForUnknownTunnels(t *testing.T) {
 		t.Fatalf("End Marker or TEID 0 answered with %+v", h.out.udps)
 	}
 
-	h.clock.t = h.clock.t.Add(time.Second)
-
-	for range errorIndicationsPS + 5 {
-		h.p.sp.handle(fromRadio(plainGPDU(0x5555)))
+	for i := range 1000 {
+		h.p.sp.handle(fromRadio(plainGPDU(0x5555 + uint32(i))))
 	}
 
-	if len(h.out.udps) != errorIndicationsPS {
-		t.Fatalf("%d Error Indications in one second, want %d", len(h.out.udps), errorIndicationsPS)
+	if len(h.out.udps) != 1000 {
+		t.Fatalf("%d Error Indications for 1000 G-PDUs to unknown TEIDs", len(h.out.udps))
 	}
 
-	h.clock.t = h.clock.t.Add(time.Second)
-	h.p.sp.handle(fromRadio(plainGPDU(0x5555)))
-
-	if len(h.out.udps) != errorIndicationsPS+1 {
-		t.Fatal("rate limit not refilled after a second")
+	for i, u := range h.out.udps {
+		if teid, peer, err := parseErrorIndication(u.b, mustHeader(t, u.b)); err != nil || teid != 0x5555+uint32(i) ||
+			peer != ranGW || u.to != netip.AddrPortFrom(radio, Port) {
+			t.Fatalf("Error Indication %d: %x to %v", i, u.b, u.to)
+		}
 	}
 
 	wantSample(t, h.p, "ellamocn_user_plane_error_indications_total",
-		map[string]string{"origin": "generated", "result": "sent"}, errorIndicationsPS+2)
-	wantSample(t, h.p, "ellamocn_user_plane_error_indications_total",
-		map[string]string{"origin": "generated", "result": "rate_limited"}, 5)
+		map[string]string{"origin": "generated", "result": "sent"}, 1001)
+}
+
+func TestSlowPathCountsSocketDrops(t *testing.T) {
+	h := newHarness(t)
+
+	wantSample(t, h.p, "ellamocn_user_plane_dropped_packets_total",
+		map[string]string{"operator": "", "path": "slow", "reason": "receive_buffer_full"}, 0)
+
+	in := fromRadio(echoRequest(1))
+	in.dropped = 7
+	h.p.sp.handle(in)
+
+	wantSample(t, h.p, "ellamocn_user_plane_dropped_packets_total",
+		map[string]string{"operator": "", "path": "slow", "reason": "receive_buffer_full"}, 7)
 }
 
 func TestSlowPathTranslatesErrorIndication(t *testing.T) {
@@ -316,5 +329,73 @@ func TestSlowPathDropsWhenTheRouteMoves(t *testing.T) {
 
 	if len(h.out.raws) != 1 || h.out.raws[0].ifindex != 20 {
 		t.Fatalf("not relayed once the route is back: %+v", h.out.raws)
+	}
+}
+
+func TestSocketReportsReceiveBufferDrops(t *testing.T) {
+	a := netip.MustParseAddr("127.0.0.77")
+	gate := make(chan struct{})
+	got := make(chan inbound, 1024)
+
+	k := &sockets{conns: map[netip.Addr]*net.UDPConn{}}
+	t.Cleanup(k.close)
+
+	if err := k.listen(a, func(in inbound) {
+		<-gate
+
+		got <- inbound{dropped: in.dropped, b: append([]byte(nil), in.b...)}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := setsockopt(k.conns[a], unix.SOL_SOCKET, unix.SO_RCVBUF, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	peer, err := net.DialUDP("udp", nil, net.UDPAddrFromAddrPort(netip.AddrPortFrom(a, Port)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = peer.Close() })
+
+	const burst = 500
+
+	for range burst {
+		if _, err := peer.Write(plainGPDU(1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	close(gate)
+
+	var dropped, delivered int
+
+	for marker := 0; ; marker++ {
+		if _, err := peer.Write(echoRequest(uint16(marker))); err != nil {
+			t.Fatal(err)
+		}
+
+		for {
+			select {
+			case in := <-got:
+				dropped += int(in.dropped)
+
+				if in.b[1] != msgEchoRequest {
+					delivered++
+					continue
+				}
+
+				seq := int(binary.BigEndian.Uint16(in.b[8:10]))
+				if delivered == burst || dropped != burst-delivered+seq {
+					t.Fatalf("%d delivered, %d drops reported, first marker %d", delivered, dropped, seq)
+				}
+
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+
+			break
+		}
 	}
 }

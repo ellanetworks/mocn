@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"net/netip"
 	"os"
@@ -118,6 +119,7 @@ type pathKey struct {
 }
 
 type pathEntry struct {
+	key  pathKey
 	idx  uint32
 	refs int
 	idle time.Time
@@ -143,9 +145,10 @@ type Plane struct {
 	ifaceLegs  map[string]uint64
 	own        map[netip.Addr]bool
 	tunnels    map[uint32]*Tunnel
-	byPeer     map[Endpoint][]uint32
+	byPeer     map[Endpoint]map[uint32]struct{}
 	quarantine map[uint32]time.Time
 	paths      map[pathKey]*pathEntry
+	pathAt     map[uint32]*pathEntry
 	freePaths  []uint32
 	nextPath   uint32
 	peers      map[peerKey]int
@@ -187,9 +190,10 @@ func New(cfg Config) *Plane {
 		ifaceLegs:  map[string]uint64{},
 		own:        map[netip.Addr]bool{},
 		tunnels:    map[uint32]*Tunnel{},
-		byPeer:     map[Endpoint][]uint32{},
+		byPeer:     map[Endpoint]map[uint32]struct{}{},
 		quarantine: map[uint32]time.Time{},
 		paths:      map[pathKey]*pathEntry{},
+		pathAt:     map[uint32]*pathEntry{},
 		peers:      map[peerKey]int{},
 		stats:      newStats(),
 	}
@@ -666,7 +670,11 @@ func (p *Plane) openLocked(path Path, res resolution, ingress, egress Side, loca
 	}
 
 	p.tunnels[teid] = t
-	p.byPeer[peer] = append(p.byPeer[peer], teid)
+	if p.byPeer[peer] == nil {
+		p.byPeer[peer] = map[uint32]struct{}{}
+	}
+
+	p.byPeer[peer][teid] = struct{}{}
 	p.stats.tunnelOpened(path.Operator, ingress.direction())
 
 	if !forwarding {
@@ -730,7 +738,8 @@ func (p *Plane) pathLocked(k pathKey) (uint32, error) {
 		return 0, err
 	}
 
-	p.paths[k] = &pathEntry{idx: idx, refs: 1}
+	e := &pathEntry{key: k, idx: idx, refs: 1}
+	p.paths[k], p.pathAt[idx] = e, e
 	p.stats.addPath(idx, pathLabels{operator: k.operator, radio: k.radio, direction: k.ingress.direction()})
 
 	return idx, nil
@@ -781,32 +790,31 @@ func (p *Plane) freePathLocked() (uint32, error) {
 
 	p.stats.retirePath(found.idx, fast[found.idx])
 	delete(p.paths, oldest)
+	delete(p.pathAt, found.idx)
 
 	return found.idx, nil
 }
 
 func (p *Plane) unrefPathLocked(idx uint32) {
-	for k, e := range p.paths {
-		if e.idx != idx {
-			continue
-		}
-
-		e.refs--
-
-		switch {
-		case e.refs > 0:
-		case e.gone:
-			p.prunePathLocked(k, e)
-		default:
-			e.idle = p.cfg.Now()
-		}
-
+	e := p.pathAt[idx]
+	if e == nil {
 		return
+	}
+
+	e.refs--
+
+	switch {
+	case e.refs > 0:
+	case e.gone:
+		p.prunePathLocked(e.key, e)
+	default:
+		e.idle = p.cfg.Now()
 	}
 }
 
 func (p *Plane) prunePathLocked(k pathKey, e *pathEntry) {
 	delete(p.paths, k)
+	delete(p.pathAt, e.idx)
 	p.freePaths = append(p.freePaths, e.idx)
 	p.stats.dropPath(e.idx)
 }
@@ -888,11 +896,10 @@ func (p *Plane) closeLocked(teids []uint32) {
 
 		delete(p.tunnels, teid)
 
-		peers := slices.DeleteFunc(p.byPeer[t.Peer], func(x uint32) bool { return x == teid })
-		if len(peers) == 0 {
+		delete(p.byPeer[t.Peer], teid)
+
+		if len(p.byPeer[t.Peer]) == 0 {
 			delete(p.byPeer, t.Peer)
-		} else {
-			p.byPeer[t.Peer] = peers
 		}
 
 		p.quarantine[teid] = until
@@ -985,7 +992,7 @@ func (p *Plane) byPeerEndpoint(e Endpoint) []Tunnel {
 
 	var out []Tunnel
 
-	for _, teid := range p.byPeer[e] {
+	for _, teid := range slices.Sorted(maps.Keys(p.byPeer[e])) {
 		if t := p.tunnels[teid]; t != nil {
 			out = append(out, *t)
 		}

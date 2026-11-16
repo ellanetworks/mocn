@@ -200,7 +200,7 @@ func (r *relay) uplink(ctx context.Context, n *ranAssoc, log *slog.Logger, p *s1
 
 	log.DebugContext(ctx, "relayed S1AP message to MME", slog.Uint64("mme_enb_ue_s1ap_id", uint64(mmeENBID)))
 
-	if err := mme.Send(ctx, out, ueStream); err != nil {
+	if err := mme.SendWait(ctx, out, ueStream); err != nil {
 		log.WarnContext(ctx, "failed to send S1AP message to MME", slog.Any("error", err))
 	}
 }

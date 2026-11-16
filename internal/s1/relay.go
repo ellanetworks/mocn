@@ -60,7 +60,7 @@ func (r *relay) countInitialUE(result string) {
 }
 
 func sendMME(ctx context.Context, a *mmeAssoc, msg []byte, stream uint16) error {
-	return a.Send(ctx, msg, stream)
+	return a.SendWait(ctx, msg, stream)
 }
 
 func (r *relay) fromRAN(ctx context.Context, from *ranAssoc, pdu s1ap.PDU, msg []byte) {

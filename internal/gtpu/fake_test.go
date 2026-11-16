@@ -325,6 +325,39 @@ func (h *harness) symmetric(t *testing.T) {
 	if h.dp.puts-h.dp.removes != len(h.dp.tunnels) {
 		t.Fatalf("%d puts, %d removes, %d tunnels", h.dp.puts, h.dp.removes, len(h.dp.tunnels))
 	}
+
+	h.p.mu.RLock()
+	defer h.p.mu.RUnlock()
+
+	if len(h.p.pathAt) != len(h.p.paths) {
+		t.Fatalf("%d paths by index, %d paths", len(h.p.pathAt), len(h.p.paths))
+	}
+
+	for k, e := range h.p.paths {
+		if e.key != k || h.p.pathAt[e.idx] != e {
+			t.Fatalf("path %+v at index %d not indexed", k, e.idx)
+		}
+	}
+
+	peered := 0
+
+	for peer, teids := range h.p.byPeer {
+		if len(teids) == 0 {
+			t.Fatalf("peer %v indexed without tunnels", peer)
+		}
+
+		for teid := range teids {
+			if tun := h.p.tunnels[teid]; tun == nil || tun.Peer != peer {
+				t.Fatalf("tunnel %#x indexed under peer %v", teid, peer)
+			}
+
+			peered++
+		}
+	}
+
+	if peered != len(h.p.tunnels) {
+		t.Fatalf("%d tunnels by peer, %d tunnels", peered, len(h.p.tunnels))
+	}
 }
 
 type series struct {
