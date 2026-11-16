@@ -8,10 +8,10 @@ While signalling always goes through Ella MOCN, you can choose to have subscribe
 
 ## Direct vs aggregated
 
-```
-Direct:        Radios ══════════════════════════► operator network
-Aggregated:    Radios ═══► Ella MOCN ═══════════► operator network
-```
+<figure markdown="span">
+  ![User-plane aggregation](../images/user_plane_aggregation.svg){ width="800" }
+  <figcaption>User-plane aggregation</figcaption>
+</figure>
 
 ### Direct
 
