@@ -114,3 +114,21 @@ When an MME or AMF activates a trace for a UE, that UE's S1AP or NGAP spans join
 ## Profiles
 
 Ella MOCN exposes the [net/http/pprof](https://pkg.go.dev/net/http/pprof) API at [`/api/v1/pprof/`](api/pprof.md).
+
+## Dashboards
+
+Ella MOCN ships with a [Grafana](https://grafana.com/) dashboard. Import its JSON file from the repository.
+
+### Overview
+
+This dashboard uses Prometheus metrics to show the health of Ella MOCN on one screen: service status, radios and UE connections by operator, and performance.
+
+<figure markdown="span">
+  ![Overview Dashboard](../images/dashboard_overview.png){ width="800" }
+  <figcaption>Grafana dashboard for Overview.</figcaption>
+</figure>
+
+- Data Sources: Prometheus
+- Dashboard JSON: [observability/grafana/dashboards/overview.json](https://github.com/ellanetworks/mocn/blob/main/observability/grafana/dashboards/overview.json)
+
+To import it, open **Dashboards > New > Import** in Grafana and upload the JSON file.
