@@ -46,7 +46,7 @@ curl -s "$ELLA_MOCN_URL/api/v1/openapi.yaml" | grep -E '^  /api'
 | Individual phones, cell, tunnels | `GET /api/v1/ue-connections` (`operator`: name, `radio`: ref) |
 | Counters and gauges | `GET /api/v1/metrics` (Prometheus text, `ellamocn_*`) |
 
-Responses are `{"result": ...}` or `{"error": "..."}`. Radios, UE connections, users and API tokens are paginated: `page` and `per_page` (default `25`, max `100`), returning `items`, `page`, `per_page`, `total_count`. Operators return `items` only. URL-encode operator names (`Lakeside%20Mobile`). A radio `ref` looks like `eNB:001-01:MacroeNB-00001` or `gNB:001-01:000004@24`.
+Responses are `{"result": ...}` or `{"error": "..."}`. Radios, UE connections, users and API tokens are paginated: `page` and `per_page` (default `25`, max `100`), returning `items`, `page`, `per_page`, `total_count`. Operators return `items` only. URL-encode operator names (`Lakeside%20Mobile`). A radio `ref` looks like `eNB:001-01:MacroeNB-00001` or `gNB:001-01:000004@24`. For a count, request `per_page=1` and read `total_count`, or read the `ellamocn_*` gauges from `/api/v1/metrics`.
 
 ## Phones and radios
 
