@@ -13,6 +13,14 @@ This guide upgrades Ella MOCN to a new release.
 
 ## 1. Upgrade
 
+=== "Snap"
+
+    Refresh the snap:
+
+    ```shell
+    sudo snap refresh ella-mocn
+    ```
+
 === "Source"
 
     In the Ella MOCN repository, check out the target release:

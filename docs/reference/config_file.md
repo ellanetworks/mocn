@@ -33,6 +33,8 @@ The operators and radios are not in this file: they are in the database, and set
     - `enabled` (boolean, optional): Export traces. Default `false`.
     - `otlp_endpoint` (string): The `host:port` of an OTLP/gRPC collector, over plain gRPC. Required when `enabled` is `true`.
 
+With the snap, the configuration file is `/var/snap/ella-mocn/common/mocn.yaml`.
+
 ## Example
 
 ```yaml

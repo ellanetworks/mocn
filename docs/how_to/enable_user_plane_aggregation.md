@@ -44,7 +44,14 @@ This guide carries an operator's subscriber traffic through Ella MOCN, so the op
 
 ## Turn It On in Ella MOCN
 
-1. In the [configuration file](../reference/config_file.md), set `ran.user_plane.enabled` to `true`, and set `ran.user_plane.name` to the interface radios' user traffic arrives on:
+1. With the snap, connect the `network-control` and `mount-observe` interfaces:
+
+    ```shell
+    sudo snap connect ella-mocn:network-control
+    sudo snap connect ella-mocn:mount-observe
+    ```
+
+2. In the [configuration file](../reference/config_file.md), set `ran.user_plane.enabled` to `true`, and set `ran.user_plane.name` to the interface radios' user traffic arrives on:
 
     ```yaml
     ran:
@@ -53,7 +60,7 @@ This guide carries an operator's subscriber traffic through Ella MOCN, so the op
         name: eth1
     ```
 
-2. Restart Ella MOCN.
+3. Restart Ella MOCN.
 
 ## Turn It On for an Operator
 
