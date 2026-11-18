@@ -16,6 +16,12 @@ go build -o mocn -ldflags "-s -w -X github.com/ellanetworks/mocn/version.GitComm
 rockcraft pack
 ```
 
+### Snap
+
+```sh
+snapcraft pack
+```
+
 ## Run
 
 ```sh

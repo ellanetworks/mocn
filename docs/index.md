@@ -15,7 +15,7 @@ description: A MOCN gateway that integrates your neutral host radio network with
 - **Multi-Operator**: Share one 4G and 5G radio network between several operators. Radios connect to Ella MOCN, and each operator sees a single base station.
 - **4G and 5G Compliant**: Ella MOCN integrates with 4G and 5G networks following 3GPP standards. It has been validated with commercial radios, phones and cores.
 - **User-Plane Aggregation**: Optionally carry subscriber traffic through Ella MOCN's eBPF-based data plane, so Ella MOCN acts as a single point of contact for operators.
-- **Lightweight**: A single binary with an embedded UI, API and database. Install from source, with Docker or on Kubernetes.
+- **Lightweight**: A single binary with an embedded UI, API and database. Install with snap, Docker or Kubernetes, or from source.
 - **Easy to Operate**: Manage operators and radios through a web interface or a RESTful API with an OpenAPI specification. Monitor every radio, MME and AMF, and each operator's traffic, with logs, metrics (Prometheus), traces (OTel) and profiles.
 
 ## In this documentation

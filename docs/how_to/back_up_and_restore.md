@@ -17,6 +17,12 @@ This guide backs up Ella MOCN's database while Ella MOCN runs, and restores it.
 
 ## Back up
 
+=== "Snap"
+
+    ```shell
+    sudo sqlite3 /var/snap/ella-mocn/common/mocn.db ".backup mocn-backup.db"
+    ```
+
 === "Source"
 
     Back up the database at `db.path` in the [configuration file](../reference/config_file.md):
@@ -34,6 +40,27 @@ This guide backs up Ella MOCN's database while Ella MOCN runs, and restores it.
     ```
 
 ## Restore
+
+=== "Snap"
+
+    1. Stop Ella MOCN:
+
+        ```shell
+        sudo snap stop ella-mocn.mocnd
+        ```
+
+    2. Replace the database with the backup:
+
+        ```shell
+        sudo rm -f /var/snap/ella-mocn/common/mocn.db-wal /var/snap/ella-mocn/common/mocn.db-shm
+        sudo cp mocn-backup.db /var/snap/ella-mocn/common/mocn.db
+        ```
+
+    3. Start Ella MOCN:
+
+        ```shell
+        sudo snap start ella-mocn.mocnd
+        ```
 
 === "Source"
 

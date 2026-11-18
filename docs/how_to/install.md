@@ -6,6 +6,26 @@ description: Step-by-step instructions to install Ella MOCN.
 
 Choose one of the installation methods below.
 
+=== "Snap (Recommended)"
+
+    Install the Ella MOCN snap:
+
+    ```shell
+    sudo snap install ella-mocn --channel=latest/edge
+    ```
+
+    Configure Ella MOCN:
+
+    ```shell
+    sudo vim /var/snap/ella-mocn/common/mocn.yaml
+    ```
+
+    Start Ella MOCN:
+
+    ```shell
+    sudo snap start --enable ella-mocn.mocnd
+    ```
+
 === "Source"
 
     Install the required dependencies:

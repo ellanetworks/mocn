@@ -1,0 +1,3 @@
+#!/bin/sh -e
+
+cp "$SNAP/mocn.yaml" "$SNAP_COMMON/mocn.yaml"

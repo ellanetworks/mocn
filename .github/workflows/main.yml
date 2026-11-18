@@ -47,6 +47,11 @@ jobs:
     uses: ./.github/workflows/e2e-s1.yaml
   image-build:
     uses: ./.github/workflows/image-build.yaml
+  snap-build:
+    uses: ./.github/workflows/snap-build.yaml
+  snap-strict-test:
+    needs: [snap-build]
+    uses: ./.github/workflows/snap-strict-test.yaml
   k8s-smoke:
     needs: [image-build]
     uses: ./.github/workflows/k8s-smoke.yaml
@@ -59,3 +64,9 @@ jobs:
     uses: ./.github/workflows/image-publish.yaml
     with:
       release: false
+  snap-publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [go-unit-test, bench-smoke, go-lint, go-sec, gtpu-ebpf-tests, bpf-generate, clang-format, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, snap-build, snap-strict-test]
+    uses: ./.github/workflows/snap-publish.yaml
+    secrets:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}

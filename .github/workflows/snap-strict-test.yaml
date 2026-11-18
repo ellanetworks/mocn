@@ -1,0 +1,102 @@
+name: Snap Strict Confinement Test
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+
+jobs:
+  snap-install:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ (matrix.arch == 'arm64' && 'ubuntu-26.04-arm') || 'ubuntu-26.04' }}
+    timeout-minutes: 15
+    steps:
+      - name: Download the snap
+        uses: actions/download-artifact@v8
+        with:
+          name: snap-${{ matrix.arch }}
+
+      - name: Install the snap under strict confinement
+        run: |
+          sudo snap install --dangerous ./*.snap
+          snap list ella-mocn
+
+      - name: Require strict confinement to be enforced
+        run: |
+          mode="$(sudo snap debug confinement)"
+          echo "system confinement: ${mode}"
+          if [ "${mode}" != "strict" ]; then
+            echo "::error::runner does not enforce strict confinement (${mode}); cannot validate the snap"
+            exit 1
+          fi
+
+      - name: Connect the interfaces
+        run: |
+          for plug in network-control mount-observe; do
+            sudo snap connect ella-mocn:"${plug}"
+          done
+
+      - name: Enable user-plane aggregation
+        run: |
+          sudo ip link add ella-ran type dummy
+          sudo ip addr add 10.3.0.2/24 dev ella-ran
+          sudo ip link set ella-ran up
+          cfg=/var/snap/ella-mocn/common/mocn.yaml
+          sudo yq -i '.ran.user_plane.enabled = true | .ran.user_plane.name = "ella-ran"' "${cfg}"
+          sudo cat "${cfg}"
+
+      - name: Start the daemon
+        run: sudo snap start ella-mocn.mocnd
+
+      - name: Assert the service runs properly
+        run: |
+          deadline=$((SECONDS + 30))
+          while [ "${SECONDS}" -lt "${deadline}" ]; do
+            restarts="$(systemctl show -p NRestarts --value snap.ella-mocn.mocnd)"
+            if [ "${restarts}" != "0" ]; then
+              echo "::error::ella-mocn.mocnd crashed/restarted under strict confinement (${restarts} restarts)"
+              exit 1
+            fi
+
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:5030/api/v1/openapi.yaml || true)"
+            echo "t=${SECONDS}s restarts=${restarts} api: ${code}"
+
+            if [ "${code}" = "200" ]; then
+              for port in 36412 38412; do
+                if ! sudo ss -lnp --sctp | grep -q ":${port}"; then
+                  echo "::error::SCTP listener on ${port} is not up"
+                  exit 1
+                fi
+              done
+              echo "ready after ${SECONDS}s"
+              exit 0
+            fi
+
+            sleep 2
+          done
+          echo "::error::ella-mocn.mocnd never became ready"
+          exit 1
+
+      - name: Assert the UI is served
+        run: |
+          curl -fsS http://127.0.0.1:5030/ | grep -q '<div id="root"></div>'
+
+      - name: Assert no confinement denials
+        run: |
+          denials="$(sudo journalctl -k --no-pager \
+            | grep -E 'apparmor="DENIED".*snap\.ella-mocn|type=1326.*ella-mocn' \
+            | grep -v -E 'operation="capable".*capname="bpf"' \
+            | grep -v -E 'operation="open".*name="/sys/fs/bpf/" .*requested_mask="r"' || true)"
+          if [ -n "${denials}" ]; then
+            echo "${denials}"
+            echo "::error::ella-mocn hit confinement denials"
+            exit 1
+          fi
+
+      - name: Dump daemon logs
+        if: always()
+        run: sudo snap logs ella-mocn.mocnd -n all || true

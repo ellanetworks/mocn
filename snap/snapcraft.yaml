@@ -1,0 +1,57 @@
+name: ella-mocn
+title: Ella MOCN
+base: core26
+adopt-info: mocn-release-data
+summary: Ella MOCN connects your neutral host radio network to mobile operators.
+description: |
+  Ella MOCN integrates your neutral host radio network with mobile operators. It is a Multi-Operator Core Network (MOCN) gateway: your radios connect to Ella MOCN, and Ella MOCN connects them to each operator's core.
+
+source-code: https://github.com/ellanetworks/mocn
+issues:
+  - https://github.com/ellanetworks/mocn/issues
+website:
+  - https://docs.ellanetworks.com/mocn/
+grade: stable
+confinement: strict
+license: BUSL-1.1
+icon: snap/gui/icon.svg
+
+apps:
+  mocnd:
+    daemon: simple
+    install-mode: disable
+    command: bin/mocn --config $SNAP_COMMON/mocn.yaml
+    restart-condition: on-failure
+    plugs:
+      - network
+      - network-bind
+      - network-control
+      - mount-observe
+
+parts:
+  mocn:
+    plugin: go
+    source: .
+    source-type: local
+    build-packages:
+      - gcc
+      - git
+    build-snaps:
+      - go/1.27/stable
+      - node/24/stable
+    override-build: |
+      npm ci --prefix ui
+      npm run build --prefix ui
+      REVISION=`git rev-parse HEAD`
+      go build -v -o ${CRAFT_PART_INSTALL}/bin/mocn -ldflags "-s -w -X github.com/ellanetworks/mocn/version.GitCommit=${REVISION}" ./cmd/mocn
+
+  config:
+    plugin: dump
+    source: snap/local
+
+  mocn-release-data:
+    plugin: nil
+    source: .
+    override-build: |
+      version="$(cat version/VERSION)"
+      craftctl set version="$version"
