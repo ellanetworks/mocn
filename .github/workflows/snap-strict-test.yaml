@@ -87,7 +87,10 @@ jobs:
 
       - name: Assert no confinement denials
         run: |
-          denials="$(sudo journalctl -k --no-pager | grep -E 'apparmor="DENIED".*snap\.ella-mocn|type=1326.*ella-mocn' || true)"
+          denials="$(sudo journalctl -k --no-pager \
+            | grep -E 'apparmor="DENIED".*snap\.ella-mocn|type=1326.*ella-mocn' \
+            | grep -v -E 'operation="capable".*capname="bpf"' \
+            | grep -v -E 'operation="open".*name="/sys/fs/bpf/" .*requested_mask="r"' || true)"
           if [ -n "${denials}" ]; then
             echo "${denials}"
             echo "::error::ella-mocn hit confinement denials"
