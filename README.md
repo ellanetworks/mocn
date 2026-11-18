@@ -1,4 +1,4 @@
-# Ella MOCN (beta)
+# Ella MOCN (alpha)
 
 <p align="center">
   <img src="docs/images/logo.svg" alt="Ella MOCN" width="120"/>
