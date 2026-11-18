@@ -11,7 +11,7 @@ Choose one of the installation methods below.
     Install the Ella MOCN snap:
 
     ```shell
-    sudo snap install ella-mocn --channel=latest/edge
+    sudo snap install ella-mocn
     ```
 
     Configure Ella MOCN:
