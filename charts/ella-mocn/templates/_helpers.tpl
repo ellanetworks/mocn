@@ -76,5 +76,12 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
   "api" (dict "address" "0.0.0.0" "port" 5030)
   "ran" $ran
 }}
+{{- if .Values.api.tls.secretName }}
+{{- $_ := set $base.api "tls" (dict "cert" "/tls/api/tls.crt" "key" "/tls/api/tls.key") }}
+{{- end }}
 {{- toYaml (mustMergeOverwrite $base (deepCopy .Values.config)) }}
+{{- end }}
+
+{{- define "ella-mocn.apiScheme" -}}
+{{- if .Values.api.tls.secretName }}HTTPS{{ else }}HTTP{{ end }}
 {{- end }}

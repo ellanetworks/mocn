@@ -43,5 +43,6 @@ jobs:
         run: |
           helm template ella-mocn charts/ella-mocn --namespace ella > /dev/null
           helm template ella-mocn charts/ella-mocn --namespace ella --set ingress.enabled=true --set ingress.host=ella.example.com > /dev/null
+          helm template ella-mocn charts/ella-mocn --namespace ella --set api.tls.secretName=api-tls > /dev/null
           helm template ella-mocn charts/ella-mocn --namespace ella --set ran.address=192.168.252.7/24 > /dev/null
           helm template ella-mocn charts/ella-mocn --namespace ella --set ran.address=192.168.252.7/24 --set userPlane.enabled=true > /dev/null
