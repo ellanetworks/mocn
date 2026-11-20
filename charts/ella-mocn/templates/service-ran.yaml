@@ -1,0 +1,34 @@
+{{- if not .Values.ran.address }}
+{{- $nodePort := ne .Values.ran.service.type "ClusterIP" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ella-mocn.ranServiceName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ella-mocn.labels" . | nindent 4 }}
+    ellanetworks.com/service: ran
+  {{- with .Values.ran.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.ran.service.type }}
+  selector:
+    {{- include "ella-mocn.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: sctp-s1
+      protocol: SCTP
+      port: 36412
+      targetPort: sctp-s1
+      {{- if and $nodePort .Values.ran.service.s1NodePort }}
+      nodePort: {{ .Values.ran.service.s1NodePort }}
+      {{- end }}
+    - name: sctp-ng
+      protocol: SCTP
+      port: 38412
+      targetPort: sctp-ng
+      {{- if and $nodePort .Values.ran.service.ngNodePort }}
+      nodePort: {{ .Values.ran.service.ngNodePort }}
+      {{- end }}
+{{- end }}

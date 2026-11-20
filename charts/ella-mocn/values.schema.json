@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "image",
+    "ran",
+    "service",
+    "persistence"
+  ],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": [
+        "repository"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Image repository."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Image tag. Defaults to the chart appVersion."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^(sha256:[a-f0-9]{64})?$",
+          "description": "Image digest. Takes precedence over tag."
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ],
+          "description": "Image pull policy."
+        }
+      },
+      "description": "Ella MOCN container image."
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "description": "Image pull secrets."
+    },
+    "nameOverride": {
+      "type": "string",
+      "description": "Overrides the chart name."
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Overrides the resource name prefix."
+    },
+    "ran": {
+      "type": "object",
+      "required": [
+        "interface",
+        "networkAttachment",
+        "service"
+      ],
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^([^/]+/[0-9]{1,3})?$",
+          "description": "S1 and NG address of the pod on a Multus network, in CIDR notation. Empty listens on the pod network and exposes S1 and NG through a Service."
+        },
+        "interface": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 15,
+          "description": "Name of the Multus interface in the pod."
+        },
+        "networkAttachment": {
+          "type": "object",
+          "properties": {
+            "create": {
+              "type": "boolean",
+              "description": "Create a macvlan NetworkAttachmentDefinition. Set to false to use your own."
+            },
+            "name": {
+              "type": "string",
+              "description": "Name of the NetworkAttachmentDefinition."
+            },
+            "master": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Host interface that connects to the radios."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "bridge",
+                "private",
+                "vepa",
+                "passthru"
+              ],
+              "description": "macvlan mode."
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "dst"
+                ],
+                "properties": {
+                  "dst": {
+                    "type": "string"
+                  },
+                  "gw": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "description": "Routes through the Multus interface, for radios behind a router."
+            }
+          },
+          "description": "NetworkAttachmentDefinition of the Multus interface, used when address is set."
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "ClusterIP",
+                "NodePort",
+                "LoadBalancer"
+              ],
+              "description": "Service type."
+            },
+            "s1NodePort": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Node port of S1, when type is NodePort or LoadBalancer."
+            },
+            "ngNodePort": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Node port of NG, when type is NodePort or LoadBalancer."
+            },
+            "annotations": {
+              "type": "object",
+              "description": "Service annotations."
+            }
+          },
+          "description": "Service that exposes S1 and NG, when address is empty."
+        }
+      },
+      "description": "Network that radios connect to."
+    },
+    "config": {
+      "type": "object",
+      "description": "Ella MOCN configuration file content, merged over the settings the chart manages."
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ],
+          "description": "Service type."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Service port."
+        },
+        "nodePort": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Node port, when type is NodePort."
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Service annotations."
+        }
+      },
+      "description": "Service that exposes the API and UI."
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Size of the data volume."
+        },
+        "storageClassName": {
+          "type": "string",
+          "description": "StorageClass of the data volume. Empty uses the default StorageClass."
+        }
+      },
+      "description": "Data volume."
+    },
+    "resources": {
+      "type": "object",
+      "description": "Container resources."
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Create a service account."
+        },
+        "name": {
+          "type": "string",
+          "description": "Service account name."
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Service account annotations."
+        }
+      },
+      "description": "Service account of the pod."
+    },
+    "podAnnotations": {
+      "type": "object",
+      "description": "Extra pod annotations."
+    },
+    "podLabels": {
+      "type": "object",
+      "description": "Extra pod labels."
+    },
+    "nodeSelector": {
+      "type": "object",
+      "description": "Node selector."
+    },
+    "tolerations": {
+      "type": "array",
+      "description": "Tolerations."
+    },
+    "affinity": {
+      "type": "object",
+      "description": "Affinity."
+    },
+    "priorityClassName": {
+      "type": "string",
+      "description": "Priority class."
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Create the ServiceMonitor."
+        },
+        "interval": {
+          "type": "string",
+          "description": "Scrape interval."
+        },
+        "labels": {
+          "type": "object",
+          "description": "Extra ServiceMonitor labels."
+        }
+      },
+      "description": "Prometheus Operator ServiceMonitor for /api/v1/metrics."
+    },
+    "tests": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            }
+          },
+          "description": "Image of the test pod."
+        }
+      },
+      "description": "helm test settings."
+    }
+  }
+}

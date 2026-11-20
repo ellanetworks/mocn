@@ -1,0 +1,15 @@
+Ella MOCN {{ .Chart.AppVersion }} is deployed in namespace {{ .Release.Namespace }}.
+
+Open the API and UI:
+
+  kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "ella-mocn.fullname" . }} 5030:{{ .Values.service.port }}
+
+Then browse to http://localhost:5030.
+
+{{- if .Values.ran.address }}
+
+Radios connect to S1 at {{ regexReplaceAll "/.*$" .Values.ran.address "" }}:36412 and NG at {{ regexReplaceAll "/.*$" .Values.ran.address "" }}:38412.
+{{- else }}
+
+Radios connect to the {{ include "ella-mocn.ranServiceName" . }} service: S1 on port 36412 and NG on port 38412.
+{{- end }}

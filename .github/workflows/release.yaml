@@ -39,3 +39,9 @@ jobs:
       contents: read
       security-events: write
     uses: ./.github/workflows/image-scan.yaml
+  chart-publish:
+    needs: [image-publish]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/chart-publish.yaml

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: ella-mocn
+description: Ella MOCN, a multi-operator core network gateway that shares one radio network between several mobile operators.
+type: application
+version: 0.0.1
+appVersion: "v0.0.1"
+kubeVersion: ">=1.30.0-0"
+home: https://docs.ellanetworks.com/mocn/
+icon: https://raw.githubusercontent.com/ellanetworks/mocn/main/docs/images/logo-mark.svg
+sources:
+  - https://github.com/ellanetworks/mocn
+keywords:
+  - 5g
+  - 4g
+  - mocn
+  - ran-sharing
+  - cnf
+maintainers:
+  - name: Ella Networks
+    url: https://ellanetworks.com

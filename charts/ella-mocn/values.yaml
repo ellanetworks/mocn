@@ -1,0 +1,69 @@
+image:
+  repository: ghcr.io/ellanetworks/ella-mocn
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+ran:
+  address: ""
+  interface: ran
+  networkAttachment:
+    create: true
+    name: ""
+    master: eth1
+    mode: bridge
+    routes: []
+  service:
+    type: ClusterIP
+    s1NodePort: null
+    ngNodePort: null
+    annotations: {}
+
+config:
+  logging:
+    level: info
+
+service:
+  type: ClusterIP
+  port: 5030
+  nodePort: null
+  annotations: {}
+
+persistence:
+  size: 10Gi
+  storageClassName: ""
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+tests:
+  image:
+    repository: registry.access.redhat.com/ubi10/ubi-minimal
+    tag: "10.2"

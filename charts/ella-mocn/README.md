@@ -1,0 +1,77 @@
+# Ella MOCN Helm Chart
+
+[Ella MOCN](https://docs.ellanetworks.com/mocn/) connects a neutral-host radio network to multiple mobile operators. This chart deploys one Ella MOCN instance.
+
+## Prerequisites
+
+The cluster must meet the [Kubernetes requirements](https://docs.ellanetworks.com/mocn/reference/system_reqs/#kubernetes).
+
+## Install
+
+```bash
+helm install ella-mocn oci://ghcr.io/ellanetworks/charts/ella-mocn --namespace ella --create-namespace -f values.yaml
+```
+
+Radios reach S1 and NG through a Service on the pod network:
+
+```yaml
+ran:
+  service:
+    type: LoadBalancer
+```
+
+Radios reach S1 and NG on a Multus interface:
+
+```yaml
+ran:
+  address: 192.168.252.7/24
+  networkAttachment:
+    master: eth1
+```
+
+See [Install](https://docs.ellanetworks.com/mocn/how_to/install/).
+
+## Values
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `ran.address` | | S1 and NG address of the pod on a Multus network, in CIDR notation. Empty listens on the pod network and exposes S1 and NG through the `<release>-ran` Service. |
+| `ran.interface` | `ran` | Name of the Multus interface in the pod. |
+| `ran.networkAttachment.create` | `true` | Create a macvlan NetworkAttachmentDefinition, when `ran.address` is set. Set to `false` to use your own. |
+| `ran.networkAttachment.name` | `<release>-ran` | Name of the NetworkAttachmentDefinition. |
+| `ran.networkAttachment.master` | `eth1` | Host interface that connects to the radios. |
+| `ran.networkAttachment.mode` | `bridge` | macvlan mode. |
+| `ran.networkAttachment.routes` | `[]` | Routes through the Multus interface, e.g. `{dst: 10.20.0.0/16, gw: 192.168.252.1}` for radios behind a router. |
+| `ran.service.type` | `ClusterIP` | Type of the S1 and NG Service, when `ran.address` is empty. |
+| `ran.service.s1NodePort` | | Node port of S1, when `ran.service.type` is `NodePort` or `LoadBalancer`. |
+| `ran.service.ngNodePort` | | Node port of NG, when `ran.service.type` is `NodePort` or `LoadBalancer`. |
+| `ran.service.annotations` | `{}` | Annotations of the S1 and NG Service. |
+| `config` | `logging.level: info` | [Configuration file](https://docs.ellanetworks.com/mocn/reference/config_file/) content, merged over the database, API and signalling settings that the chart sets. |
+| `image.repository` | `ghcr.io/ellanetworks/ella-mocn` | Image repository. |
+| `image.tag` | chart `appVersion` | Image tag. |
+| `image.digest` | | Image digest. Takes precedence over `image.tag`. |
+| `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
+| `imagePullSecrets` | `[]` | Image pull secrets. |
+| `service.type` | `ClusterIP` | Type of the API service. |
+| `service.port` | `5030` | Port of the API service. |
+| `service.nodePort` | | Node port, when `service.type` is `NodePort`. |
+| `service.annotations` | `{}` | Annotations of the API service. |
+| `persistence.size` | `10Gi` | Size of the data volume. |
+| `persistence.storageClassName` | default StorageClass | StorageClass of the data volume. |
+| `resources` | 500m CPU, 256 MiB requested; 2 CPU, 1 GiB limit | Container resources. |
+| `serviceAccount.create` | `true` | Create a service account. |
+| `serviceAccount.name` | `<release>` | Service account name. |
+| `serviceAccount.annotations` | `{}` | Service account annotations. |
+| `serviceMonitor.enabled` | `false` | Create a Prometheus Operator ServiceMonitor for `/api/v1/metrics`. |
+| `serviceMonitor.interval` | `30s` | Scrape interval. |
+| `serviceMonitor.labels` | `{}` | Extra ServiceMonitor labels. |
+| `nodeSelector` | `{}` | Node selector. |
+| `tolerations` | `[]` | Tolerations. |
+| `affinity` | `{}` | Affinity. |
+| `priorityClassName` | | Priority class. |
+| `podAnnotations` | `{}` | Extra pod annotations. |
+| `podLabels` | `{}` | Extra pod labels. |
+| `nameOverride` | | Overrides the chart name. |
+| `fullnameOverride` | | Overrides the resource name prefix. |
+| `tests.image.repository` | `registry.access.redhat.com/ubi10/ubi-minimal` | Image of the `helm test` pod. |
+| `tests.image.tag` | `10.2` | Tag of the `helm test` image. |

@@ -60,16 +60,16 @@ This guide upgrades Ella MOCN to a new release.
 
 === "Kubernetes"
 
-    1. Set the new image:
+    1. Upgrade the chart:
 
         ```shell
-        kubectl set image statefulset/ella-mocn -n ella mocn=ghcr.io/ellanetworks/ella-mocn:<version>
+        helm upgrade ella-mocn oci://ghcr.io/ellanetworks/charts/ella-mocn --version <version> --namespace ella -f values.yaml
         ```
 
     2. Wait for the rollout:
 
         ```shell
-        kubectl rollout status statefulset/ella-mocn -n ella
+        kubectl -n ella rollout status statefulset/ella-mocn
         ```
 
 ## 2. Verify
