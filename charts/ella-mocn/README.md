@@ -68,6 +68,11 @@ See [Install](https://docs.ellanetworks.com/mocn/how_to/install/).
 | `service.port` | `5030` | Port of the API service. |
 | `service.nodePort` | | Node port, when `service.type` is `NodePort`. |
 | `service.annotations` | `{}` | Annotations of the API service. |
+| `ingress.enabled` | `false` | Create an Ingress that exposes the API and UI. |
+| `ingress.className` | | IngressClass name. Empty uses the cluster default. |
+| `ingress.host` | | Host name of the API and UI. Required when the Ingress is enabled. |
+| `ingress.annotations` | `{}` | Ingress annotations, e.g. for cert-manager. |
+| `ingress.tls` | `[]` | Ingress TLS entries, each with `secretName` and `hosts`. |
 | `persistence.size` | `10Gi` | Size of the data volume. |
 | `persistence.storageClassName` | default StorageClass | StorageClass of the data volume. |
 | `resources` | 500m CPU, 256 MiB requested; 2 CPU, 1 GiB limit | Container resources. |

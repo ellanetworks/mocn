@@ -37,6 +37,13 @@ service:
   nodePort: null
   annotations: {}
 
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  annotations: {}
+  tls: []
+
 persistence:
   size: 10Gi
   storageClassName: ""
