@@ -8,7 +8,7 @@ Then browse to http://localhost:5030.
 
 {{- if .Values.ran.address }}
 
-Radios connect to S1 at {{ regexReplaceAll "/.*$" .Values.ran.address "" }}:36412 and NG at {{ regexReplaceAll "/.*$" .Values.ran.address "" }}:38412.
+Radios connect to S1 at {{ include "ella-mocn.ranIP" . }}:36412 and NG at {{ include "ella-mocn.ranIP" . }}:38412.
 {{- else }}
 
 Radios connect to the {{ include "ella-mocn.ranServiceName" . }} service: S1 on port 36412 and NG on port 38412.

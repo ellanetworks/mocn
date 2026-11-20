@@ -119,3 +119,36 @@ func TestDatabaseIsPrivate(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabaseOfAnotherUserKeepsItsMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mocn.db")
+
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(path, 0o660); err != nil {
+		t.Fatal(err)
+	}
+
+	self := euid
+	euid = func() int { return os.Geteuid() + 1 }
+
+	t.Cleanup(func() { euid = self })
+
+	d, err := Open(t.Context(), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	t.Cleanup(func() { _ = d.Close() })
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if mode := info.Mode().Perm(); mode != 0o660 {
+		t.Errorf("mode = %o, want 660", mode)
+	}
+}

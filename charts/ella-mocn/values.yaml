@@ -24,6 +24,9 @@ ran:
     ngNodePort: null
     annotations: {}
 
+userPlane:
+  enabled: false
+
 config:
   logging:
     level: info

@@ -76,7 +76,7 @@
           "properties": {
             "create": {
               "type": "boolean",
-              "description": "Create a macvlan NetworkAttachmentDefinition. Set to false to use your own."
+              "description": "Create a macvlan NetworkAttachmentDefinition. Set to false to use your own, which must enable net.ipv4.ip_forward and net.ipv6.conf.all.forwarding in the pod when userPlane.enabled is true."
             },
             "name": {
               "type": "string",
@@ -158,6 +158,16 @@
         }
       },
       "description": "Network that radios connect to."
+    },
+    "userPlane": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable user-plane aggregation on ran.address. Requires ran.address. The pod then runs as root with the BPF, PERFMON, NET_ADMIN and NET_RAW capabilities, and the NetworkAttachmentDefinition the chart creates enables IP forwarding in the pod."
+        }
+      },
+      "description": "User-plane aggregation."
     },
     "config": {
       "type": "object",
@@ -294,5 +304,40 @@
       },
       "description": "helm test settings."
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "userPlane": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          }
+        },
+        "required": [
+          "userPlane"
+        ]
+      },
+      "then": {
+        "properties": {
+          "ran": {
+            "properties": {
+              "address": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "address"
+            ]
+          }
+        }
+      }
+    }
+  ]
 }

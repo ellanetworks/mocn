@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"syscall"
 
 	"github.com/mattn/go-sqlite3"
 	"go.opentelemetry.io/otel/trace"
@@ -346,17 +347,26 @@ func checkForeignKeys(ctx context.Context, q querier) error {
 	return rows.Err()
 }
 
+var euid = os.Geteuid
+
 func restrict(path string) error {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304
 	if err != nil {
 		return err
 	}
 
-	if err := f.Close(); err != nil {
-		return err
+	info, err := f.Stat()
+	if err == nil && owns(info) {
+		err = f.Chmod(0o600)
 	}
 
-	return os.Chmod(path, 0o600)
+	return errors.Join(err, f.Close())
+}
+
+func owns(info os.FileInfo) bool {
+	st, ok := info.Sys().(*syscall.Stat_t)
+
+	return !ok || int(st.Uid) == euid()
 }
 
 type scanner interface {

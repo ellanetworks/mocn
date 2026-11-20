@@ -49,9 +49,14 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
+        {{- if .Values.userPlane.enabled }}
+        runAsUser: 0
+        runAsGroup: 0
+        {{- else }}
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
+        {{- end }}
         fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
@@ -67,6 +72,9 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+              {{- if .Values.userPlane.enabled }}
+              add: ["BPF", "PERFMON", "NET_ADMIN", "NET_RAW"]
+              {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -80,6 +88,11 @@ spec:
             - name: sctp-ng
               containerPort: 38412
               protocol: SCTP
+            {{- if .Values.userPlane.enabled }}
+            - name: udp-gtpu
+              containerPort: 2152
+              protocol: UDP
+            {{- end }}
           startupProbe:
             httpGet:
               path: /api/v1/livez

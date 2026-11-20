@@ -62,15 +62,19 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 {{- end }}
 
+{{- define "ella-mocn.ranIP" -}}
+{{- regexReplaceAll "/.*$" .Values.ran.address "" }}
+{{- end }}
+
 {{- define "ella-mocn.config" -}}
-{{- $signalling := "0.0.0.0" }}
-{{- with .Values.ran.address }}
-{{- $signalling = regexReplaceAll "/.*$" . "" }}
+{{- $ran := dict "signalling" (dict "address" (default "0.0.0.0" (include "ella-mocn.ranIP" .)) "s1_port" 36412 "ng_port" 38412) }}
+{{- if .Values.userPlane.enabled }}
+{{- $_ := set $ran "user_plane" (dict "enabled" true "address" (include "ella-mocn.ranIP" .)) }}
 {{- end }}
 {{- $base := dict
   "db" (dict "path" "/data/mocn.db")
   "api" (dict "address" "0.0.0.0" "port" 5030)
-  "ran" (dict "signalling" (dict "address" $signalling "s1_port" 36412 "ng_port" 38412))
+  "ran" $ran
 }}
 {{- toYaml (mustMergeOverwrite $base (deepCopy .Values.config)) }}
 {{- end }}

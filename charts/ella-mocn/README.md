@@ -29,6 +29,17 @@ ran:
     master: eth1
 ```
 
+With user-plane aggregation:
+
+```yaml
+ran:
+  address: 192.168.252.7/24
+  networkAttachment:
+    master: eth1
+userPlane:
+  enabled: true
+```
+
 See [Install](https://docs.ellanetworks.com/mocn/how_to/install/).
 
 ## Values
@@ -37,7 +48,7 @@ See [Install](https://docs.ellanetworks.com/mocn/how_to/install/).
 |-----|---------|-------------|
 | `ran.address` | | S1 and NG address of the pod on a Multus network, in CIDR notation. Empty listens on the pod network and exposes S1 and NG through the `<release>-ran` Service. |
 | `ran.interface` | `ran` | Name of the Multus interface in the pod. |
-| `ran.networkAttachment.create` | `true` | Create a macvlan NetworkAttachmentDefinition, when `ran.address` is set. Set to `false` to use your own. |
+| `ran.networkAttachment.create` | `true` | Create a macvlan NetworkAttachmentDefinition, when `ran.address` is set. Set to `false` to use your own, which must set `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` to `1` in the pod when `userPlane.enabled` is `true`. |
 | `ran.networkAttachment.name` | `<release>-ran` | Name of the NetworkAttachmentDefinition. |
 | `ran.networkAttachment.master` | `eth1` | Host interface that connects to the radios. |
 | `ran.networkAttachment.mode` | `bridge` | macvlan mode. |
@@ -46,6 +57,7 @@ See [Install](https://docs.ellanetworks.com/mocn/how_to/install/).
 | `ran.service.s1NodePort` | | Node port of S1, when `ran.service.type` is `NodePort` or `LoadBalancer`. |
 | `ran.service.ngNodePort` | | Node port of NG, when `ran.service.type` is `NodePort` or `LoadBalancer`. |
 | `ran.service.annotations` | `{}` | Annotations of the S1 and NG Service. |
+| `userPlane.enabled` | `false` | Enable [user-plane aggregation](https://docs.ellanetworks.com/mocn/how_to/enable_user_plane_aggregation/) on `ran.address`. Requires `ran.address`. The pod runs as root with the `BPF`, `PERFMON`, `NET_ADMIN` and `NET_RAW` capabilities, which needs the `privileged` Pod Security level. |
 | `config` | `logging.level: info` | [Configuration file](https://docs.ellanetworks.com/mocn/reference/config_file/) content, merged over the database, API and signalling settings that the chart sets. |
 | `image.repository` | `ghcr.io/ellanetworks/ella-mocn` | Image repository. |
 | `image.tag` | chart `appVersion` | Image tag. |

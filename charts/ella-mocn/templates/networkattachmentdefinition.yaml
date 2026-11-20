@@ -11,10 +11,23 @@ spec:
     {
       "cniVersion": "0.3.1",
       "name": {{ include "ella-mocn.networkAttachmentName" . | quote }},
-      "type": "macvlan",
-      "master": {{ .Values.ran.networkAttachment.master | quote }},
-      "mode": {{ .Values.ran.networkAttachment.mode | quote }},
-      "capabilities": {"ips": true},
-      "ipam": {{ dict "type" "static" "routes" .Values.ran.networkAttachment.routes | toJson }}
+      "plugins": [
+        {
+          "type": "macvlan",
+          "master": {{ .Values.ran.networkAttachment.master | quote }},
+          "mode": {{ .Values.ran.networkAttachment.mode | quote }},
+          "capabilities": {"ips": true},
+          "ipam": {{ dict "type" "static" "routes" .Values.ran.networkAttachment.routes | toJson }}
+        }
+        {{- if .Values.userPlane.enabled }},
+        {
+          "type": "tuning",
+          "sysctl": {
+            "net.ipv4.ip_forward": "1",
+            "net.ipv6.conf.all.forwarding": "1"
+          }
+        }
+        {{- end }}
+      ]
     }
 {{- end }}
