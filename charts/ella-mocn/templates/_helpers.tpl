@@ -53,6 +53,19 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 {{- end }}
 
+{{- define "ella-mocn.openshift" -}}
+{{- if .Capabilities.APIVersions.Has "security.openshift.io/v1/SecurityContextConstraints" }}true{{ end }}
+{{- end }}
+
+{{- define "ella-mocn.openshiftSCC" -}}
+{{- $mode := toString .Values.openshift.securityContextConstraints.create }}
+{{- if or (eq $mode "true") (and (eq $mode "auto") (include "ella-mocn.openshift" .) (or .Values.userPlane.enabled .Values.ipsec.enabled)) }}true{{ end }}
+{{- end }}
+
+{{- define "ella-mocn.assignedIDs" -}}
+{{- if and (include "ella-mocn.openshift" .) (not (include "ella-mocn.openshiftSCC" .)) }}true{{ end }}
+{{- end }}
+
 {{- define "ella-mocn.image" -}}
 {{- $tag := default .Chart.AppVersion .Values.image.tag }}
 {{- if .Values.image.digest }}

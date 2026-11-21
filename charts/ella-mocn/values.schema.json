@@ -389,6 +389,30 @@
       },
       "description": "Service account of the pod."
     },
+    "openshift": {
+      "type": "object",
+      "properties": {
+        "securityContextConstraints": {
+          "type": "object",
+          "properties": {
+            "create": {
+              "enum": [
+                "auto",
+                true,
+                false
+              ],
+              "description": "auto creates it on OpenShift with userPlane.enabled or ipsec.enabled."
+            }
+          },
+          "description": "SecurityContextConstraints that grants the pod its security context."
+        }
+      },
+      "description": "OpenShift settings."
+    },
+    "seLinuxOptions": {
+      "type": "object",
+      "description": "SELinux options of the Ella MOCN container. Defaults to type spc_t on OpenShift with user-plane aggregation."
+    },
     "podAnnotations": {
       "type": "object",
       "description": "Extra pod annotations."

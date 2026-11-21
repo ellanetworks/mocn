@@ -57,10 +57,14 @@ spec:
         runAsGroup: 0
         {{- else }}
         runAsNonRoot: true
+        {{- if not (include "ella-mocn.assignedIDs" .) }}
         runAsUser: 65532
         runAsGroup: 65532
         {{- end }}
+        {{- end }}
+        {{- if not (include "ella-mocn.assignedIDs" .) }}
         fsGroup: 65532
+        {{- end }}
         seccompProfile:
           type: RuntimeDefault
       {{- if .Values.ipsec.enabled }}
@@ -104,6 +108,13 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
+            {{- if .Values.seLinuxOptions }}
+            seLinuxOptions:
+              {{- toYaml .Values.seLinuxOptions | nindent 14 }}
+            {{- else if and .Values.userPlane.enabled (include "ella-mocn.openshiftSCC" .) }}
+            seLinuxOptions:
+              type: spc_t
+            {{- end }}
             capabilities:
               drop: ["ALL"]
               {{- if .Values.userPlane.enabled }}

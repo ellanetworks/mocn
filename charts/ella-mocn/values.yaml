@@ -75,6 +75,12 @@ serviceAccount:
   name: ""
   annotations: {}
 
+openshift:
+  securityContextConstraints:
+    create: auto
+
+seLinuxOptions: {}
+
 podAnnotations: {}
 podLabels: {}
 nodeSelector: {}

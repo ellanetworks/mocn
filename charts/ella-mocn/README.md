@@ -87,6 +87,8 @@ See [Install](https://docs.ellanetworks.com/mocn/how_to/install/).
 | `serviceAccount.create` | `true` | Create a service account. |
 | `serviceAccount.name` | `<release>` | Service account name. |
 | `serviceAccount.annotations` | `{}` | Service account annotations. |
+| `openshift.securityContextConstraints.create` | `auto` | Create a SecurityContextConstraints that grants the pod its security context. `auto` creates it on OpenShift with `userPlane.enabled` or `ipsec.enabled`. |
+| `seLinuxOptions` | `type: spc_t` on OpenShift with `userPlane.enabled` | SELinux options of the Ella MOCN container. Loading eBPF programs on an SELinux-enforcing node needs a type such as `spc_t`. |
 | `serviceMonitor.enabled` | `false` | Create a Prometheus Operator ServiceMonitor for `/api/v1/metrics`. |
 | `serviceMonitor.interval` | `30s` | Scrape interval. |
 | `serviceMonitor.labels` | `{}` | Extra ServiceMonitor labels. |
