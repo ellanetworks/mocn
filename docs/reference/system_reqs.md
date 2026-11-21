@@ -16,11 +16,13 @@ Ella MOCN runs on any Linux distribution, on amd64 and arm64.
 
 ## Kubernetes
 
+Ella MOCN should work on most Kubernetes distributions. It has been validated on **GKE**, **RKE2**, and **kind**.
+
 | Requirement | Value |
 |-------------|-------|
 | **Nodes** | Meet the host requirements above |
 | **Kubernetes** | 1.30 or later, with SCTP Services |
-| **RAN network** | Radios reach Ella MOCN's S1 and NG ports, either through a Service on the pod network, or at the pod's address on a [Multus](https://github.com/k8snetworkplumbingwg/multus-cni) network. On a Multus network, the Helm chart uses the `macvlan` and `static` [CNI plugins](https://github.com/containernetworking/plugins). |
+| **RAN network** | Radios reach Ella MOCN's S1 and NG ports, either through an SCTP `LoadBalancer` or `NodePort` Service, or at the pod's address on a [Multus](https://github.com/k8snetworkplumbingwg/multus-cni) network. On a Multus network, the Helm chart uses the `macvlan` and `static` [CNI plugins](https://github.com/containernetworking/plugins). |
 | **User-plane aggregation** | A Multus network, with the `tuning` CNI plugin allowed to set `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` |
 | **Pod Security** | `restricted`, or `privileged` with user-plane aggregation or IPsec |
 | **Capabilities** | None, or `BPF`, `PERFMON`, `NET_ADMIN` and `NET_RAW` with user-plane aggregation |
