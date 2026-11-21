@@ -4,7 +4,7 @@ Open the API and UI:
 
   kubectl -n {{ .Release.Namespace }} port-forward service/{{ include "ella-mocn.fullname" . }} 5030:{{ .Values.service.port }}
 
-Then browse to http://localhost:5030.
+Then browse to {{ lower (include "ella-mocn.apiScheme" .) }}://localhost:5030.
 
 {{- if .Values.ran.address }}
 

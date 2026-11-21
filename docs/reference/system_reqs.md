@@ -16,7 +16,7 @@ Ella MOCN runs on any Linux distribution, on amd64 and arm64.
 
 ## Kubernetes
 
-Ella MOCN should work on most Kubernetes distributions. It has been validated on **GKE**, **RKE2**, and **kind**.
+Ella MOCN should work on most Kubernetes distributions. It has been validated on **GKE**, **OpenShift**, **RKE2**, and **kind**.
 
 | Requirement | Value |
 |-------------|-------|
