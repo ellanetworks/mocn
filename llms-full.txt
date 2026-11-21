@@ -1,0 +1,3078 @@
+# Ella MOCN Documentation
+
+> A MOCN gateway that integrates your neutral host radio network with mobile operators.
+
+A MOCN gateway that integrates your neutral host radio network with mobile operators.
+
+# Home
+
+# Ella MOCN
+
+[![Ella MOCN Logo](<https://docs.ellanetworks.com/mocn/images/logo.svg>)](<https://docs.ellanetworks.com/mocn/images/logo.svg>)
+
+**Ella MOCN** integrates your neutral host radio network with mobile operators. It is a Multi-Operator Core Network (MOCN) gateway: your radios connect to Ella MOCN, and Ella MOCN connects them to each operator's core.
+
+## Key features
+
+- **Multi-Operator**: Share one 4G and 5G radio network between several operators. Radios connect to Ella MOCN, and each operator sees a single base station.
+- **4G and 5G Compliant**: Ella MOCN integrates with 4G and 5G networks following 3GPP standards. It has been validated with commercial radios, phones and cores.
+- **User-Plane Aggregation**: Optionally carry subscriber traffic through Ella MOCN's eBPF-based data plane, so Ella MOCN acts as a single point of contact for operators.
+- **Lightweight**: A single binary with an embedded UI, API and database. Install with snap, Docker or Kubernetes, or from source.
+- **Easy to Operate**: Manage operators and radios through a web interface or a RESTful API with an OpenAPI specification. Monitor every radio, MME and AMF, and each operator's traffic, with logs, metrics (Prometheus), traces (OTel) and profiles.
+
+## In this documentation
+
+- [**Tutorials**](<https://docs.ellanetworks.com/mocn/tutorials/index.md>)
+
+  ---
+
+  **Start here**: a hands-on introduction to Ella MOCN.
+- [**How-to Guides**](<https://docs.ellanetworks.com/mocn/how_to/index.md>)
+
+  ---
+
+  **Step-by-step guides** covering key operations and common tasks.
+- [**Reference**](<https://docs.ellanetworks.com/mocn/reference/index.md>)
+
+  ---
+
+  **Technical information** - API, configuration, metrics, and more.
+- [**Explanation**](<https://docs.ellanetworks.com/mocn/explanation/index.md>)
+
+  ---
+
+  **Discussion and clarification** of key topics.
+
+# Tutorials
+
+# Connect Your First Radio
+
+In this tutorial, we will run two operators' 4G cores and Ella MOCN on one machine, connect a 4G radio to Ella MOCN, and attach a phone of each operator to its own core through that radio. Ella Core is the core of both operators.
+
+You can expect to spend about 30 minutes completing this tutorial.
+
+## Pre-requisites
+
+To complete this tutorial, you will need:
+
+- A Linux machine with [Docker](<https://www.docker.com/>) installed, and an Ethernet port, `eth1`, connected to the radio.
+- A 4G radio (eNB) that can broadcast two PLMNs.
+- Two phones, with SIM cards programmed with these values:
+
+| Phone | IMSI | Key | OPc |
+| --- | --- | --- | --- |
+| Operator A's phone | `001010000000001` | `465b5ce8b199b49faa5f0a2ee238a6bc` | `cd63cb71954a9f4e48a5994e37a02baf` |
+| Operator B's phone | `001020000000001` | `465b5ce8b199b49faa5f0a2ee238a6bc` | `cd63cb71954a9f4e48a5994e37a02baf` |
+
+## 1\. Write the Compose File
+
+Create a new directory for this tutorial and navigate into it:
+
+```
+mkdir ella-mocn-tutorial
+cd ella-mocn-tutorial
+```
+
+Copy the following file into this directory:
+
+docker-compose.yaml
+
+```
+configs:
+  ella_core_a_config:
+    content: |
+      logging:
+        system:
+          level: "info"
+          output: "stdout"
+        audit:
+          output: "stdout"
+      db:
+        path: "/data/core.db"
+      interfaces:
+        n2:
+          address: "192.168.10.2"
+        n3:
+          name: "n3"
+        n6:
+          name: "eth0"
+        api:
+          address: "0.0.0.0"
+          port: 5002
+      datapath:
+        attach-mode: "tcx"
+  ella_core_b_config:
+    content: |
+      logging:
+        system:
+          level: "info"
+          output: "stdout"
+        audit:
+          output: "stdout"
+      db:
+        path: "/data/core.db"
+      interfaces:
+        n2:
+          address: "192.168.10.5"
+        n3:
+          name: "n3"
+        n6:
+          name: "eth0"
+        api:
+          address: "0.0.0.0"
+          port: 5002
+      datapath:
+        attach-mode: "tcx"
+  ella_mocn_config:
+    content: |
+      logging:
+        level: info
+      db:
+        path: /data/mocn.db
+      api:
+        address: 0.0.0.0
+        port: 5030
+      ran:
+        signalling:
+          address: 0.0.0.0
+          s1_port: 36412
+
+services:
+  ella-core-a:
+    image: ghcr.io/ellanetworks/ella-core:v1.22.0
+    configs:
+      - source: ella_core_a_config
+        target: /core.yaml
+    entrypoint: /bin/core --config /core.yaml
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - ella-core-a-data:/data
+    ports:
+      - "5002:5002"
+    networks:
+      default:
+        driver_opts:
+          com.docker.network.endpoint.ifname: eth0
+      ran:
+        driver_opts:
+          com.docker.network.endpoint.ifname: n3
+        ipv4_address: 192.168.10.2
+
+  ella-core-b:
+    image: ghcr.io/ellanetworks/ella-core:v1.22.0
+    configs:
+      - source: ella_core_b_config
+        target: /core.yaml
+    entrypoint: /bin/core --config /core.yaml
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - ella-core-b-data:/data
+    ports:
+      - "5003:5002"
+    networks:
+      default:
+        driver_opts:
+          com.docker.network.endpoint.ifname: eth0
+      ran:
+        driver_opts:
+          com.docker.network.endpoint.ifname: n3
+        ipv4_address: 192.168.10.5
+
+  ella-mocn:
+    image: ghcr.io/ellanetworks/ella-mocn:latest
+    configs:
+      - source: ella_mocn_config
+        target: /mocn.yaml
+    entrypoint: /bin/mocn --config /mocn.yaml
+    restart: unless-stopped
+    volumes:
+      - ella-mocn-data:/data
+    ports:
+      - "5030:5030"
+    networks:
+      default: {}
+      ran:
+        ipv4_address: 192.168.10.3
+
+networks:
+  ran:
+    driver: macvlan
+    driver_opts:
+      parent: eth1
+    ipam:
+      config:
+        - subnet: 192.168.10.0/24
+
+volumes:
+  ella-core-a-data:
+  ella-core-b-data:
+  ella-mocn-data:
+```
+
+The radio reaches Ella MOCN at `192.168.10.3`, Operator A's core at `192.168.10.2` and Operator B's core at `192.168.10.5`, on `eth1`.
+
+## 2\. Start Ella Core and Ella MOCN
+
+Start the containers:
+
+```
+docker compose up -d
+```
+
+You should see the following output:
+
+```
+ ✔ Network ella-mocn-tutorial_default            Created
+ ✔ Network ella-mocn-tutorial_ran                Created
+ ✔ Volume ella-mocn-tutorial_ella-core-a-data    Created
+ ✔ Volume ella-mocn-tutorial_ella-core-b-data    Created
+ ✔ Volume ella-mocn-tutorial_ella-mocn-data      Created
+ ✔ Container ella-mocn-tutorial-ella-mocn-1      Started
+ ✔ Container ella-mocn-tutorial-ella-core-b-1    Started
+ ✔ Container ella-mocn-tutorial-ella-core-a-1    Started
+```
+
+## 3\. Configure Operator A's Core
+
+Open your browser at `http://127.0.0.1:5002/`. The **Initialize Ella Core** page opens.
+
+Create the first user with the following credentials, and click **Create**:
+
+- Email: `admin@ellanetworks.com`
+- Password: `admin`
+
+The Ella Core dashboard opens.
+
+Go to **Operator**. **Operator ID (MCC/MNC)** is `001 / 01` and **Supported TACs** is `000001(1)`.
+
+Go to **Subscribers** and click **Create**. Create a subscriber with the following parameters:
+
+- IMSI: `0000000001`, after the `00101` prefix.
+- Key: `465b5ce8b199b49faa5f0a2ee238a6bc`
+- Sequence Number: keep the default value.
+- Profile: keep the default value, `default`.
+- Select **Provide custom OPC** and set **OPC (optional)** to `cd63cb71954a9f4e48a5994e37a02baf`.
+
+Click **Create**. The subscriber `001010000000001` appears with the status **Deregistered**.
+
+## 4\. Configure Operator B's Core
+
+Open your browser at `http://127.0.0.1:5003/` and create the first user with the same credentials as in step 3.
+
+Go to **Operator**. Next to **Operator ID (MCC/MNC)**, click the edit icon, set **MNC** to `02` and click **Update**. **Operator ID (MCC/MNC)** shows `001 / 02`.
+
+Go to **Subscribers** and create a subscriber with the same parameters as in step 3. The IMSI prefix is now `00102`, and the subscriber `001020000000001` appears with the status **Deregistered**.
+
+## 5\. Initialize Ella MOCN
+
+Open your browser at `http://127.0.0.1:5030/`. The **Initialize Ella MOCN** page opens.
+
+Create the first user with the following credentials, and click **Create**:
+
+- Email: `admin@ellanetworks.com`
+- Password: `adminadmin`
+
+The Ella MOCN dashboard opens.
+
+## 6\. Create the Operators
+
+Go to **Operators** and click **Create**. Set:
+
+- Name: `Operator A`
+- MCC: `001`
+- MNC: `01`
+
+Click **Create**. The **Operators / Operator A** page opens.
+
+Next to **4G Gateway Identity (Global eNB ID)**, click the edit icon. Turn on **Set a Global eNB ID** and set **eNB ID** to `1`. Keep **PLMN** at `001-01` and **eNB ID type** at **Macro (20 bits)**. Click **Save**.
+
+**4G Gateway Identity (Global eNB ID)** shows `001-01 · Macro (20 bits) · 1`.
+
+In **Core Network Nodes**, click **Add Core Node**. Keep **Type** at **MME (4G)**, set **Address 1** to `192.168.10.2`, Operator A's core, and click **Add**. The MME appears with the status **Connected**. It stays **Connected** until a radio connects.
+
+Go back to **Operators** and create `Operator B` the same way, with:
+
+- MNC: `02`
+- eNB ID: `1`, with **PLMN** `001-02`
+- MME address: `192.168.10.5`, Operator B's core
+
+## 7\. Connect the Radio
+
+In your radio's configuration, set:
+
+- IP address: `192.168.10.10/24`, on the port connected to `eth1`
+- MME address: `192.168.10.3`, Ella MOCN
+- PLMNs: `001-01` and `001-02`
+- TAC: `1`
+
+Restart the radio if its configuration requires it.
+
+In the Ella MOCN UI, go to **Radios**. Your radio appears with the status **Up**.
+
+Go to **Operators**. In **Core Network Nodes**, both operators show `1/1 up`.
+
+## 8\. Attach the Phones
+
+Insert the SIM cards and turn on both phones. On each phone, set the APN to `internet`.
+
+In the Ella MOCN UI, go to **Radios** and click your radio. Under **UE Connections by Operator**, `Operator A` and `Operator B` each have **1** UE connection.
+
+Go to **Operators** and click `Operator B`. In **Core Network Nodes**, the MME has the name `ella`, the status **Up** and **1** UE connection.
+
+Both phones are attached to their own operator's core through the same radio.
+
+## Clean Up
+
+Stop and remove the containers, networks and volumes:
+
+```
+docker compose down -v
+```
+
+## Next steps
+
+- [Install Ella MOCN](<https://docs.ellanetworks.com/mocn/how_to/install/index.md>) on your own machine.
+- [Connect an Operator](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator/index.md>).
+- [Connect a Radio](<https://docs.ellanetworks.com/mocn/how_to/connect_a_radio/index.md>).
+
+# Tutorials
+
+These tutorials are a hands-on introduction to Ella MOCN.
+
+- [Connect Your First Radio](<https://docs.ellanetworks.com/mocn/tutorials/connect_your_first_radio/index.md>)
+
+# How-to Guides
+
+# Back Up and Restore
+
+This guide backs up Ella MOCN's database while Ella MOCN runs, and restores it.
+
+## Prerequisites
+
+- **Ella MOCN**: installed, as in [Install](<https://docs.ellanetworks.com/mocn/how_to/install/index.md>).
+- **sqlite3**: installed on the host.
+
+  ```
+  sudo apt install -y sqlite3
+  ```
+
+## Back up
+
+```
+sudo sqlite3 /var/snap/ella-mocn/common/mocn.db ".backup mocn-backup.db"
+```
+
+Back up the database at `db.path` in the [configuration file](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>):
+
+```
+sqlite3 /var/lib/mocn/mocn.db ".backup mocn-backup.db"
+```
+
+In the directory of `docker-compose.yaml`, back up the database in the `ella-mocn-data` volume:
+
+```
+sudo sqlite3 "$(docker volume inspect -f '{{.Mountpoint}}' ella-mocn_ella-mocn-data)/mocn.db" ".backup mocn-backup.db"
+```
+
+## Restore
+
+1. Stop Ella MOCN:
+
+   ```
+   sudo snap stop ella-mocn.mocnd
+   ```
+2. Replace the database with the backup:
+
+   ```
+   sudo rm -f /var/snap/ella-mocn/common/mocn.db-wal /var/snap/ella-mocn/common/mocn.db-shm
+   sudo cp mocn-backup.db /var/snap/ella-mocn/common/mocn.db
+   ```
+3. Start Ella MOCN:
+
+   ```
+   sudo snap start ella-mocn.mocnd
+   ```
+
+1. Stop Ella MOCN.
+2. Replace the database with the backup:
+
+   ```
+   rm -f /var/lib/mocn/mocn.db-wal /var/lib/mocn/mocn.db-shm
+   cp mocn-backup.db /var/lib/mocn/mocn.db
+   ```
+3. Start Ella MOCN.
+
+In the directory of `docker-compose.yaml`:
+
+1. Stop Ella MOCN:
+
+   ```
+   docker compose stop ella-mocn
+   ```
+2. Replace the database with the backup:
+
+   ```
+   D="$(docker volume inspect -f '{{.Mountpoint}}' ella-mocn_ella-mocn-data)"
+   sudo rm -f "$D/mocn.db-wal" "$D/mocn.db-shm"
+   sudo cp mocn-backup.db "$D/mocn.db"
+   ```
+3. Start Ella MOCN:
+
+   ```
+   docker compose start ella-mocn
+   ```
+
+# Connect a Radio
+
+This guide connects a 4G radio (eNB) or a 5G radio (gNB) to Ella MOCN, which connects it to every operator whose PLMN it broadcasts.
+
+1. Set the radio's core address:
+
+   - for a 4G radio (eNB), set the MME address to an address of the Ella MOCN host that `ran.signalling.address` listens on (all IPv4 addresses (`0.0.0.0`) by default), and the port to `ran.signalling.s1_port` (`36412` by default);
+   - for a 5G radio (gNB), set the AMF address to an address of the Ella MOCN host that `ran.signalling.address` listens on (all IPv4 addresses (`0.0.0.0`) by default), and the port to `ran.signalling.ng_port` (`38412` by default).
+2. Broadcast at least one PLMN of an operator that has MMEs (4G) or AMFs (5G).
+3. In **Radios**, check that the radio's status is **Up**.
+
+# Connect an Operator
+
+This guide connects Ella MOCN to an operator's core, through its MMEs for 4G, its AMFs for 5G, or both.
+
+1. In **Operators**, click **Create**, then enter the operator's name and PLMNs.
+2. [Connect the operator's MME](<#connect-the-operators-mme>), [the operator's AMF](<#connect-the-operators-amf>), or both.
+3. [Connect a radio](<https://docs.ellanetworks.com/mocn/how_to/connect_a_radio/index.md>) that broadcasts one of the operator's PLMNs.
+
+## Connect the Operator's MME
+
+1. Open the operator. Next to **4G Gateway Identity (Global eNB ID)**, click the edit icon, turn on **Set a Global eNB ID**, enter the Global eNB ID the operator assigned to you and click **Save**.
+2. In **Core Network Nodes**, click **Add Core Node**, choose **MME (4G)**, enter the MME's addresses and click **Add**.
+3. Ask the operator to accept your Global eNB ID, the TAIs of your 4G radios and the name `Ella MOCN` on its MMEs.
+4. Once a 4G radio is connected, check that the MME's status is **Up**.
+
+## Connect the Operator's AMF
+
+1. Open the operator. Next to **5G Gateway Identity (Global gNB ID)**, click the edit icon, turn on **Set a Global gNB ID**, enter the Global gNB ID the operator assigned to you and click **Save**.
+2. In **Core Network Nodes**, click **Add Core Node**, choose **AMF (5G)**, enter the AMF's addresses and click **Add**.
+3. Ask the operator to accept your Global gNB ID, the TAIs of your 5G radios and the name `Ella MOCN` on its AMFs.
+4. Once a 5G radio is connected, check that the AMF's status is **Up**.
+
+To carry the operator's subscriber traffic through Ella MOCN, [enable user-plane aggregation](<https://docs.ellanetworks.com/mocn/how_to/enable_user_plane_aggregation/index.md>).
+
+# Connect an Operator over IPsec
+
+This guide connects Ella MOCN to an operator's security gateway through a route-based IPsec tunnel, using strongSwan.
+
+### Prerequisites
+
+- **Host**: Ubuntu Server 26.04, with a certificate and private key signed by a CA the operator trusts.
+- **Operator's security gateway**: its address and its CA certificate.
+- **Operator's networks**: the networks that hold the operator's MMEs, AMFs, S-GWs and UPFs.
+
+### 1\. Install strongSwan
+
+```
+sudo apt update
+sudo apt install -y strongswan-swanctl charon-systemd
+```
+
+### 2\. Create the xfrm Interface
+
+Create one xfrm interface per operator. Set its MTU to the MTU of the interface that reaches the operator's security gateway, minus 100 bytes for IPsec.
+
+Create `/etc/systemd/network/50-xfrm-opa.netdev`:
+
+```
+[NetDev]
+Name=xfrm-opa
+Kind=xfrm
+MTUBytes=1400
+
+[Xfrm]
+InterfaceId=1
+Independent=yes
+```
+
+Create `/etc/systemd/network/50-xfrm-opa.network`, with Ella MOCN's address toward the operator and a route to the operator's networks from that address:
+
+```
+[Match]
+Name=xfrm-opa
+
+[Network]
+Address=192.0.2.10/32
+
+[Route]
+Destination=10.45.0.0/16
+PreferredSource=192.0.2.10
+```
+
+Apply the configuration:
+
+```
+sudo networkctl reload
+```
+
+Check that the operator's networks are routed through the xfrm interface:
+
+```
+ip route get 10.45.0.1
+```
+
+### 3\. Configure the Tunnel
+
+Install the host's certificate and key, and the operator's CA certificate:
+
+```
+sudo install -m 644 mocn.pem /etc/swanctl/x509/
+sudo install -m 600 mocn.key /etc/swanctl/private/
+sudo install -m 644 operator-a-ca.pem /etc/swanctl/x509ca/
+```
+
+Create `/etc/swanctl/conf.d/operator-a.conf`:
+
+```
+connections {
+    operator-a {
+        version = 2
+        local_addrs = 198.51.100.10
+        remote_addrs = 203.0.113.1
+        local {
+            auth = pubkey
+            certs = mocn.pem
+        }
+        remote {
+            auth = pubkey
+            id = "CN=segw.operator-a.example"
+        }
+        if_id_in = 1
+        if_id_out = 1
+        children {
+            operator-a {
+                local_ts = 192.0.2.10/32
+                remote_ts = 10.45.0.0/16
+                start_action = start
+                dpd_action = restart
+            }
+        }
+    }
+}
+```
+
+- `local_addrs` and `remote_addrs`: the host's address and the operator's security gateway.
+- `remote.id`: the identity in the operator's security gateway certificate.
+- `local_ts`: Ella MOCN's address toward the operator.
+- `remote_ts`: the operator's networks.
+- `if_id_in` and `if_id_out`: the `InterfaceId` of the xfrm interface.
+
+### 4\. Start the Tunnel
+
+```
+sudo swanctl --load-all
+```
+
+Check that the tunnel is up:
+
+```
+sudo swanctl --list-sas
+```
+
+Then [connect the operator](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator/index.md>). Its MMEs and AMFs are reached through the tunnel.
+
+### Prerequisites
+
+- **Ella MOCN**: installed with the Helm chart, in a namespace that allows privileged pods.
+- **Operator's security gateway**: its address, its identity and the credentials it accepts.
+- **Operator's networks**: the networks that hold the operator's MMEs, AMFs, S-GWs and UPFs.
+
+### 1\. Create the swanctl Configuration
+
+Create `operator-a.conf`, with an `if_id_in` and `if_id_out` per operator:
+
+```
+connections {
+    operator-a {
+        version = 2
+        remote_addrs = 203.0.113.1
+        local {
+            auth = psk
+            id = mocn.example
+        }
+        remote {
+            auth = psk
+            id = segw.operator-a.example
+        }
+        if_id_in = 1
+        if_id_out = 1
+        children {
+            operator-a {
+                local_ts = 192.0.2.10/32
+                remote_ts = 10.45.0.0/16
+                start_action = start
+                dpd_action = restart
+            }
+        }
+    }
+}
+secrets {
+    ike-operator-a {
+        id-1 = mocn.example
+        id-2 = segw.operator-a.example
+        secret = "<pre-shared key>"
+    }
+}
+```
+
+To authenticate with certificates instead, add them to the Secret below and reference them by their path in `/etc/swanctl/conf.d`.
+
+### 2\. Create the Secret
+
+```
+kubectl -n ella create secret generic ella-mocn-ipsec --from-file=operator-a.conf
+```
+
+### 3\. Turn On IPsec
+
+1. In `values.yaml`, add one xfrm interface per operator. Set `id` to the connection's `if_id_in` and `if_id_out`, `address` to Ella MOCN's address toward the operator, `mtu` to the MTU toward the operator's security gateway minus 100, and `routes` to the operator's networks:
+
+   ```
+   ipsec:
+     enabled: true
+     secretName: ella-mocn-ipsec
+     interfaces:
+       - name: xfrm-opa
+         id: 1
+         address: 192.0.2.10/32
+         mtu: 1400
+         routes:
+           - 10.45.0.0/16
+   ```
+2. Upgrade the chart:
+
+   ```
+   helm upgrade ella-mocn oci://ghcr.io/ellanetworks/charts/ella-mocn --version <version> --namespace ella -f values.yaml
+   ```
+3. Check that the tunnel is up:
+
+   ```
+   kubectl -n ella exec ella-mocn-0 -c ipsec -- swanctl --list-sas
+   ```
+
+Then [connect the operator](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator/index.md>). Its MMEs and AMFs are reached through the tunnel.
+
+# Enable User-Plane Aggregation
+
+This guide carries an operator's subscriber traffic through Ella MOCN, so the operator sees Ella MOCN's addresses instead of the radios'.
+
+## Prerequisites
+
+- **Operator**: connected over IPsec, as in [Connect an Operator over IPsec](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator_over_ipsec/index.md>), with its S-GWs and UPFs in the networks routed through the tunnel.
+- **User-plane interface**: the interface of the Ella MOCN host that radios' user traffic arrives on.
+
+## Prepare the Host
+
+1. Create `/etc/ella-mocn.nft`, with the interface radios' user traffic arrives on, `eth1` here:
+
+   ```
+   table inet ella-mocn
+   delete table inet ella-mocn
+
+   table inet ella-mocn {
+       chain forward {
+           type filter hook forward priority filter; policy accept;
+           iifname "eth1" drop
+           oifname "eth1" drop
+           iifname "xfrm-*" oifname "xfrm-*" drop
+       }
+   }
+   ```
+2. Load it at every boot:
+
+   ```
+   echo 'include "/etc/ella-mocn.nft"' | sudo tee -a /etc/nftables.conf
+   sudo systemctl enable nftables
+   ```
+3. Load it now:
+
+   ```
+   sudo nft -f /etc/ella-mocn.nft
+   ```
+
+Allow privileged pods in Ella MOCN's namespace:
+
+```
+kubectl label namespace ella pod-security.kubernetes.io/enforce=privileged pod-security.kubernetes.io/warn=privileged --overwrite
+```
+
+## Turn It On in Ella MOCN
+
+1. With the snap, connect the `network-control` and `mount-observe` interfaces:
+
+   ```
+   sudo snap connect ella-mocn:network-control
+   sudo snap connect ella-mocn:mount-observe
+   ```
+2. In the [configuration file](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>), set `ran.user_plane.enabled` to `true`, and set `ran.user_plane.name` to the interface radios' user traffic arrives on:
+
+   ```
+   ran:
+     user_plane:
+       enabled: true
+       name: eth1
+   ```
+3. Restart Ella MOCN.
+
+1. In `values.yaml`, set `ran.address` to Ella MOCN's address on the radios' network, and turn on `userPlane.enabled`:
+
+   ```
+   ran:
+     address: 192.168.252.7/24
+     networkAttachment:
+       master: eth1
+   userPlane:
+     enabled: true
+   ```
+2. Upgrade the chart:
+
+   ```
+   helm upgrade ella-mocn oci://ghcr.io/ellanetworks/charts/ella-mocn --version <version> --namespace ella -f values.yaml
+   ```
+3. Wait for the rollout:
+
+   ```
+   kubectl -n ella rollout status statefulset/ella-mocn
+   ```
+
+## Turn It On for an Operator
+
+1. In **Operators**, open the operator.
+2. Next to **User-Plane Aggregation**, click the edit icon.
+3. Turn on **User-plane aggregation** and click **Save**.
+
+## Check the Operator's User Plane
+
+1. Check that **Status** in **User Plane** is **Ready**, and that **Interface** is the operator's xfrm interface.
+2. Ask the operator to accept the **Addresses** shown in **User Plane** on its MMEs, AMFs and gateways.
+
+# How-to Guides
+
+These how-to guides cover key operations and common tasks in Ella MOCN.
+
+## Day 1 Operations
+
+Initial setup and configuration of Ella MOCN.
+
+- [Install](<https://docs.ellanetworks.com/mocn/how_to/install/index.md>)
+- [Connect an Operator](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator/index.md>)
+- [Connect an Operator over IPsec](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator_over_ipsec/index.md>)
+- [Enable User-Plane Aggregation](<https://docs.ellanetworks.com/mocn/how_to/enable_user_plane_aggregation/index.md>)
+- [Connect a Radio](<https://docs.ellanetworks.com/mocn/how_to/connect_a_radio/index.md>)
+
+## Day 2 Operations
+
+Ongoing management and maintenance of a running Ella MOCN deployment.
+
+- [Back Up and Restore](<https://docs.ellanetworks.com/mocn/how_to/back_up_and_restore/index.md>)
+- [Upgrade](<https://docs.ellanetworks.com/mocn/how_to/upgrade/index.md>)
+
+# Install
+
+Choose one of the installation methods below.
+
+Install the Ella MOCN snap:
+
+```
+sudo snap install ella-mocn
+```
+
+Configure Ella MOCN:
+
+```
+sudo vim /var/snap/ella-mocn/common/mocn.yaml
+```
+
+Start Ella MOCN:
+
+```
+sudo snap start --enable ella-mocn.mocnd
+```
+
+Install the required dependencies:
+
+```
+sudo snap install go --channel=1.27/stable --classic
+sudo snap install node --channel=24/stable --classic
+sudo apt update
+sudo apt -y install gcc
+```
+
+Clone the Ella MOCN repository:
+
+```
+git clone https://github.com/ellanetworks/mocn.git
+cd mocn
+```
+
+Build the frontend:
+
+```
+npm install --prefix ui
+npm run build --prefix ui
+```
+
+Build Ella MOCN:
+
+```
+go build -o mocn -ldflags "-s -w -X github.com/ellanetworks/mocn/version.GitCommit=$(git rev-parse HEAD)" ./cmd/mocn
+```
+
+Configure Ella MOCN:
+
+```
+vim mocn.yaml
+```
+
+Start Ella MOCN:
+
+```
+./mocn --config mocn.yaml
+```
+
+Create a new directory:
+
+```
+mkdir ella-mocn
+cd ella-mocn
+```
+
+Copy the following file into this directory:
+
+docker-compose.yaml
+
+```
+configs:
+  ella_mocn_config:
+    content: |
+      logging:
+        level: info
+      db:
+        path: /data/mocn.db
+      api:
+        address: 0.0.0.0
+        port: 5030
+      ran:
+        signalling:
+          address: 0.0.0.0
+          s1_port: 36412
+          ng_port: 38412
+
+services:
+  ella-mocn:
+    image: ghcr.io/ellanetworks/ella-mocn:latest
+    configs:
+      - source: ella_mocn_config
+        target: /mocn.yaml
+    entrypoint: /bin/mocn --config /mocn.yaml
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ella-mocn-data:/data
+
+volumes:
+  ella-mocn-data:
+```
+
+Start the Ella MOCN container:
+
+```
+docker compose up -d
+```
+
+Ensure your Kubernetes cluster meets the [Kubernetes requirements](<https://docs.ellanetworks.com/mocn/reference/system_reqs/index.md#kubernetes>).
+
+Create `values.yaml`. To give Ella MOCN an S1 and NG address on the radios' network, set `address` to that address and `master` to the host interface that connects to your radios:
+
+```
+ran:
+  address: 192.168.252.7/24
+  networkAttachment:
+    master: eth1
+```
+
+To expose S1 and NG through a Service on the pod network instead, set the Service type:
+
+```
+ran:
+  service:
+    type: LoadBalancer
+```
+
+Deploy Ella MOCN:
+
+```
+helm install ella-mocn oci://ghcr.io/ellanetworks/charts/ella-mocn --version 0.0.1 --namespace ella --create-namespace -f values.yaml
+```
+
+Open the UI and API on your machine:
+
+```
+kubectl -n ella port-forward service/ella-mocn 5030:5030
+```
+
+The UI and API are at `http://localhost:5030`. See the [chart reference](<https://github.com/ellanetworks/mocn/tree/main/charts/ella-mocn>) for all values.
+
+Ella MOCN's UI and API are at `http://<host-ip>:5030`. Open the UI and create the first user.
+
+See the [configuration reference](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>) for all options.
+
+# Upgrade
+
+This guide upgrades Ella MOCN to a new release.
+
+## Prerequisites
+
+- **Ella MOCN**: installed, as in [Install](<https://docs.ellanetworks.com/mocn/how_to/install/index.md>).
+- **Target release**: its version, such as `v0.0.2`.
+
+## 1\. Upgrade
+
+Refresh the snap:
+
+```
+sudo snap refresh ella-mocn
+```
+
+In the Ella MOCN repository, check out the target release:
+
+```
+git fetch --tags
+git checkout <version>
+```
+
+Build the frontend:
+
+```
+npm install --prefix ui
+npm run build --prefix ui
+```
+
+Build Ella MOCN:
+
+```
+go build -o mocn -ldflags "-s -w -X github.com/ellanetworks/mocn/version.GitCommit=$(git rev-parse HEAD)" ./cmd/mocn
+```
+
+Stop Ella MOCN, then start it:
+
+```
+./mocn --config mocn.yaml
+```
+
+In the directory of `docker-compose.yaml`, pull the new image and restart the container:
+
+```
+docker compose pull
+docker compose up -d
+```
+
+1. Upgrade the chart:
+
+   ```
+   helm upgrade ella-mocn oci://ghcr.io/ellanetworks/charts/ella-mocn --version <version> --namespace ella -f values.yaml
+   ```
+2. Wait for the rollout:
+
+   ```
+   kubectl -n ella rollout status statefulset/ella-mocn
+   ```
+
+## 2\. Verify
+
+Check the running version in the UI's top bar.
+
+# Reference
+
+# 3GPP Compliance
+
+Ella MOCN implements 3GPP-standard interfaces for signalling.
+
+> [!NOTE]
+>
+> Open an [issue](<https://github.com/ellanetworks/mocn/issues>) if you notice a 3GPP-compliance gap or require a new capability for a production deployment.
+
+## Supported
+
+### S1AP (TS 36.413)
+
+- **Management.** S1 Setup, configuration updates, Reset, Error Indication, overload.
+- **UE-associated signalling.** Relayed between the radio and the MME, handover included.
+- **Paging.**
+- **Warning message transmission.**
+
+### NGAP (TS 38.413)
+
+- **Interface management.** NG Setup, configuration updates, NG Reset, Error Indication, AMF Status Indication, overload.
+- **UE-associated signalling.** Relayed between the radio and the AMF, handover included.
+- **Paging.**
+- **Warning message transmission.**
+
+### GTP-U (TS 29.281)
+
+- **User plane.** Relayed between the radios and the operators' gateways, with user-plane aggregation.
+
+# Authentication
+
+## Log In
+
+This path returns an access token, and sets the session cookie, `mocn_session`, or `__Host-mocn_session` over TLS. The session lasts 30 days, and a user has at most 10: a new one ends the oldest.
+
+It answers `429 Too Many Requests` after 20 attempts in a minute from one client address (IPv4 address or IPv6 /64), or after 100 wrong passwords in an hour for one account.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/v1/auth/login` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email` | string | Yes | Email address, in any case. |
+| `password` | string | Yes | Password. |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `message` | string | `Login successful`. |
+| `token` | string | Access token, valid for 15 minutes. |
+
+### Sample Request
+
+```
+{
+    "email": "admin@example.com",
+    "password": "correct horse"
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "Login successful",
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+}
+```
+
+## Refresh the Access Token
+
+This path returns a new access token for the session of the cookie.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/v1/auth/refresh` |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `token` | string | Access token, valid for 15 minutes. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+}
+```
+
+## Log Out
+
+This path ends the session of the cookie, and its access tokens, and clears the cookie.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/v1/auth/logout` |
+
+# API
+
+## Authentication
+
+Requests send a token in the `Authorization` header:
+
+```
+Authorization: Bearer <token>
+```
+
+The token is either:
+
+- an access token, from [log in](<https://docs.ellanetworks.com/mocn/reference/api/auth/index.md#log-in>), [refresh the access token](<https://docs.ellanetworks.com/mocn/reference/api/auth/index.md#refresh-the-access-token>) or [initialize](<https://docs.ellanetworks.com/mocn/reference/api/initialize/index.md>), valid for 15 minutes;
+- an [API token](<https://docs.ellanetworks.com/mocn/reference/api/users/index.md#create-an-api-token>), which starts with `ellamocn_`.
+
+These paths take no token: `GET /api/v1/livez`, `GET /api/v1/readyz`, `GET /api/v1/status`, `GET /api/v1/metrics`, `GET /api/v1/openapi.yaml`, `POST /api/v1/init`, and `POST /api/v1/auth/login`, `/refresh` and `/logout`.
+
+### Roles
+
+| Role | `role_id` | Allows |
+| --- | --- | --- |
+| Admin | `1` | Everything. |
+| Read Only | `2` | Reading [operators](<https://docs.ellanetworks.com/mocn/reference/api/operators/index.md>), [radios](<https://docs.ellanetworks.com/mocn/reference/api/radios/index.md>) and [UE connections](<https://docs.ellanetworks.com/mocn/reference/api/ue_connections/index.md>). |
+| Network Manager | `3` | Read Only, plus creating, updating and deleting operators. |
+
+Only an Admin manages [users](<https://docs.ellanetworks.com/mocn/reference/api/users/index.md>) and reads [profiles](<https://docs.ellanetworks.com/mocn/reference/api/pprof/index.md>). Every user reads its own user, changes its own password, and manages its own API tokens.
+
+An API token has the role of its user, but cannot create API tokens, change a password, or manage users.
+
+## Responses
+
+Ella MOCN's API responses are JSON objects. A successful response carries a `result`:
+
+```
+{
+    "result": "Result content"
+}
+```
+
+A failed response carries an `error`:
+
+```
+{
+    "error": "Error message"
+}
+```
+
+`GET /api/v1/livez` and `POST /api/v1/auth/logout` answer 204 with no body. `GET /api/v1/readyz` answers 200 when ready and 503 when not, with the same body in both cases. `GET /api/v1/metrics` returns text in the [Prometheus exposition format](<https://prometheus.io/docs/instrumenting/exposition_formats/#text-format-details>), `GET /api/v1/openapi.yaml` returns YAML, and unknown paths and methods answer in plain text.
+
+Times are RFC 3339, in UTC.
+
+## OpenAPI Specification
+
+The full API is described by an [OpenAPI 3.1](<https://spec.openapis.org/oas/v3.1.0>) specification embedded in the binary. Fetch it from any running Ella MOCN instance:
+
+```
+GET /api/v1/openapi.yaml
+```
+
+## Status codes
+
+- 200 - Success.
+- 201 - Created.
+- 204 - No content.
+- 400 - Bad request.
+- 401 - Missing, invalid or expired token.
+- 403 - Not allowed for the role or the token.
+- 404 - Not found.
+- 405 - Method not allowed.
+- 409 - Conflict.
+- 429 - Too many requests. `Retry-After` is the seconds to wait.
+- 500 - Internal server error.
+- 503 - Not ready. See [Check readiness](<https://docs.ellanetworks.com/mocn/reference/api/status/index.md#check-readiness>).
+
+# Initialize
+
+## Initialize Ella MOCN
+
+This path creates the first user, an Admin, and logs it in: it returns an access token and sets the session cookie, as [log in](<https://docs.ellanetworks.com/mocn/reference/api/auth/index.md#log-in>) does.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/v1/init` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email` | string | Yes | Email address. ASCII letters are stored in lower case. |
+| `password` | string | Yes | 8 to 72 bytes. |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `message` | string | `System initialized successfully`. |
+| `token` | string | Access token, valid for 15 minutes. |
+
+### Sample Request
+
+```
+{
+    "email": "admin@example.com",
+    "password": "correct horse"
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "System initialized successfully",
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+}
+```
+
+# Metrics
+
+## Get Metrics
+
+This path returns the metrics of the MOCN in a [Prometheus exposition format](<https://prometheus.io/docs/instrumenting/exposition_formats/>) negotiated from the request's `Accept` header: the protobuf format (`application/vnd.google.protobuf`, with encoding `delimited`, `text` or `compact-text`), or else the text format 0.0.4 (`text/plain`). The body is compressed with gzip when `Accept-Encoding` asks for it. See [Observability](<https://docs.ellanetworks.com/mocn/reference/observability/index.md>) for the list.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/metrics` |
+
+It answers `503 Service Unavailable` when 32 requests are already in flight, or when collecting the metrics takes more than 8 seconds.
+
+### Sample Response
+
+```
+# HELP ellamocn_overload_messages_total OVERLOAD START and OVERLOAD STOP messages received from MMEs and AMFs, by interface (s1, ng), procedure (overload_start, overload_stop) and result (relayed: sent to the radios that broadcast one of the operator's PLMNs, including the replay of an ongoing OVERLOAD START to a radio after its S1 or NG Setup; no_radio: no such radio is up; ignored: OVERLOAD STOP for GUMMEIs or GUAMIs with no ongoing overload action; invalid: undecodable or with an invalid GUMMEI or GUAMI).
+# TYPE ellamocn_overload_messages_total counter
+ellamocn_overload_messages_total{interface="ng",procedure="overload_start",result="invalid"} 0
+ellamocn_overload_messages_total{interface="ng",procedure="overload_start",result="no_radio"} 0
+ellamocn_overload_messages_total{interface="ng",procedure="overload_start",result="relayed"} 0
+ellamocn_overload_messages_total{interface="ng",procedure="overload_stop",result="ignored"} 0
+ellamocn_overload_messages_total{interface="ng",procedure="overload_stop",result="invalid"} 0
+ellamocn_overload_messages_total{interface="ng",procedure="overload_stop",result="no_radio"} 0
+ellamocn_overload_messages_total{interface="ng",procedure="overload_stop",result="relayed"} 0
+ellamocn_overload_messages_total{interface="s1",procedure="overload_start",result="invalid"} 0
+ellamocn_overload_messages_total{interface="s1",procedure="overload_start",result="no_radio"} 0
+ellamocn_overload_messages_total{interface="s1",procedure="overload_start",result="relayed"} 1
+ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="ignored"} 0
+ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="invalid"} 0
+ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="no_radio"} 0
+ellamocn_overload_messages_total{interface="s1",procedure="overload_stop",result="relayed"} 0
+# HELP ellamocn_radio_associations Radio (eNodeB, gNodeB) associations, by interface (s1, ng) and state (connected: SCTP association up, no successful S1 or NG Setup; up: S1 or NG Setup succeeded; setup_failed: SCTP association up, Ella MOCN rejected the last S1 or NG Setup).
+# TYPE ellamocn_radio_associations gauge
+ellamocn_radio_associations{interface="ng",state="connected"} 0
+ellamocn_radio_associations{interface="ng",state="setup_failed"} 0
+ellamocn_radio_associations{interface="ng",state="up"} 1
+ellamocn_radio_associations{interface="s1",state="connected"} 0
+ellamocn_radio_associations{interface="s1",state="setup_failed"} 0
+ellamocn_radio_associations{interface="s1",state="up"} 2
+# HELP ellamocn_ue_connections UE-associated logical S1-connections (TS 36.413 clause 3.1) and NG-connections relayed, by interface (s1, ng) and operator.
+# TYPE ellamocn_ue_connections gauge
+ellamocn_ue_connections{interface="s1",operator="Operator A"} 2
+ellamocn_ue_connections{interface="s1",operator="Operator B"} 2
+```
+
+# Operators
+
+An operator is a core network that shares the radios through Ella MOCN: its PLMNs, the Global eNB ID and Global gNB ID with which Ella MOCN presents itself to its core, and its MMEs and AMFs.
+
+## List Operators
+
+This path returns the operators, sorted by name, with the state of their MMEs and AMFs.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/operators` |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | string | Name. |
+| `pws_operator` | boolean | Whether the operator's core connects the common CBC, whose warnings (PWS) are broadcast to every cell. |
+| `plmns` | array | PLMNs, each with `mcc` and `mnc`. |
+| `global_enb_id` | object | Global eNB ID that Ella MOCN uses towards the operator's MMEs. Absent when unset. |
+| `global_enb_id.plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `global_enb_id.enb_id_type` | string | `macro`, `short_macro` or `long_macro`. |
+| `global_enb_id.enb_id` | int | eNB ID. |
+| `global_gnb_id` | object | Global gNB ID that Ella MOCN uses towards the operator's AMFs. Absent when unset. |
+| `global_gnb_id.plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `global_gnb_id.gnb_id` | int | gNB ID. |
+| `global_gnb_id.bit_length` | int | gNB ID length, in bits. |
+| `mmes` | array | MMEs. Empty when none. |
+| `mmes[].tnl_addresses` | array | Addresses of the MME, reached over one SCTP association to port 36412. |
+| `mmes[].status` | object | State of the MME. See [MME Status](<#mme-status>). |
+| `amfs` | array | AMFs. Empty when none. |
+| `amfs[].tnl_addresses` | array | Addresses of the AMF, reached over one SCTP association to port 38412. |
+| `amfs[].status` | object | State of the AMF. See [AMF Status](<#amf-status>). |
+| `user_plane.aggregation` | boolean | Whether user traffic goes through Ella MOCN ([user-plane aggregation](<https://docs.ellanetworks.com/mocn/explanation/user_plane_aggregation_with_ebpf/index.md>)). Always `false` when `ran.user_plane.enabled` is `false` in the configuration file. |
+| `user_plane.status` | object | State of the operator's user plane. See [User-Plane Status](<#user-plane-status>). |
+| `ue_connections` | int | UE-associated logical S1-connections and NG-connections across the operator's MMEs and AMFs. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "items": [
+            {
+                "name": "Operator A",
+                "pws_operator": true,
+                "plmns": [{"mcc": "001", "mnc": "01"}],
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 1
+                },
+                "global_gnb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "gnb_id": 1,
+                    "bit_length": 22
+                },
+                "mmes": [
+                    {
+                        "tnl_addresses": ["127.0.0.2"],
+                        "status": {
+                            "state": "up",
+                            "since": "2026-11-13T16:31:55.645317884Z",
+                            "primary_tnl_address": "127.0.0.2",
+                            "mme_name": "mme-a",
+                            "served_gummeis": [
+                                {
+                                    "served_plmns": [{"mcc": "001", "mnc": "01"}],
+                                    "served_group_ids": [1],
+                                    "served_mmecs": [1]
+                                }
+                            ],
+                            "relative_mme_capacity": 255,
+                            "overload": [
+                                {
+                                    "gummei": {
+                                        "plmn": {"mcc": "001", "mnc": "01"},
+                                        "mme_group_id": 1,
+                                        "mme_code": 1
+                                    },
+                                    "overload_action": "reject_non_emergency_mo_dt",
+                                    "traffic_load_reduction_indication": 50
+                                }
+                            ],
+                            "ue_connections": 2
+                        }
+                    }
+                ],
+                "amfs": [{"tnl_addresses": ["10.0.1.5"]}],
+                "ue_connections": 2
+            },
+            {
+                "name": "Operator B",
+                "pws_operator": false,
+                "plmns": [{"mcc": "001", "mnc": "02"}],
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "02"},
+                    "enb_id_type": "macro",
+                    "enb_id": 2
+                },
+                "mmes": [
+                    {
+                        "tnl_addresses": ["127.0.0.3"],
+                        "status": {
+                            "state": "up",
+                            "since": "2026-11-13T16:31:55.645358627Z",
+                            "primary_tnl_address": "127.0.0.3",
+                            "mme_name": "mme-b",
+                            "served_gummeis": [
+                                {
+                                    "served_plmns": [{"mcc": "001", "mnc": "02"}],
+                                    "served_group_ids": [2],
+                                    "served_mmecs": [1]
+                                }
+                            ],
+                            "relative_mme_capacity": 255,
+                            "ue_connections": 2
+                        }
+                    }
+                ],
+                "amfs": [],
+                "ue_connections": 2
+            }
+        ]
+    }
+}
+```
+
+### MME Status
+
+The state of an MME, learned from its S1 association and not stored.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `state` | string | `disconnected`: no SCTP association. `connected`: SCTP association up, S1 Setup not completed. `up`: S1 Setup succeeded. `setup_failed`: the MME answered S1 SETUP FAILURE. |
+| `since` | string | When the MME entered its current state. |
+| `primary_tnl_address` | string | The MME address the SCTP association sends to. Absent without an association. |
+| `mme_name` | string | MME Name from the S1 SETUP RESPONSE or MME CONFIGURATION UPDATE. Absent when the MME sent none. |
+| `served_gummeis` | array | Served GUMMEIs from the S1 SETUP RESPONSE or MME CONFIGURATION UPDATE. Absent before the S1 Setup. |
+| `served_gummeis[].served_plmns` | array | Served PLMNs, each with `mcc` and `mnc`. |
+| `served_gummeis[].served_group_ids` | array | Served MME group IDs, `0` to `65535`. |
+| `served_gummeis[].served_mmecs` | array | Served MME codes, `0` to `255`. |
+| `relative_mme_capacity` | int | Relative MME Capacity, `0` to `255`. Absent before the S1 Setup. |
+| `overload` | array | The GUMMEIs of the MME with an ongoing overload action, from OVERLOAD START and OVERLOAD STOP. Absent when none. Cleared when the S1 association is lost. |
+| `overload[].gummei` | object | GUMMEI: `plmn`, `mme_group_id` (`0` to `65535`) and `mme_code` (`0` to `255`). |
+| `overload[].overload_action` | string | Overload Action from the last OVERLOAD START that applies to the GUMMEI: `reject_non_emergency_mo_dt`, `reject_rrc_cr_signalling`, `permit_emergency_sessions_and_mobile_terminated_services_only`, `permit_high_priority_sessions_and_mobile_terminated_services_only`, `reject_delay_tolerant_access`, `permit_high_priority_sessions_and_exception_reporting_and_mobile_terminated_services_only` or `not_accept_mo_data_or_delay_tolerant_access_from_cp_ciot`. |
+| `overload[].traffic_load_reduction_indication` | int | Traffic Load Reduction Indication from the same OVERLOAD START: the percentage of the traffic to reject, `1` to `99`. Absent when the MME did not include it. |
+| `ue_connections` | int | UE-associated logical S1-connections relayed to the MME. |
+
+### User-Plane Status
+
+The state of the operator's user plane, derived from the host's routes and not stored.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `state` | string | `ready`: Ella MOCN relays the operator's new sessions. `unavailable`: user-plane aggregation is on, but Ella MOCN refuses the operator's new sessions; UEs still register. `off`: user-plane aggregation is off for the operator. |
+| `reason` | string | Why the user plane is unavailable. Absent otherwise. `not_connected`: no association with the operator's MMEs or AMFs. `no_route`: no route to an MME or AMF. `route_mismatch`: the route to an MME or AMF no longer leaves by the interface its association uses, or two of them use different interfaces or addresses. `no_address`: the route to an MME or AMF no longer has the association's address as its source. `interface_error`: Ella MOCN cannot attach to the interface. `too_many_operators`: more operators use user-plane aggregation than Ella MOCN supports. |
+| `interface` | string | The interface the host routes the operator's MMEs and AMFs through. Absent without an association. |
+| `addresses` | array | Ella MOCN's addresses toward the operator, at most one IPv4 and one IPv6: the source addresses of its associations with the operator's MMEs and AMFs. |
+| `since` | string | When the user plane entered its current state. |
+
+### AMF Status
+
+The state of an AMF, learned from its NG association and not stored.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `state` | string | `disconnected`: no SCTP association. `connected`: SCTP association up, NG Setup not completed. `up`: NG Setup succeeded. `setup_failed`: the AMF answered NG SETUP FAILURE. |
+| `since` | string | When the AMF entered its current state. |
+| `primary_tnl_address` | string | The AMF address the SCTP association sends to. Absent without an association. |
+| `amf_name` | string | AMF Name from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE. Absent before the NG Setup. |
+| `served_guamis` | array | Served GUAMI List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE, each with `plmn`, `amf_region_id` (`0` to `255`), `amf_set_id` (`0` to `1023`) and `amf_pointer` (`0` to `63`). Absent before the NG Setup. |
+| `plmn_support` | array | PLMN Support List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE. Absent before the NG Setup. |
+| `plmn_support[].plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `plmn_support[].snssais` | array | S-NSSAIs, each with `sst` (`0` to `255`) and `sd` (6 hex digits, absent when none). |
+| `relative_amf_capacity` | int | Relative AMF Capacity, `0` to `255`. Absent before the NG Setup. |
+| `unavailable_guamis` | array | GUAMIs that an AMF STATUS INDICATION marked unavailable, in the format of `served_guamis`. Absent when none. Cleared by NG Setup and by an AMF CONFIGURATION UPDATE with a Served GUAMI List. |
+| `overload` | array | The ongoing overload actions of the AMF, from OVERLOAD START and OVERLOAD STOP. A GUAMI is in at most one item: a later OVERLOAD START replaces the earlier one for its GUAMIs. Absent when none. Cleared by NG Setup and the loss of the NG association. |
+| `overload[].guamis` | array | GUAMI List of the OVERLOAD START, in the format of `served_guamis`. The served GUAMIs of the operator's PLMNs when the OVERLOAD START has no GUAMI List. |
+| `overload[].overload_action` | string | Overload Action of the AMF Overload Response: `reject_non_emergency_mo_dt`, `reject_rrc_cr_signalling`, `permit_emergency_sessions_and_mobile_terminated_services_only` or `permit_high_priority_sessions_and_mobile_terminated_services_only`. Absent when the AMF did not include it. |
+| `overload[].traffic_load_reduction_indication` | int | AMF Traffic Load Reduction Indication: the percentage of the traffic to reject, `1` to `99`. Absent when the AMF did not include it. |
+| `overload[].slices` | array | Overload Start NSSAI List: each with `snssais`, and `overload_action` (Slice Overload Response) and `traffic_load_reduction_indication` (Slice Traffic Load Reduction Indication) when the AMF included them. Absent when none. |
+| `ue_connections` | int | UE-associated logical NG-connections relayed to the AMF. |
+
+## Get an Operator
+
+This path returns an operator, with the state of its MMEs and AMFs and its UE connections by radio.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/operators/{name}` |
+
+### Path Parameters
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `name` | string | Operator name. |
+
+### Response Fields
+
+The fields of [List Operators](<#list-operators>), plus:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ue_connections_by_radio` | array | UE-associated logical S1-connections and NG-connections of the operator, by radio. Lists every radio that broadcasts one of the operator's PLMNs, and every other radio with UE connections of the operator, sorted by name, or by `ref` for a radio without a name. |
+| `ue_connections_by_radio[].ref` | string | The radio's [`ref`](<https://docs.ellanetworks.com/mocn/reference/api/radios/index.md#list-radios>). |
+| `ue_connections_by_radio[].type` | string | The radio's `type`: `eNB` or `gNB`. |
+| `ue_connections_by_radio[].global_enb_id` | object | The radio's `global_enb_id`. Absent when the radio has none. |
+| `ue_connections_by_radio[].global_gnb_id` | object | The radio's `global_gnb_id`. Absent when the radio has none. |
+| `ue_connections_by_radio[].name` | string | The radio's `name`. Absent when the radio sent none. |
+| `ue_connections_by_radio[].ue_connections` | int | UE-associated logical S1-connections or NG-connections. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "name": "Operator B",
+        "pws_operator": false,
+        "plmns": [{"mcc": "001", "mnc": "02"}],
+        "global_enb_id": {
+            "plmn": {"mcc": "001", "mnc": "02"},
+            "enb_id_type": "macro",
+            "enb_id": 2
+        },
+        "mmes": [
+            {
+                "tnl_addresses": ["127.0.0.3"],
+                "status": {
+                    "state": "up",
+                    "since": "2026-11-13T16:31:55.645358627Z",
+                    "primary_tnl_address": "127.0.0.3",
+                    "mme_name": "mme-b",
+                    "served_gummeis": [
+                        {
+                            "served_plmns": [{"mcc": "001", "mnc": "02"}],
+                            "served_group_ids": [2],
+                            "served_mmecs": [1]
+                        }
+                    ],
+                    "relative_mme_capacity": 255,
+                    "ue_connections": 2
+                }
+            }
+        ],
+        "amfs": [],
+        "ue_connections": 2,
+        "ue_connections_by_radio": [
+            {
+                "ref": "eNB:001-01:MacroeNB-0019b",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 411
+                },
+                "name": "enb-north",
+                "ue_connections": 1
+            },
+            {
+                "ref": "eNB:001-01:MacroeNB-0019c",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 412
+                },
+                "name": "enb-south",
+                "ue_connections": 1
+            }
+        ]
+    }
+}
+```
+
+## Create an Operator
+
+This path returns the operator as [Get an Operator](<#get-an-operator>) returns it.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/v1/operators` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | Yes | 1 to 64 characters, after leading and trailing spaces are removed. Unique. |
+| `pws_operator` | boolean | No | Default `false`. At most one operator has `true`. |
+| `plmns` | array | Yes | 1 to 12 PLMNs, each listed once, and owned by no other operator. Operators with MMEs have at most 32 PLMNs in total, and operators with AMFs at most 12. |
+| `plmns[].mcc` | string | Yes | 3 digits. |
+| `plmns[].mnc` | string | Yes | 2 or 3 digits. |
+| `global_enb_id` | object | No | Absent for none. Required with `mmes`. |
+| `global_enb_id.plmn` | object | Yes | One of `plmns`. |
+| `global_enb_id.enb_id_type` | string | Yes | `macro`, `short_macro` or `long_macro`. |
+| `global_enb_id.enb_id` | int | Yes | `0` to `1048575` for `macro`, `262143` for `short_macro`, `2097151` for `long_macro`. |
+| `global_gnb_id` | object | No | Absent for none. Required with `amfs`. |
+| `global_gnb_id.plmn` | object | Yes | One of `plmns`. |
+| `global_gnb_id.gnb_id` | int | Yes | `0` to 2^`bit_length` - 1. |
+| `global_gnb_id.bit_length` | int | Yes | `22` to `32`. |
+| `mmes` | array | No | MMEs. |
+| `mmes[].tnl_addresses` | array | Yes | At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's MMEs. Returned in canonical form. |
+| `amfs` | array | No | AMFs. |
+| `amfs[].tnl_addresses` | array | Yes | At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's AMFs. Returned in canonical form. |
+| `user_plane` | object | No | Absent for the defaults. |
+| `user_plane.aggregation` | boolean | No | Default `true` when `ran.user_plane.enabled` is `true` in the configuration file, `false` otherwise. `true` gets `400` when it is `false`. |
+
+The read-only fields of the responses, `mmes[].status`, `amfs[].status`, `user_plane.status`, `ue_connections` and `ue_connections_by_radio`, are ignored. Other unknown fields get `400`.
+
+### Sample Request
+
+```
+{
+    "name": "Operator A",
+    "pws_operator": true,
+    "plmns": [{"mcc": "001", "mnc": "01"}],
+    "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "macro", "enb_id": 1},
+    "global_gnb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "gnb_id": 1, "bit_length": 22},
+    "mmes": [{"tnl_addresses": ["127.0.0.2"]}],
+    "amfs": [{"tnl_addresses": ["10.0.1.5"]}]
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "name": "Operator A",
+        "pws_operator": true,
+        "plmns": [{"mcc": "001", "mnc": "01"}],
+        "global_enb_id": {
+            "plmn": {"mcc": "001", "mnc": "01"},
+            "enb_id_type": "macro",
+            "enb_id": 1
+        },
+        "global_gnb_id": {
+            "plmn": {"mcc": "001", "mnc": "01"},
+            "gnb_id": 1,
+            "bit_length": 22
+        },
+        "mmes": [
+            {
+                "tnl_addresses": ["127.0.0.2"],
+                "status": {
+                    "state": "disconnected",
+                    "since": "2026-11-13T16:31:55.645317884Z",
+                    "ue_connections": 0
+                }
+            }
+        ],
+        "amfs": [
+            {
+                "tnl_addresses": ["10.0.1.5"],
+                "status": {
+                    "state": "disconnected",
+                    "since": "2026-11-13T16:31:55.645320112Z",
+                    "ue_connections": 0
+                }
+            }
+        ],
+        "ue_connections": 0,
+        "ue_connections_by_radio": [
+            {
+                "ref": "eNB:001-01:MacroeNB-0019b",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 411
+                },
+                "name": "enb-north",
+                "ue_connections": 0
+            },
+            {
+                "ref": "eNB:001-01:MacroeNB-0019c",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 412
+                },
+                "name": "enb-south",
+                "ue_connections": 0
+            },
+            {
+                "ref": "gNB:001-01:000001@22",
+                "type": "gNB",
+                "global_gnb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "gnb_id": 1,
+                    "bit_length": 22
+                },
+                "name": "gnb-east",
+                "ue_connections": 0
+            }
+        ]
+    }
+}
+```
+
+## Update an Operator
+
+This path replaces the whole operator. A different `name` renames it. It takes the request body of [Create an Operator](<#create-an-operator>), and returns the operator the same way.
+
+| Method | Path |
+| --- | --- |
+| PUT | `/api/v1/operators/{name}` |
+
+### Sample Request
+
+```
+{
+    "name": "Operator D",
+    "plmns": [{"mcc": "001", "mnc": "04"}]
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "name": "Operator D",
+        "pws_operator": false,
+        "plmns": [{"mcc": "001", "mnc": "04"}],
+        "mmes": [],
+        "amfs": [],
+        "ue_connections": 0,
+        "ue_connections_by_radio": []
+    }
+}
+```
+
+## Delete an Operator
+
+| Method | Path |
+| --- | --- |
+| DELETE | `/api/v1/operators/{name}` |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "Operator deleted successfully"
+    }
+}
+```
+
+# Pprof
+
+These paths serve the [net/http/pprof](<https://pkg.go.dev/net/http/pprof>) API. They require Admin, and accept an API token.
+
+## Profiling Endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/v1/pprof/` | An HTML page listing the available profiles. |
+| GET | `/api/v1/pprof/allocs` | A sampling of all past memory allocations. |
+| GET | `/api/v1/pprof/cmdline` | The command line invocation of the program. |
+| GET | `/api/v1/pprof/goroutine` | Stack traces of all current goroutines. |
+| GET | `/api/v1/pprof/goroutineleak` | Stack traces of all leaked goroutines. |
+| GET | `/api/v1/pprof/heap` | A sampling of memory allocations of live objects. |
+| GET | `/api/v1/pprof/profile` | A CPU profile, of 30 seconds by default. |
+| GET | `/api/v1/pprof/threadcreate` | Stack traces that led to the creation of new OS threads. |
+| GET | `/api/v1/pprof/trace` | An execution trace, of 1 second by default. |
+| GET, POST | `/api/v1/pprof/symbol` | Function names of program counters. |
+
+### Query Parameters
+
+| Parameter | Paths | Description |
+| --- | --- | --- |
+| `seconds` | `profile`, `trace` | Duration of the capture. |
+| `seconds` | `allocs`, `goroutine`, `heap` | Returns the difference of the profile over this duration. |
+| `debug` | `allocs`, `goroutine`, `heap`, `threadcreate` | `0`: protobuf. `1`: text. `2` (`goroutine`): stack traces in the format of a panic. |
+| `gc` | `heap` | `1`: runs a garbage collection first. |
+
+# Radios
+
+Radios are the eNodeBs with an S1 association and the gNodeBs with an NG association to Ella MOCN. They are learned at runtime, not stored.
+
+## List Radios
+
+This path returns the radios, oldest association first.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/radios` |
+
+### Query Parameters
+
+| Name | In | Type | Default | Allowed | Description |
+| --- | --- | --- | --- | --- | --- |
+| `page` | query | int | `1` | `>= 1` | 1-based page index. |
+| `per_page` | query | int | `25` | `1…100` | Number of items per page. |
+
+### Response Fields
+
+`items` holds the radios of the page, `page` and `per_page` echo the query, and `total_count` is the number of radios. Each radio has:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ref` | string | Radio identity, and the path segment that addresses it: `<type>:<mcc>-<mnc>:<id>`, as Ella Core names radios. See [Radio Ref](<#radio-ref>). Absent while the radio has no Global eNB ID or Global gNB ID, and in the `setup_failed` state. |
+| `type` | string | 3GPP node type: `eNB` over S1 or `gNB` over NG. |
+| `global_enb_id` | object | Global eNB ID from the S1 SETUP REQUEST. Absent for a gNB, before the radio sends one, or when Ella MOCN cannot decode it. |
+| `global_enb_id.plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `global_enb_id.enb_id_type` | string | `macro`, `home`, `short_macro` or `long_macro`. |
+| `global_enb_id.enb_id` | int | eNB ID: 20 bits for `macro`, 28 for `home`, 18 for `short_macro`, 21 for `long_macro`. |
+| `global_gnb_id` | object | Global gNB ID from the NG SETUP REQUEST. Absent for an eNB, before the radio sends one, or when Ella MOCN cannot decode it. |
+| `global_gnb_id.plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `global_gnb_id.gnb_id` | int | gNB ID, less than 2^`bit_length`. |
+| `global_gnb_id.bit_length` | int | gNB ID length, in bits: `22` to `32`. |
+| `name` | string | eNB Name of an eNB, or RAN Node Name of a gNB. Absent when the radio sent none. |
+| `supported_tas` | array | Supported TAs. |
+| `supported_tas[].tac` | string | Tracking Area Code: 6 lower-case hexadecimal digits, for example `000001`. The 16-bit TAC of an eNB is in the last 4 digits. |
+| `supported_tas[].broadcast_plmns` | array | Broadcast PLMNs. |
+| `supported_tas[].broadcast_plmns[].plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `supported_tas[].broadcast_plmns[].snssais` | array | NG only. TAI Slice Support List of the PLMN in the tracking area: S-NSSAIs, each with `sst` (`0` to `255`) and `sd` (6 hex digits, absent when none). Absent for an eNB. |
+| `default_paging_drx` | int | Default paging DRX, in radio frames: `32`, `64`, `128` or `256`. Absent before the setup. |
+| `state` | string | `connected`: SCTP association up, no successful S1 or NG Setup. `up`: S1 or NG Setup succeeded. `setup_failed`: SCTP association up, Ella MOCN rejected the last S1 or NG Setup. |
+| `setup_failure` | object | Last S1 or NG Setup that Ella MOCN rejected. Present in the `setup_failed` state only. |
+| `setup_failure.cause` | string | Cause of the S1 SETUP FAILURE or NG SETUP FAILURE, for example `Unknown PLMN`. |
+| `setup_failure.reason` | string | Why Ella MOCN rejected the setup, for example `no operator serves a broadcast PLMN`. |
+| `setup_failure.at` | string | When Ella MOCN rejected the setup. |
+| `connected_at` | string | When the SCTP association was established. |
+| `tnl_addresses` | array | Addresses of the radio. |
+| `ue_connections` | int | UE-associated logical S1-connections or NG-connections from the radio. |
+
+In the `setup_failed` state, `global_enb_id`, `global_gnb_id`, `name`, `supported_tas` and `default_paging_drx` are those of the rejected S1 SETUP REQUEST or NG SETUP REQUEST, and `ue_connections` is `0`.
+
+### Radio Ref
+
+| Radio | `<type>` | `<id>` | Example |
+| --- | --- | --- | --- |
+| eNB, `macro` | `eNB` | `MacroeNB-` and the eNB ID in lower-case hexadecimal, 5 digits. | `eNB:001-01:MacroeNB-0019b` for eNB ID 411. |
+| eNB, `home` | `eNB` | `HomeeNB-` and the eNB ID in lower-case hexadecimal, 7 digits. | `eNB:001-01:HomeeNB-000019b` for eNB ID 411. |
+| eNB, `short_macro` | `eNB` | `SMacroeNB-` and the eNB ID in lower-case hexadecimal, 5 digits. | `eNB:001-01:SMacroeNB-0019b` for eNB ID 411. |
+| eNB, `long_macro` | `eNB` | `LMacroeNB-` and the eNB ID in lower-case hexadecimal, 6 digits. | `eNB:001-01:LMacroeNB-00019b` for eNB ID 411. |
+| gNB | `gNB` | The gNB ID in lower-case hexadecimal, zero-padded to `bit_length` / 4 digits rounded up, then `@` and `bit_length`. | `gNB:001-01:000001@22` for gNB ID 1 of 22 bits, `gNB:001-01:00019c@24` for gNB ID 412 of 24 bits. |
+
+`<mcc>-<mnc>` is the PLMN of the Global eNB ID or Global gNB ID.
+
+### Sample Response
+
+```
+{
+    "result": {
+        "items": [
+            {
+                "ref": "eNB:001-01:MacroeNB-0019c",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 412
+                },
+                "name": "enb-south",
+                "supported_tas": [
+                    {
+                        "tac": "000001",
+                        "broadcast_plmns": [
+                            {"plmn": {"mcc": "001", "mnc": "01"}},
+                            {"plmn": {"mcc": "001", "mnc": "02"}}
+                        ]
+                    }
+                ],
+                "default_paging_drx": 128,
+                "state": "up",
+                "connected_at": "2026-11-13T16:31:55.645045565Z",
+                "tnl_addresses": ["127.0.0.1"],
+                "ue_connections": 1
+            },
+            {
+                "ref": "eNB:001-01:MacroeNB-0019b",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 411
+                },
+                "name": "enb-north",
+                "supported_tas": [
+                    {
+                        "tac": "000001",
+                        "broadcast_plmns": [
+                            {"plmn": {"mcc": "001", "mnc": "01"}},
+                            {"plmn": {"mcc": "001", "mnc": "02"}}
+                        ]
+                    }
+                ],
+                "default_paging_drx": 128,
+                "state": "up",
+                "connected_at": "2026-11-13T16:31:55.645073005Z",
+                "tnl_addresses": ["127.0.0.1"],
+                "ue_connections": 3
+            },
+            {
+                "ref": "gNB:001-01:000001@22",
+                "type": "gNB",
+                "global_gnb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "gnb_id": 1,
+                    "bit_length": 22
+                },
+                "name": "gnb-east",
+                "supported_tas": [
+                    {
+                        "tac": "000001",
+                        "broadcast_plmns": [
+                            {
+                                "plmn": {"mcc": "001", "mnc": "01"},
+                                "snssais": [{"sst": 1}, {"sst": 2, "sd": "000001"}]
+                            }
+                        ]
+                    }
+                ],
+                "default_paging_drx": 128,
+                "state": "up",
+                "connected_at": "2026-11-13T16:31:55.645102117Z",
+                "tnl_addresses": ["127.0.0.1"],
+                "ue_connections": 1
+            },
+            {
+                "type": "gNB",
+                "global_gnb_id": {
+                    "plmn": {"mcc": "001", "mnc": "03"},
+                    "gnb_id": 2,
+                    "bit_length": 22
+                },
+                "name": "gnb-west",
+                "supported_tas": [
+                    {
+                        "tac": "000001",
+                        "broadcast_plmns": [
+                            {
+                                "plmn": {"mcc": "001", "mnc": "03"},
+                                "snssais": [{"sst": 1}]
+                            }
+                        ]
+                    }
+                ],
+                "default_paging_drx": 128,
+                "state": "setup_failed",
+                "setup_failure": {
+                    "cause": "Unknown PLMN or SNPN",
+                    "reason": "no operator serves a broadcast PLMN",
+                    "at": "2026-11-13T16:32:10.120934871Z"
+                },
+                "connected_at": "2026-11-13T16:32:10.118410254Z",
+                "tnl_addresses": ["127.0.0.2"],
+                "ue_connections": 0
+            }
+        ],
+        "page": 1,
+        "per_page": 25,
+        "total_count": 4
+    }
+}
+```
+
+## Get a Radio
+
+This path returns a radio, with its UE connections by operator. To list its UE connections, use [`GET /api/v1/ue-connections?radio={ref}`](<https://docs.ellanetworks.com/mocn/reference/api/ue_connections/index.md#list-ue-connections>).
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/radios/{ref}` |
+
+### Path Parameters
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `ref` | string | Radio identity, as returned in a radio's `ref` field, for example `eNB:001-01:MacroeNB-0019b` or `gNB:001-01:000001@22`. See [Radio Ref](<#radio-ref>). `:` and `@` can be percent-encoded. |
+
+### Response Fields
+
+The fields of [List Radios](<#list-radios>), plus:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ue_connections_by_operator` | array | UE-associated logical S1-connections or NG-connections from the radio, by operator. Lists every operator that owns a PLMN the radio broadcasts, and every other operator with UE connections from the radio, sorted by operator name. Absent when empty. |
+| `ue_connections_by_operator[].operator` | string | Operator name. |
+| `ue_connections_by_operator[].ue_connections` | int | UE-associated logical S1-connections or NG-connections. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "ref": "eNB:001-01:MacroeNB-0019c",
+        "type": "eNB",
+        "global_enb_id": {
+            "plmn": {"mcc": "001", "mnc": "01"},
+            "enb_id_type": "macro",
+            "enb_id": 412
+        },
+        "name": "enb-south",
+        "supported_tas": [
+            {
+                "tac": "000001",
+                "broadcast_plmns": [
+                    {"plmn": {"mcc": "001", "mnc": "01"}},
+                    {"plmn": {"mcc": "001", "mnc": "02"}}
+                ]
+            }
+        ],
+        "default_paging_drx": 128,
+        "state": "up",
+        "connected_at": "2026-11-13T16:31:55.645045565Z",
+        "tnl_addresses": ["127.0.0.1"],
+        "ue_connections": 1,
+        "ue_connections_by_operator": [
+            {"operator": "Operator A", "ue_connections": 0},
+            {"operator": "Operator B", "ue_connections": 1}
+        ]
+    }
+}
+```
+
+# Status
+
+## Get the Status
+
+This path returns the version of the MOCN, whether it is initialized, and whether user-plane aggregation is enabled.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/status` |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `version` | string | Version. |
+| `revision` | string | Git commit of the build. Empty in development builds. |
+| `initialized` | boolean | Whether the first user exists. See [Initialize](<https://docs.ellanetworks.com/mocn/reference/api/initialize/index.md>). |
+| `user_plane_aggregation` | boolean | Whether operators can use user-plane aggregation: `ran.user_plane.enabled` in the configuration file. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "version": "v0.0.1",
+        "revision": "",
+        "initialized": true,
+        "user_plane_aggregation": false
+    }
+}
+```
+
+## Check Liveness
+
+This path answers while the process serves HTTP.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/livez` |
+
+It answers `204 No Content`.
+
+## Check Readiness
+
+This path returns whether the MOCN is ready to receive traffic. The response has `Cache-Control: no-store`.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/readyz` |
+
+### Checks
+
+| Name | Passes when |
+| --- | --- |
+| `database` | The database answers. |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ready` | boolean | Whether every check passes. |
+| `checks` | array | The checks, in order. |
+| `checks[].name` | string | Name of the check. |
+| `checks[].ok` | boolean | Whether it passes. |
+| `checks[].detail` | string | Why it fails. Empty when it passes. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "ready": true,
+        "checks": [
+            {"name": "database", "ok": true, "detail": ""}
+        ]
+    }
+}
+```
+
+# UE Connections
+
+A UE connection is a UE-associated logical S1-connection or NG-connection that Ella MOCN relays between a radio and an operator's MME or AMF. UE connections are learned at runtime, not stored.
+
+## List UE Connections
+
+This path returns the UE connections, oldest first.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/ue-connections` |
+
+### Query Parameters
+
+| Name | In | Type | Default | Allowed | Description |
+| --- | --- | --- | --- | --- | --- |
+| `page` | query | int | `1` | `>= 1` | 1-based page index. |
+| `per_page` | query | int | `25` | `1…100` | Number of items per page. |
+| `radio` | query | string |  |  | Only the UE connections of the radio with this [`ref`](<https://docs.ellanetworks.com/mocn/reference/api/radios/index.md#list-radios>). |
+| `operator` | query | string |  |  | Only the UE connections of the [operator](<https://docs.ellanetworks.com/mocn/reference/api/operators/index.md>) with this name. |
+
+### Response Fields
+
+`items` holds the UE connections of the page, `page` and `per_page` echo the query, and `total_count` is the number of UE connections that match the filters. Each UE connection has:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `interface` | string | `s1` or `ng`. |
+| `radio` | object | The connection between the radio and Ella MOCN. |
+| `radio.ref` | string | The radio's [`ref`](<https://docs.ellanetworks.com/mocn/reference/api/radios/index.md#list-radios>). |
+| `radio.enb_ue_s1ap_id` | int | S1 only. eNB UE S1AP ID, allocated by the radio. `0` to `16777215`. Absent until the radio answers a HANDOVER REQUEST. |
+| `radio.mme_ue_s1ap_id` | int | S1 only. MME UE S1AP ID, allocated by Ella MOCN. `0` to `4294967295`. |
+| `radio.ran_ue_ngap_id` | int | NG only. RAN UE NGAP ID, allocated by the radio. `0` to `4294967295`. Absent until the radio answers a HANDOVER REQUEST. |
+| `radio.amf_ue_ngap_id` | int | NG only. AMF UE NGAP ID, allocated by Ella MOCN. `0` to `1099511627775`. |
+| `mme` | object | S1 only. The S1 connection between Ella MOCN and the operator's MME. |
+| `mme.tnl_addresses` | array | The MME's TNL addresses, as configured on the operator. |
+| `mme.enb_ue_s1ap_id` | int | eNB UE S1AP ID, allocated by Ella MOCN. `0` to `16777215`. |
+| `mme.mme_ue_s1ap_id` | int | MME UE S1AP ID, allocated by the MME. Absent until the MME's first message for the UE. |
+| `amf` | object | NG only. The NG connection between Ella MOCN and the operator's AMF. |
+| `amf.tnl_addresses` | array | The AMF's TNL addresses, as configured on the operator. |
+| `amf.ran_ue_ngap_id` | int | RAN UE NGAP ID, allocated by Ella MOCN. `0` to `4294967295`. |
+| `amf.amf_ue_ngap_id` | int | AMF UE NGAP ID, allocated by the AMF. Absent until the AMF's first message for the UE. |
+| `operator` | string | Name of the operator that serves the selected PLMN. |
+| `plmn` | object | The selected PLMN, with `mcc` and `mnc`. |
+| `since` | string | When Ella MOCN received the INITIAL UE MESSAGE, HANDOVER REQUEST or PATH SWITCH REQUEST. |
+| `tai` | object | The last TAI the radio reported for the UE: `plmn` and `tac`, 6 lower-case hexadecimal digits. Absent when none. |
+| `ecgi` | object | S1 only. The last E-UTRAN CGI the radio reported for the UE: `plmn` and `cell_id`, the 28-bit E-UTRAN Cell Identity. Absent when none. |
+| `nr_cgi` | object | NG only. The last NR CGI the radio reported for the UE: `plmn` and `cell_id`, the 36-bit NR Cell Identity. Absent when none. |
+| `tunnels` | array | With user-plane aggregation, the GTP-U tunnels Ella MOCN relays for the UE. Absent when none. |
+| `tunnels[].bearer` | int | E-RAB ID or PDU session ID. |
+| `tunnels[].direction` | string | `uplink` (from the radio) or `downlink` (from the operator). |
+| `tunnels[].forwarding` | boolean | Handover data forwarding tunnel. |
+| `tunnels[].address`, `tunnels[].teid` | string, int | Ella MOCN's endpoint the sender uses. |
+| `tunnels[].peer_address`, `tunnels[].peer_teid` | string, int | The endpoint Ella MOCN forwards to. |
+| `tunnels[].packets`, `tunnels[].bytes` | int | G-PDUs relayed so far, and the octets of their T-PDUs: the inner IP packet, without the GTP-U header and extension headers. End Marker and Tunnel Status messages are not counted. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "items": [
+            {
+                "interface": "s1",
+                "radio": {
+                    "ref": "eNB:001-01:MacroeNB-0019c",
+                    "enb_ue_s1ap_id": 1,
+                    "mme_ue_s1ap_id": 1
+                },
+                "mme": {
+                    "tnl_addresses": ["127.0.0.3"],
+                    "enb_ue_s1ap_id": 1,
+                    "mme_ue_s1ap_id": 101
+                },
+                "operator": "Operator B",
+                "plmn": {"mcc": "001", "mnc": "02"},
+                "since": "2026-11-13T16:31:56.646031138Z",
+                "tai": {
+                    "plmn": {"mcc": "001", "mnc": "02"},
+                    "tac": "000001"
+                },
+                "ecgi": {
+                    "plmn": {"mcc": "001", "mnc": "02"},
+                    "cell_id": 105473
+                }
+            },
+            {
+                "interface": "ng",
+                "radio": {
+                    "ref": "gNB:001-01:000001@22",
+                    "ran_ue_ngap_id": 0,
+                    "amf_ue_ngap_id": 2
+                },
+                "amf": {
+                    "tnl_addresses": ["127.0.0.2"],
+                    "ran_ue_ngap_id": 2,
+                    "amf_ue_ngap_id": 101
+                },
+                "operator": "Operator A",
+                "plmn": {"mcc": "001", "mnc": "01"},
+                "since": "2026-11-13T16:31:56.646102232Z",
+                "tai": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "tac": "000001"
+                },
+                "nr_cgi": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "cell_id": 16384
+                }
+            }
+        ],
+        "page": 1,
+        "per_page": 25,
+        "total_count": 2
+    }
+}
+```
+
+# Users
+
+Paths under `/api/v1/users/me` act on the user of the token. The others require Admin, and an access token: an API token gets `403`.
+
+## Get My User
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/users/me` |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `email` | string | Email address. |
+| `role_id` | int | `1` to `3`. See [roles](<https://docs.ellanetworks.com/mocn/reference/api/index.md#roles>). |
+| `role_pinned` | boolean | Stored with the user. Ella MOCN has no single sign-on, so it has no effect. |
+| `password_set` | boolean | The user has a password. |
+| `oidc_linked` | boolean | Always `false`. Ella MOCN has no single sign-on. |
+
+The other paths that return users return the same fields.
+
+### Sample Response
+
+```
+{
+    "result": {
+        "email": "admin@example.com",
+        "role_id": 1,
+        "role_pinned": false,
+        "password_set": true,
+        "oidc_linked": false
+    }
+}
+```
+
+## Update My Password
+
+This path ends the user's sessions, except the one of the session cookie the request carries. Without that cookie, it ends all of them. It requires an access token.
+
+| Method | Path |
+| --- | --- |
+| PUT | `/api/v1/users/me/password` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `current_password` | string | Yes | Current password. |
+| `password` | string | Yes | New password, 8 to 72 bytes. |
+
+### Sample Request
+
+```
+{
+    "current_password": "correct horse",
+    "password": "correct horse battery"
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "Password updated successfully"
+    }
+}
+```
+
+## List Users
+
+This path returns the users, oldest first.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/users` |
+
+### Query Parameters
+
+| Name | In | Type | Default | Allowed | Description |
+| --- | --- | --- | --- | --- | --- |
+| `page` | query | int | `1` | `>= 1` | 1-based page index. |
+| `per_page` | query | int | `25` | `1…100` | Number of items per page. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "items": [
+            {
+                "email": "admin@example.com",
+                "role_id": 1,
+                "role_pinned": false,
+                "password_set": true,
+                "oidc_linked": false
+            },
+            {
+                "email": "noc@example.com",
+                "role_id": 3,
+                "role_pinned": false,
+                "password_set": true,
+                "oidc_linked": false
+            },
+            {
+                "email": "viewer@example.com",
+                "role_id": 2,
+                "role_pinned": false,
+                "password_set": true,
+                "oidc_linked": false
+            }
+        ],
+        "page": 1,
+        "per_page": 25,
+        "total_count": 3
+    }
+}
+```
+
+## Create a User
+
+At most 50 users.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/v1/users` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email` | string | Yes | Email address. ASCII letters are stored in lower case. |
+| `password` | string | No | Empty, or 8 to 72 bytes. Empty or without it, the user cannot log in. |
+| `role_id` | int | Yes | `1` to `3`. See [roles](<https://docs.ellanetworks.com/mocn/reference/api/index.md#roles>). |
+| `role_pinned` | boolean | No | Default `false`. |
+
+### Sample Request
+
+```
+{
+    "email": "noc@example.com",
+    "password": "another horse",
+    "role_id": 3
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "User created successfully"
+    }
+}
+```
+
+## Get a User
+
+The email matches in any case.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/users/{email}` |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "email": "noc@example.com",
+        "role_id": 3,
+        "role_pinned": false,
+        "password_set": true,
+        "oidc_linked": false
+    }
+}
+```
+
+## Update a User
+
+This path sets the role of a user. A role change ends the user's sessions. An Admin cannot change its own role, and the last Admin with a password stays an Admin.
+
+| Method | Path |
+| --- | --- |
+| PUT | `/api/v1/users/{email}` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `role_id` | int | Yes | `1` to `3`. |
+| `role_pinned` | boolean | No | Without it, the current value is kept. |
+
+### Sample Request
+
+```
+{
+    "role_id": 2
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "User updated successfully"
+    }
+}
+```
+
+## Update a User's Password
+
+This path ends the user's sessions. An Admin cannot update its own password here.
+
+| Method | Path |
+| --- | --- |
+| PUT | `/api/v1/users/{email}/password` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `password` | string | Yes | 8 to 72 bytes. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "Password updated successfully"
+    }
+}
+```
+
+## Remove a User's Password
+
+This path removes the password of a user, who then cannot log in. It ends the user's sessions. An Admin cannot remove its own password, and the last Admin with a password keeps it.
+
+| Method | Path |
+| --- | --- |
+| DELETE | `/api/v1/users/{email}/password` |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "Password removed successfully"
+    }
+}
+```
+
+## Delete a User
+
+This path deletes the user with its sessions and API tokens. An Admin cannot delete itself, and the last Admin with a password cannot be deleted.
+
+| Method | Path |
+| --- | --- |
+| DELETE | `/api/v1/users/{email}` |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "User deleted successfully"
+    }
+}
+```
+
+## Create an API Token
+
+This path returns the token, the only time it is shown. At most 12 per user. Requires an access token.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/v1/users/me/api-tokens` |
+| POST | `/api/v1/users/{email}/api-tokens` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | Yes | 3 to 50 characters, unique among the user's tokens. |
+| `expires_at` | string | No | RFC 3339 time in the future. Without it, the token does not expire. |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `token` | string | `ellamocn_`, the token identifier, `_` and the secret. |
+
+### Sample Request
+
+```
+{
+    "name": "Prometheus scraper",
+    "expires_at": "2027-11-13T00:00:00Z"
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "token": "ellamocn_95Q0Y4lBtx2O_FAPT4VAIG3XDCT2V3D2LTEEYCS"
+    }
+}
+```
+
+## List API Tokens
+
+This path returns the user's API tokens, oldest first.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/users/me/api-tokens` |
+| GET | `/api/v1/users/{email}/api-tokens` |
+
+### Query Parameters
+
+| Name | In | Type | Default | Allowed | Description |
+| --- | --- | --- | --- | --- | --- |
+| `page` | query | int | `1` | `>= 1` | 1-based page index. |
+| `per_page` | query | int | `25` | `1…100` | Number of items per page. |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | string | Token identifier: the part of the token between `ellamocn_` and the next `_`. |
+| `name` | string | Name. |
+| `created_at` | string | Creation time. |
+| `expires_at` | string | Expiry time. Absent for a token that does not expire. |
+| `last_used_at` | string | Time of the last use, updated at most once a minute. Absent for a token never used. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "items": [
+            {
+                "id": "95Q0Y4lBtx2O",
+                "name": "Prometheus scraper",
+                "created_at": "2026-11-13T16:30:39.168Z",
+                "expires_at": "2027-11-13T00:00:00.000Z",
+                "last_used_at": "2026-11-13T16:30:55.267Z"
+            }
+        ],
+        "page": 1,
+        "per_page": 25,
+        "total_count": 1
+    }
+}
+```
+
+## Delete an API Token
+
+| Method | Path |
+| --- | --- |
+| DELETE | `/api/v1/users/me/api-tokens/{id}` |
+| DELETE | `/api/v1/users/{email}/api-tokens/{id}` |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "API token deleted successfully"
+    }
+}
+```
+
+# Configuration File
+
+Ella MOCN is configured using a YAML file. Start Ella MOCN with the `--config` flag to specify its path. Unknown keys are rejected. Changes take effect on restart.
+
+The operators and radios are not in this file: they are in the database, and set with the UI or the [API](<https://docs.ellanetworks.com/mocn/reference/api/index.md>).
+
+## Parameters
+
+- `logging` (object, optional): The logging configuration.
+
+  - `level` (string, optional): The log level: `debug`, `info`, `warn`, or `error`. Default `info`.
+- `db` (object): The database configuration.
+
+  - `path` (string): The path to the SQLite database file.
+- `api` (object, optional): The HTTP API and UI.
+
+  - `address` (string, optional): The IP address to listen on. Default `0.0.0.0`.
+  - `port` (int, optional): The TCP port to listen on. Default `5030`.
+  - `tls` (object, optional): Serve over HTTPS, TLS 1.2 or later. Default: plain HTTP.
+
+    - `cert` (string): The path to the PEM certificate chain, the server's certificate first.
+    - `key` (string): The path to the PEM private key.
+- `ran` (object, optional): The radios.
+
+  - `signalling` (object, optional): The S1 and NG listeners that radios connect to.
+
+    - `address` (string, optional): The IP address to listen on. Default `0.0.0.0`.
+    - `s1_port` (int, optional): The SCTP port of S1. Default `36412`.
+    - `ng_port` (int, optional): The SCTP port of NG. Default `38412`.
+  - `user_plane` (object, optional): The user plane towards the radios.
+
+    - `enabled` (boolean, optional): Allow [user-plane aggregation](<https://docs.ellanetworks.com/mocn/explanation/user_plane_aggregation_with_ebpf/index.md>). When `true`, Ella MOCN sets `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` to `1` at startup and needs the capabilities in the [system requirements](<https://docs.ellanetworks.com/mocn/reference/system_reqs/index.md>). When `false`, every operator uses the direct user plane. Default `false`.
+    - `name` (string): The network interface that radios' user traffic arrives on. Ella MOCN's address is its first global IPv4 address, or else its first global IPv6 address. Either `name` or `address` must be set when `enabled` is `true`, not both.
+    - `address` (string): Ella MOCN's user-plane address towards the radios. A unicast address of an interface of the host. Either `name` or `address` must be set when `enabled` is `true`, not both.
+- `telemetry` (object, optional): The [traces](<https://docs.ellanetworks.com/mocn/reference/observability/index.md#traces>).
+
+  - `enabled` (boolean, optional): Export traces. Default `false`.
+  - `otlp_endpoint` (string): The `host:port` of an OTLP/gRPC collector, over plain gRPC. Required when `enabled` is `true`.
+
+With the snap, the configuration file is `/var/snap/ella-mocn/common/mocn.yaml`.
+
+## Example
+
+```
+logging:
+  level: info
+db:
+  path: /var/lib/mocn/mocn.db
+api:
+  address: 0.0.0.0
+  port: 5030
+  tls:
+    cert: /etc/mocn/api.pem
+    key: /etc/mocn/api.key
+ran:
+  signalling:
+    address: 0.0.0.0
+    s1_port: 36412
+    ng_port: 38412
+  user_plane:
+    enabled: true
+    name: eth1
+telemetry:
+  enabled: true
+  otlp_endpoint: localhost:4317
+```
+
+# Connectivity
+
+The interfaces Ella MOCN exposes and the peers it connects to. Defaults are in parentheses.
+
+| Interface | Peer | Transport | Local address | Remote address | Port | Used |
+| --- | --- | --- | --- | --- | --- | --- |
+| API and UI | Users, applications, Prometheus | TCP, or TLS with `api.tls` | `api.address` (`0.0.0.0`) |  | `api.port` (`5030`) | Always |
+| S1, from radios | eNBs | SCTP, PPID `18` | `ran.signalling.address` (`0.0.0.0`) |  | `ran.signalling.s1_port` (`36412`) | Always |
+| NG, from radios | gNBs | SCTP, PPID `60` | `ran.signalling.address` (`0.0.0.0`) |  | `ran.signalling.ng_port` (`38412`) | Always |
+| S1, to MMEs | The operators' MMEs | SCTP, PPID `18` | Source address of the host's route to the MME (`src`) | The MME's `tnl_addresses` | `36412` | Always |
+| NG, to AMFs | The operators' AMFs | SCTP, PPID `60` | Source address of the host's route to the AMF (`src`) | The AMF's `tnl_addresses` | `38412` | Always |
+| GTP-U, with radios | eNBs, gNBs | GTP-U over UDP | `ran.user_plane.address`, or the address of `ran.user_plane.name` |  | `2152` | Only with `ran.user_plane.enabled`, for operators with user-plane aggregation |
+| GTP-U, with operators | The operators' S-GWs and UPFs | GTP-U over UDP | Same as S1 or NG to the operator; for the other IP version, source address of the host's route to the S-GW or UPF |  | `2152` | Only with `ran.user_plane.enabled`, for operators with user-plane aggregation |
+| OTLP | OpenTelemetry collector | gRPC over TCP, without TLS |  | `telemetry.otlp_endpoint` | `telemetry.otlp_endpoint` | Only with `telemetry.enabled` |
+
+# Reference
+
+This section provides reference material for Ella MOCN, from configuration options to the API and metrics.
+
+- [API](<https://docs.ellanetworks.com/mocn/reference/api/index.md>)
+- [Configuration File](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>)
+- [Connectivity](<https://docs.ellanetworks.com/mocn/reference/connectivity/index.md>)
+- [Observability](<https://docs.ellanetworks.com/mocn/reference/observability/index.md>)
+- [Performance](<https://docs.ellanetworks.com/mocn/reference/performance/index.md>)
+- [System Requirements](<https://docs.ellanetworks.com/mocn/reference/system_reqs/index.md>)
+- [3GPP Compliance](<https://docs.ellanetworks.com/mocn/reference/3gpp_compliance/index.md>)
+
+# Observability
+
+Ella MOCN supports four observability pillars: Logs, Metrics, Traces and Profiles.
+
+## Logs
+
+Ella MOCN writes its logs to standard output, one JSON object per line, at the level of `logging.level` in the [configuration file](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>): `debug`, `info`, `warn` or `error`.
+
+| Field | Description |
+| --- | --- |
+| `ts` | Time of the event. |
+| `level` | `debug`, `info`, `warn` or `error`. |
+| `msg` | What happened. |
+| `trace_id` | Trace ID of the span the event happened in, as 32 hex digits. Absent outside a span. |
+| `span_id` | Span ID of the span the event happened in, as 16 hex digits. Absent outside a span. |
+| `trace_flags` | W3C trace flags of that span, as 2 hex digits: `01` when sampled. Absent outside a span. |
+
+Other fields depend on the event.
+
+### Audit events
+
+Audit events are logs at level `info` with `msg` set to `audit event`.
+
+| Field | Description |
+| --- | --- |
+| `action` | What was done, such as `auth_login` or `create_operator`. |
+| `actor` | Email of the user who did it. Empty when unknown. |
+| `ip` | Address the request came from. |
+| `details` | What was done, in words. |
+
+## Metrics
+
+Ella MOCN exposes Prometheus metrics at [`GET /api/v1/metrics`](<https://docs.ellanetworks.com/mocn/reference/api/metrics/index.md>).
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `ellamocn_radio_associations` | Gauge | `interface`, `state` (`connected`, `up`, `setup_failed`) | Radios connected, by state: `connected` before the S1 or NG Setup, `up` after, `setup_failed` after Ella MOCN rejected the last S1 or NG Setup. |
+| `ellamocn_core_associations` | Gauge | `interface`, `operator`, `state` (`disconnected`, `connected`, `up`, `setup_failed`) | Associations to MMEs and AMFs, by operator and state. |
+| `ellamocn_core_overloaded` | Gauge | `interface`, `operator` | MMEs and AMFs reporting overload, by operator. |
+| `ellamocn_setup_attempts_total` | Counter | `interface`, `side` (`radio`, `core`), `result` (`success`, `failure`, `timeout`, `unknown_plmn`, …) | S1 and NG Setup attempts from radios (`radio`) and to MMEs and AMFs (`core`), by result. |
+| `ellamocn_initial_ue_messages_total` | Counter | `interface`, `result` (`relayed`, `unknown_plmn`, `no_mme`, `no_amf`, `rejected`, `invalid`, `error`) | New UE connections from radios, by result. |
+| `ellamocn_paging_messages_total` | Counter | `interface`, `result` (`relayed`, `no_radio`, `invalid`) | Paging messages from MMEs and AMFs, by result. |
+| `ellamocn_overload_messages_total` | Counter | `interface`, `procedure` (`overload_start`, `overload_stop`), `result` (`relayed`, `no_radio`, `ignored`, `invalid`) | Overload start and stop messages from MMEs and AMFs, by result. |
+| `ellamocn_handover_messages_total` | Counter | `interface`, `procedure` (`handover_request`, `path_switch_request`), `result` (`relayed`, `no_radio`, `no_mme`, `no_amf`, `invalid`, `error`) | Handover and path switch requests, by result. |
+| `ellamocn_pws_messages_total` | Counter | `interface`, `procedure` (`write_replace_warning`, `kill`, `pws_cancel`, `pws_restart_indication`, `pws_failure_indication`), `result` (`relayed`, `no_radio`, `timeout`, …) | Public warning requests from MMEs and AMFs and indications from radios, by result. |
+| `ellamocn_ue_connections` | Gauge | `interface`, `operator` | UE connections relayed, by operator. |
+| `ellamocn_api_request_duration_seconds` | Histogram | `method`, `route`, `code` | Duration of API requests. |
+| `ellamocn_database_query_duration_seconds` | Histogram | `pool` (`write`, `read`) | Duration of database queries. |
+| `ellamocn_database_query_errors_total` | Counter | `pool` (`write`, `read`) | Failed database queries. |
+| `ellamocn_database_storage_bytes` | Gauge | `file` (`main`, `wal`) | Size of the database on disk. |
+| `ellamocn_build_info` | Gauge | `version`, `revision`, `branch`, `goversion`, `goos`, `goarch`, `tags` | Build information. Always 1. |
+| `go_*` | Gauge, Counter, Summary |  | Go runtime. |
+| `process_*` | Gauge, Counter |  | Process memory, CPU and file descriptors. |
+
+### User-plane metrics
+
+With [user-plane aggregation](<https://docs.ellanetworks.com/mocn/explanation/user_plane_aggregation_with_ebpf/index.md>):
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `ellamocn_user_plane_enabled` | Gauge |  | 1 when `ran.user_plane.enabled` is `true` in the [configuration file](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>), 0 otherwise. |
+| `ellamocn_user_plane_datapath_loaded` | Gauge |  | 1 while the user-plane eBPF program is loaded, 0 otherwise. |
+| `ellamocn_user_plane_state` | Gauge | `operator`, `state` (`ready`, `unavailable`, `off`) | 1 for the operator's current [user-plane state](<https://docs.ellanetworks.com/mocn/reference/api/operators/index.md>), 0 for the other states. |
+| `ellamocn_user_plane_unavailable` | Gauge | `operator`, `reason` (`not_connected`, `no_route`, `route_mismatch`, `no_address`, `interface_error`, `too_many_operators`) | 1 for the [reason](<https://docs.ellanetworks.com/mocn/reference/api/operators/index.md>) while the state is `unavailable`, 0 otherwise. |
+| `ellamocn_user_plane_tunnels` | Gauge | `operator`, `direction` | GTP-U tunnels relayed. |
+| `ellamocn_user_plane_tunnel_setups_total` | Counter | `operator`, `direction` | GTP-U tunnels set up. |
+| `ellamocn_user_plane_tunnel_setup_failures_total` | Counter | `operator`, `interface` (`s1`, `ng`), `procedure`, `reason` (`user_plane_unavailable`, `no_route`, `route_mismatch`, `no_address`, `no_teid`, `too_many_paths`, `invalid_address`, `unknown_endpoint`, `other`) | Procedures whose user-plane transport could not be relayed. The UE is released, or the handover or path switch is rejected. |
+| `ellamocn_user_plane_packets_total` | Counter | `operator`, `radio`, `direction` | G-PDUs relayed. End Marker and Tunnel Status messages are not counted. |
+| `ellamocn_user_plane_bytes_total` | Counter | `operator`, `radio`, `direction` | Octets of the T-PDUs of the G-PDUs relayed: the inner IP packet, without the GTP-U header and extension headers. |
+| `ellamocn_user_plane_dropped_packets_total` | Counter | `operator`, `path` (`fast`, `slow`), `reason` | GTP-U messages dropped. |
+| `ellamocn_user_plane_slow_path_packets_total` | Counter | `reason` | Packets on user-plane interfaces that the fast path left to the kernel. |
+| `ellamocn_user_plane_slow_path_relayed_total` | Counter | `operator`, `direction` | G-PDUs, End Markers and Tunnel Status messages relayed by the slow path. |
+| `ellamocn_user_plane_error_indications_total` | Counter | `origin`, `result` | GTP-U Error Indications. |
+| `ellamocn_user_plane_peer_up` | Gauge | `operator`, `side` (`radio`, `core`), `peer` | 0 once 3 Echo Requests in a row, sent every 60 s, go unanswered, 3 to 4 minutes after the peer stops answering. 1 otherwise. Present while a tunnel of the operator relays to the peer. |
+| `ellamocn_user_plane_bpf_map_entries` | Gauge | `map` (`tunnels`, `tunnel_stats`, `ifaces`, `path_stats`) | Entries in a map of the user-plane datapath. |
+| `ellamocn_user_plane_bpf_map_max_entries` | Gauge | `map` (`tunnels`, `tunnel_stats`, `ifaces`, `path_stats`) | Capacity of a map of the user-plane datapath. |
+| `ellamocn_user_plane_bpf_map_memory_bytes` | Gauge | `map` (`tunnels`, `tunnel_stats`, `ifaces`, `config`, `path_stats`, `drops`, `passes`) | Kernel memory locked by a map of the user-plane datapath. |
+
+## Traces
+
+Ella MOCN exports [OpenTelemetry](<https://opentelemetry.io/>) traces when `telemetry.enabled` is set in the [configuration file](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>).
+
+| Property | Value |
+| --- | --- |
+| Export | OTLP over gRPC, without TLS |
+| Service | `ella-mocn` |
+| Sampling | Parent-based, always on for a trace the MOCN starts |
+| Propagation | W3C Trace Context |
+| S1AP, NGAP and database spans | No NAS, security keys, subscriber identity, SQL text or parameters |
+
+### Spans
+
+| Span | Kind | Description |
+| --- | --- | --- |
+| `{method} {route}` | Server | A request to the API, except `/api/v1/livez`, `/api/v1/readyz`, `/api/v1/metrics` and `/api/v1/pprof/`. Links to the caller's `traceparent`. |
+| `s1ap/receive` | Server, Consumer | An S1AP message from a radio or an MME. |
+| `s1ap/send` | Client, Producer | An S1AP message to a radio or an MME, a child of the `s1ap/receive` that caused it. |
+| `ngap/receive` | Server, Consumer | An NGAP message from a radio or an AMF. |
+| `ngap/send` | Client, Producer | An NGAP message to a radio or an AMF, a child of the `ngap/receive` that caused it. |
+| `db.{call}`, such as `db.CreateUser` | Internal | A database call within a trace. |
+
+### RAN trace correlation
+
+When an MME or AMF activates a trace for a UE, that UE's S1AP or NGAP spans join the core's trace.
+
+| Item | Value |
+| --- | --- |
+| OpenTelemetry trace ID | 8 octets `0x00` ‖ E-UTRAN Trace ID or NG-RAN Trace ID (8 octets) |
+
+## Profiles
+
+Ella MOCN exposes the [net/http/pprof](<https://pkg.go.dev/net/http/pprof>) API at [`/api/v1/pprof/`](<https://docs.ellanetworks.com/mocn/reference/api/pprof/index.md>).
+
+## Dashboards
+
+Ella MOCN ships with a [Grafana](<https://grafana.com/>) dashboard. Import its JSON file from the repository.
+
+### Overview
+
+This dashboard uses Prometheus metrics to show the health of Ella MOCN on one screen: service status, radios and UE connections by operator, and performance.
+
+[![Overview Dashboard](<https://docs.ellanetworks.com/mocn/images/dashboard_overview.png>)](<https://docs.ellanetworks.com/mocn/images/dashboard_overview.png>)
+
+Grafana dashboard for Overview.
+
+- Data Sources: Prometheus
+- Dashboard JSON: [observability/grafana/dashboards/overview.json](<https://github.com/ellanetworks/mocn/blob/main/observability/grafana/dashboards/overview.json>)
+
+To import it, open **Dashboards \> New \> Import** in Grafana and upload the JSON file.
+
+# Performance
+
+This reference document contains performance test results of Ella MOCN's datapath with [user-plane aggregation](<https://docs.ellanetworks.com/mocn/explanation/user_plane_aggregation_with_ebpf/index.md>), and of its signalling.
+
+On a 16-vCPU virtual machine, Ella MOCN forwards 15 Gbps of subscriber traffic at 0% loss using about 3 vCPUs, adds under 0.1 ms of round-trip latency, and uses about 480 MiB of memory with 100,000 sessions. On a 20-core host, it relays 17,000 4G attaches or 11,000 5G registrations per second with user-plane aggregation.
+
+## Datapath
+
+### Throughput
+
+The following table outlines Ella MOCN's user-plane throughput at 0% loss, in millions of packets per second (Mpps) and gigabits per second (Gbps), for subscriber IP packets of 46, 494 and 1456 bytes:
+
+Table 1. User-plane throughput at 0% loss
+
+<table> <thead>     <tr>       <th rowspan="2">Network</th>       <th rowspan="2">Direction</th>       <th colspan="3">Throughput (Mpps)</th>       <th colspan="3">Throughput (Gbps)</th>     </tr>     <tr>       <th>46 B</th>       <th>494 B</th>       <th>1456 B</th>       <th>46 B</th>       <th>494 B</th>       <th>1456 B</th>     </tr>   </thead> <tbody>     <tr><td rowspan="2">4G</td><td>Uplink</td><td>1.95</td><td>1.87</td><td>1.29</td><td>0.72</td><td>7.41</td><td>15.0</td></tr>     <tr><td>Downlink</td><td>1.64</td><td>1.92</td><td>1.38</td><td>0.60</td><td>7.60</td><td>16.1</td></tr>   </tbody> <tbody>     <tr><td rowspan="2">5G</td><td>Uplink</td><td>1.76</td><td>1.36</td><td>1.20</td><td>0.65</td><td>5.37</td><td>14.0</td></tr>     <tr><td>Downlink</td><td>1.85</td><td>1.38</td><td>1.32</td><td>0.68</td><td>5.46</td><td>15.3</td></tr>   </tbody> </table>
+
+The packet size represents only the IP packet for the subscribers and ignores Ethernet and GTP-U encapsulation.
+
+All packets through Ella MOCN were relayed by the eBPF fast path: `ellamocn_user_plane_slow_path_packets_total` and `ellamocn_user_plane_dropped_packets_total` stayed at 0.
+
+### Latency (Round-trip)
+
+The following table outlines the user-plane round-trip latency:
+
+Table 2. User-plane round-trip latency
+
+| Path | Average (ms) | Best (ms) | Worst (ms) | Mean Deviation (ms) | p99 (ms) |
+| --- | --- | --- | --- | --- | --- |
+| Through Ella MOCN | 0.264 | 0.204 | 1.135 | 0.028 | 0.432 |
+| Direct | 0.179 | 0.114 | 0.637 | 0.022 | 0.276 |
+
+The value represents the round-trip time from a radio to the operator's S-GW and back.
+
+### CPU
+
+The following table outlines the CPU used on the Ella MOCN host at the throughput above, in vCPUs:
+
+Table 3. CPU on the Ella MOCN host (vCPUs)
+
+| Direction | 46 B | 494 B | 1456 B |
+| --- | --- | --- | --- |
+| Uplink | 2.8 | 2.9 | 2.6 |
+| Downlink | 2.3 | 3.0 | 2.7 |
+
+No vCPU exceeded 77%.
+
+### Memory
+
+The following table outlines the memory of the user plane by number of sessions, with one E-RAB and two GTP-U tunnels per session, on a host with 16 vCPUs:
+
+Table 4. User-plane memory
+
+| Sessions | Tunnels | eBPF maps (MiB) | Ella MOCN process RSS (MiB) |
+| --- | --- | --- | --- |
+| 0 | 0 | 36.3 | 42.8 |
+| 10,000 | 20,000 | 40.7 | 101.6 |
+| 100,000 | 200,000 | 80.5 | 399.2 |
+
+Table 5. eBPF map memory
+
+| eBPF map | Fixed | Per tunnel |
+| --- | --- | --- |
+| `tunnels` | 16.0 MiB | 136 B |
+| `tunnel_stats` | 16.0 MiB | 96 B |
+| `path_stats` | 264 KiB per CPU |  |
+| Others | 143 KiB |  |
+
+eBPF map memory is kernel memory and is not part of the process RSS.
+
+### Methodology
+
+We performed performance tests with Ella MOCN on Google Cloud, with three virtual machines in the same zone, of the following specifications:
+
+- **Machine type**: n2-standard-16 (16 vCPUs, 64 GB RAM)
+- **OS**: Ubuntu 26.04 LTS, kernel 7.0.0-1017-gcp
+- **NICs**: 2 x gVNIC, 4 receive and 4 transmit queues each, MTU 1500
+- **Networks**: one for the radios and one for the operator
+
+The Ella MOCN host had `ran.user_plane.enabled` set to `true`, the `forward` chain policy of nftables set to drop, its NIC interrupts spread over all vCPUs, and the `nohz=off` kernel parameter.
+
+The tests used `mocnperf`, in the `perf/` directory of the Ella MOCN repository: fake eNBs and a fake MME (4G), or fake gNBs and a fake AMF (5G), set up the sessions through Ella MOCN, a generator sent GTP-U from `AF_PACKET` sockets, and an XDP program counted the packets received.
+
+Test parameters:
+
+- **Sessions**: 1024, one E-RAB each
+- **Radios**: 64, each at its own address
+- **S-GWs**: 16 addresses
+- **Search**: highest rate at 0% loss (RFC 2544), binary search with 5-second trials and 2% resolution
+- **Confirmation**: 10 seconds at 0% loss
+- **Runs**: 1
+
+Latency test parameters:
+
+- **Probes**: 1000 per round, one every 10 ms
+- **Rounds**: 5 through Ella MOCN and 5 direct, alternating, median
+- **Packet size**: 84 B
+
+## Signalling
+
+### Procedure Rate and Latency
+
+The following table outlines the highest rate of procedures Ella MOCN relayed, with 160 procedures in flight, and the time each took:
+
+Table 6. Signalling procedure rate and latency
+
+| Procedure | User-plane aggregation | Rate (/s) | p50 (ms) | p99 (ms) |
+| --- | --- | --- | --- | --- |
+| 4G attach | Off | 43,981 | 2.27 | 3.74 |
+| 4G attach | On | 17,102 | 6.18 | 9.23 |
+| 5G registration | Off | 28,214 | 2.20 | 3.64 |
+| 5G registration | On | 11,763 | 4.06 | 8.63 |
+| 5G PDU session establishment | Off | 28,214 | 2.05 | 3.47 |
+| 5G PDU session establishment | On | 11,763 | 6.72 | 10.97 |
+| 4G paging |  | 87,961 | 1.76 | 3.77 |
+| 5G paging |  | 103,679 | 1.55 | 3.15 |
+
+The time of a 4G attach or 5G registration runs from the radio's Initial UE Message to the core's Initial Context Setup Request. The time of a PDU session establishment runs from the gNB's Uplink NAS Transport to the AMF's PDU Session Resource Setup Request. The time of a paging runs from the core's Paging to its arrival at every radio in the paging area. In 5G, each UE registers, then establishes one PDU session.
+
+### Memory
+
+The following table outlines the memory of 100,000 connected UEs, with user-plane aggregation:
+
+Table 7. Signalling memory with 100,000 connected UEs
+
+| Procedure | Connection rate (/s) | Memory per UE |
+| --- | --- | --- |
+| 4G attach | 20,783 | 4.7 KB |
+| 5G registration and PDU session establishment | 12,463 | 5.2 KB |
+
+Memory per UE is the process RSS growth from 0 to 100,000 connected UEs, divided by 100,000, and includes the simulated radios and cores. eBPF map memory is in the [datapath memory](<#memory>).
+
+### Methodology
+
+We performed signalling tests on one host, with the following specifications:
+
+- **CPU**: Intel Core Ultra 7 265K, 20 cores
+- **Memory**: 64 GB
+- **OS**: Ubuntu, kernel 7.0.0
+
+The tests used the end-to-end benchmarks in `internal/e2ebench` of the Ella MOCN repository: Ella MOCN, simulated eNBs or gNBs, and simulated MMEs or AMFs of two operators ran in one process on the host, over SCTP. Each UE was released after its procedure.
+
+Test parameters:
+
+- **Procedures in flight**: 160, one radio per procedure
+- **Paging area**: 8 radios
+- **Duration**: 5 seconds per run
+- **Runs**: 3, median
+- **Memory test**: 100,000 UEs on 100 radios, 256 procedures in flight
+
+# System Requirements
+
+Ella MOCN runs on any Linux distribution, on amd64 and arm64.
+
+|  | Up to 10,000 subscribers | Up to 100,000 subscribers |
+| --- | --- | --- |
+| **Operating System** | Linux, kernel 6.6 or later with SCTP | Linux, kernel 6.6 or later with SCTP |
+| **CPU** | 2 cores, amd64 or arm64 | 4 cores, amd64 or arm64 |
+| **Memory** | 1 GB RAM | 2 GB RAM |
+| **Disk** | 10 GB | 10 GB |
+| **Capabilities** | `CAP_BPF`, `CAP_PERFMON`, `CAP_NET_ADMIN` and `CAP_NET_RAW` (if user-plane aggregation is enabled) | `CAP_BPF`, `CAP_PERFMON`, `CAP_NET_ADMIN` and `CAP_NET_RAW` (if user-plane aggregation is enabled) |
+
+## Kubernetes
+
+Ella MOCN should work on most Kubernetes distributions. It has been validated on **GKE**, **OpenShift**, **RKE2**, and **kind**.
+
+| Requirement | Value |
+| --- | --- |
+| **Nodes** | Meet the host requirements above |
+| **Kubernetes** | 1.30 or later, with SCTP Services |
+| **RAN network** | Radios reach Ella MOCN's S1 and NG ports, either through an SCTP `LoadBalancer` or `NodePort` Service, or at the pod's address on a [Multus](<https://github.com/k8snetworkplumbingwg/multus-cni>) network. On a Multus network, the Helm chart uses the `macvlan` and `static` [CNI plugins](<https://github.com/containernetworking/plugins>). |
+| **User-plane aggregation** | A Multus network, with the `tuning` CNI plugin allowed to set `net.ipv4.ip_forward` and `net.ipv6.conf.all.forwarding` |
+| **Pod Security** | `restricted`, or `privileged` with user-plane aggregation or IPsec |
+| **Capabilities** | None, or `BPF`, `PERFMON`, `NET_ADMIN` and `NET_RAW` with user-plane aggregation |
+| **IPsec** | `NET_ADMIN` and `NET_BIND_SERVICE` for the strongSwan sidecar; amd64 nodes |
+| **Storage** | A default StorageClass with `ReadWriteOnce` volumes |
+
+# Explanation
+
+# Architecture
+
+Ella MOCN is a Multi-Operator Core Network (MOCN) gateway. It lets one neutral host radio network serve the subscribers of several mobile operators, with each operator keeping its own core network.
+
+[![Neutral host architecture](<https://docs.ellanetworks.com/mocn/images/architecture.svg>)](<https://docs.ellanetworks.com/mocn/images/architecture.svg>)
+
+Neutral host architecture
+
+## What each side sees
+
+- **Radios** connect to Ella MOCN as if it were their core. They broadcast the networks of every operator they serve, and need no per-operator configuration.
+- **Each operator** sees Ella MOCN as a single base station. The operator provisions one node, however large the neutral host's network grows.
+
+Adding an operator does not touch the radios, and adding a radio does not involve the operators.
+
+When a phone connects, it picks one of the networks the radio broadcasts, and Ella MOCN sends its signalling to the operator that owns that network.
+
+## Mobility
+
+When a phone moves between radios, the operator's core stays in charge of the handover, as it would with its own radios. Ella MOCN delivers the handover to the right radio, so phones keep their connection as they move through the neutral host's network. The core finds Ella MOCN by tracking area, so the neutral host's tracking areas must not be reused elsewhere in the operator's network.
+
+## Public warnings
+
+The sharing operators agree on one of them to send public warnings, such as emergency alerts, for the whole shared network. Ella MOCN broadcasts that operator's warnings on every radio in the warning area, and does not broadcast warnings from the others. When a radio restarts, Ella MOCN tells that operator, so its warnings are sent to the radio again.
+
+# Explanation
+
+These pages explain how Ella MOCN works and why.
+
+- [Architecture](<https://docs.ellanetworks.com/mocn/explanation/architecture/index.md>)
+- [User-Plane Aggregation with eBPF](<https://docs.ellanetworks.com/mocn/explanation/user_plane_aggregation_with_ebpf/index.md>)
+- [Security](<https://docs.ellanetworks.com/mocn/explanation/security/index.md>)
+
+# Security
+
+> [!NOTE]
+>
+> **Info**
+>
+> To report a security vulnerability, please file a [Private Security Report](<https://github.com/ellanetworks/mocn/security/advisories/new>).
+
+Security is one of Ella MOCN's core tenets. From the UI to the database, security is built into every layer of the system.
+
+## Authentication &amp; Authorization
+
+Ella MOCN enforces authentication on API requests towards most endpoints. Two authentication methods are supported:
+
+- **Session-based authentication.** Users authenticate with email and password. A session cookie and a short-lived access token are issued. The login endpoint limits attempts per client address and per account.
+- **API tokens.** Per-user tokens that can expire and be revoked individually. A token has its user's role, but cannot create API tokens, change a password or manage users. Recommended for programmatic access.
+
+### Role-Based Access Control
+
+Every request is authorized against a role-based permission system with three built-in roles:
+
+| Role | Scope |
+| --- | --- |
+| **Admin** | Full access to all resources and operations. |
+| **Network Manager** | Read Only, plus creating, updating and deleting operators. Cannot manage users. |
+| **Read Only** | Reads operators, radios and UE connections. |
+
+## Secret Storage
+
+- **User passwords** are stored as one-way hashes. Verification uses constant-time comparison.
+- **API token secrets** are stored as one-way hashes. The raw token is returned only once at creation time and is never retrievable afterward.
+- **Session tokens** are cryptographically random values. Only a one-way hash is persisted.
+- **JWT signing secret** is a cryptographically random value generated once and stored in the database.
+
+## Transport Security
+
+### API and UI
+
+Ella MOCN uses TLS to secure its API and web interface. The TLS configuration is defined in the [configuration file](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>).
+
+Ella MOCN supports TLS `1.2` and `1.3`.
+
+### Operators
+
+Ella MOCN can reach operator cores with IPsec tunnels. The tunnels are set up on the host, and Ella MOCN uses them to reach the operator's MMEs and AMFs, and its S-GWs and UPFs with [user-plane aggregation](<https://docs.ellanetworks.com/mocn/explanation/user_plane_aggregation_with_ebpf/index.md>). See [Connect an Operator over IPsec](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator_over_ipsec/index.md>).
+
+### Radios
+
+Ella MOCN does not encrypt S1 and NG toward the radios, and does not check a radio's identity. Protect the link to the radios, for example with IPsec set up on the host or a private network.
+
+## Minimal Attack Surface
+
+Ella MOCN minimizes its attack surface through minimal packaging:
+
+- **Container image.** Built on a distroless base with no operating system layer, shell, or package manager. Only the strictly necessary runtime dependencies are included. Image size: **under 100 MB**.
+
+## Audit Logging
+
+Ella MOCN writes security-relevant events, such as logins and changes to operators and users, to its log as audit events. Each records who did what, and when.
+
+# User-Plane Aggregation with eBPF
+
+While signalling always goes through Ella MOCN, you can choose to have subscriber traffic go through Ella MOCN too. This is called user-plane aggregation.
+
+## Direct vs aggregated
+
+[![User-plane aggregation](<https://docs.ellanetworks.com/mocn/images/user_plane_aggregation.svg>)](<https://docs.ellanetworks.com/mocn/images/user_plane_aggregation.svg>)
+
+User-plane aggregation
+
+### Direct
+
+Each radio sends its traffic straight to the operator's network. The radios and the operator's network must reach each other, so every radio needs an address the operator can route to.
+
+### Aggregated
+
+Ella MOCN carries the traffic between the radios and the operator's network. The operator sees only Ella MOCN's address, and the radios stay on the neutral host's private network. Subscriber traffic follows the same path as Ella MOCN's signalling to that operator, typically its IPsec tunnel. All of that operator's traffic then depends on Ella MOCN's capacity and availability.
+
+## How Ella MOCN forwards traffic
+
+Ella MOCN uses eBPF to relay subscriber traffic between the radios and the operators' networks in the kernel. With Traffic Control, it puts its own tunnel endpoints in place of the radios' and the operators', so each side only ever sees Ella MOCN. It never touches the traffic inside the tunnels.
+
+## More information
+
+- [How to Enable User-Plane Aggregation](<https://docs.ellanetworks.com/mocn/how_to/enable_user_plane_aggregation/index.md>).
+- [How to Connect an Operator over IPsec](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator_over_ipsec/index.md>).

@@ -1,0 +1,2983 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="RESTful API reference for managing the operators that share Ella MOCN.">
+      
+      
+      
+        <link rel="canonical" href="https://docs.ellanetworks.com/mocn/reference/api/operators/">
+      
+      
+        <link rel="describedby" href="../../../llms.txt">
+        
+          <link rel="alternate" type="text/markdown" href="./index.md">
+        
+      
+      
+        <link rel="prev" href="../users/">
+      
+      
+        <link rel="next" href="../radios/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../images/favicon.svg">
+      <meta name="generator" content="zensical-0.1.1">
+    
+    
+      
+        <title>Operators - Ella MOCN Documentation</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/classic/main.0006804e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/classic/palette.813d4b3f.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Code+Pro:300,300i,400,400i,500,500i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Source Code Pro";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  <meta property="og:type" content="website" />
+<meta property="og:title" content="Operators - Ella MOCN Documentation" />
+<meta property="og:description" content="RESTful API reference for managing the operators that share Ella MOCN." />
+<meta property="og:image" content="https://docs.ellanetworks.com/mocn/assets/images/social/reference/api/operators.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="https://docs.ellanetworks.com/mocn/reference/api/operators/" />
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:title" content="Operators - Ella MOCN Documentation" />
+<meta property="twitter:description" content="RESTful API reference for managing the operators that share Ella MOCN." />
+<meta property="twitter:image" content="https://docs.ellanetworks.com/mocn/assets/images/social/reference/api/operators.png" />
+</head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+        <aside class="md-banner">
+          <div class="md-banner__inner md-grid md-typeset">
+            
+            
+<div class="alert alert-info" role="alert">
+    <a href="https://www.ellanetworks.com/pricing" class="alert-link">
+        <strong>Get a production license</strong>.
+    </a>
+</div>
+
+          </div>
+          
+        </aside>
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Ella MOCN Documentation" class="md-header__button md-logo" aria-label="Ella MOCN Documentation" data-md-component="logo">
+      
+  <img src="../../../images/logo-mark.svg" alt="Ella MOCN Documentation">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Ella MOCN Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Operators
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/ellanetworks/mocn" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ellanetworks/mocn
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Ella MOCN Documentation" class="md-nav__button md-logo" aria-label="Ella MOCN Documentation" data-md-component="logo">
+      
+  <img src="../../../images/logo-mark.svg" alt="Ella MOCN Documentation">
+
+    </a>
+    Ella MOCN Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ellanetworks/mocn" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ellanetworks/mocn
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Home
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../tutorials/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Tutorials
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Tutorials
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tutorials/connect_your_first_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Connect Your First Radio
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../how_to/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  How-to Guides
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  How-to Guides
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how_to/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Install
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how_to/connect_a_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Connect a Radio
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how_to/connect_an_operator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Connect an Operator
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how_to/connect_an_operator_over_ipsec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Connect an Operator over IPsec
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how_to/enable_user_plane_aggregation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Enable User-Plane Aggregation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how_to/back_up_and_restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Back Up and Restore
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how_to/upgrade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Upgrade
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  API
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_4_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  API
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../initialize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Initialize
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Authentication
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../users/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Users
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+        <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Operators
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Operators
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#list-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        List Operators
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="List Operators">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#response-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Response Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-response" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mme-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        MME Status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#user-plane-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        User-Plane Status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#amf-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        AMF Status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get-an-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Get an Operator
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Get an Operator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#path-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Path Parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-fields_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Response Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-response_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#create-an-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Create an Operator
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Create an Operator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#request-body" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Request Body
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Request
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-response_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#update-an-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Update an Operator
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Update an Operator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sample-request_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Request
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-response_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delete-an-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Delete an Operator
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Delete an Operator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sample-response_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../radios/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Radios
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ue_connections/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  UE Connections
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../status/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Status
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Metrics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pprof/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pprof
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../config_file/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration File
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Observability
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../connectivity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Connectivity
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../system_reqs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  System Requirements
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../3gpp_compliance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  3GPP Compliance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../explanation/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explanation
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Explanation
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../explanation/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../explanation/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Security
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../explanation/user_plane_aggregation_with_ebpf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  User-Plane Aggregation with eBPF
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#list-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        List Operators
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="List Operators">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#response-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Response Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-response" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mme-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        MME Status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#user-plane-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        User-Plane Status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#amf-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        AMF Status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get-an-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Get an Operator
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Get an Operator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#path-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Path Parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-fields_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Response Fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-response_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#create-an-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Create an Operator
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Create an Operator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#request-body" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Request Body
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-request" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Request
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-response_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#update-an-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Update an Operator
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Update an Operator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sample-request_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Request
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sample-response_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#delete-an-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Delete an Operator
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Delete an Operator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sample-response_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sample Response
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="operators">Operators<a class="headerlink" href="#operators" title="Permanent link">&para;</a></h1>
+<p>An operator is a core network that shares the radios through Ella MOCN: its PLMNs, the Global eNB ID and Global gNB ID with which Ella MOCN presents itself to its core, and its MMEs and AMFs.</p>
+<h2 id="list-operators">List Operators<a class="headerlink" href="#list-operators" title="Permanent link">&para;</a></h2>
+<p>This path returns the operators, sorted by name, with the state of their MMEs and AMFs.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/operators</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="response-fields">Response Fields<a class="headerlink" href="#response-fields" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Name.</td>
+</tr>
+<tr>
+<td><code>pws_operator</code></td>
+<td>boolean</td>
+<td>Whether the operator's core connects the common CBC, whose warnings (PWS) are broadcast to every cell.</td>
+</tr>
+<tr>
+<td><code>plmns</code></td>
+<td>array</td>
+<td>PLMNs, each with <code>mcc</code> and <code>mnc</code>.</td>
+</tr>
+<tr>
+<td><code>global_enb_id</code></td>
+<td>object</td>
+<td>Global eNB ID that Ella MOCN uses towards the operator's MMEs. Absent when unset.</td>
+</tr>
+<tr>
+<td><code>global_enb_id.plmn</code></td>
+<td>object</td>
+<td>PLMN, with <code>mcc</code> and <code>mnc</code>.</td>
+</tr>
+<tr>
+<td><code>global_enb_id.enb_id_type</code></td>
+<td>string</td>
+<td><code>macro</code>, <code>short_macro</code> or <code>long_macro</code>.</td>
+</tr>
+<tr>
+<td><code>global_enb_id.enb_id</code></td>
+<td>int</td>
+<td>eNB ID.</td>
+</tr>
+<tr>
+<td><code>global_gnb_id</code></td>
+<td>object</td>
+<td>Global gNB ID that Ella MOCN uses towards the operator's AMFs. Absent when unset.</td>
+</tr>
+<tr>
+<td><code>global_gnb_id.plmn</code></td>
+<td>object</td>
+<td>PLMN, with <code>mcc</code> and <code>mnc</code>.</td>
+</tr>
+<tr>
+<td><code>global_gnb_id.gnb_id</code></td>
+<td>int</td>
+<td>gNB ID.</td>
+</tr>
+<tr>
+<td><code>global_gnb_id.bit_length</code></td>
+<td>int</td>
+<td>gNB ID length, in bits.</td>
+</tr>
+<tr>
+<td><code>mmes</code></td>
+<td>array</td>
+<td>MMEs. Empty when none.</td>
+</tr>
+<tr>
+<td><code>mmes[].tnl_addresses</code></td>
+<td>array</td>
+<td>Addresses of the MME, reached over one SCTP association to port 36412.</td>
+</tr>
+<tr>
+<td><code>mmes[].status</code></td>
+<td>object</td>
+<td>State of the MME. See <a href="#mme-status">MME Status</a>.</td>
+</tr>
+<tr>
+<td><code>amfs</code></td>
+<td>array</td>
+<td>AMFs. Empty when none.</td>
+</tr>
+<tr>
+<td><code>amfs[].tnl_addresses</code></td>
+<td>array</td>
+<td>Addresses of the AMF, reached over one SCTP association to port 38412.</td>
+</tr>
+<tr>
+<td><code>amfs[].status</code></td>
+<td>object</td>
+<td>State of the AMF. See <a href="#amf-status">AMF Status</a>.</td>
+</tr>
+<tr>
+<td><code>user_plane.aggregation</code></td>
+<td>boolean</td>
+<td>Whether user traffic goes through Ella MOCN (<a href="../../../explanation/user_plane_aggregation_with_ebpf/">user-plane aggregation</a>). Always <code>false</code> when <code>ran.user_plane.enabled</code> is <code>false</code> in the configuration file.</td>
+</tr>
+<tr>
+<td><code>user_plane.status</code></td>
+<td>object</td>
+<td>State of the operator's user plane. See <a href="#user-plane-status">User-Plane Status</a>.</td>
+</tr>
+<tr>
+<td><code>ue_connections</code></td>
+<td>int</td>
+<td>UE-associated logical S1-connections and NG-connections across the operator's MMEs and AMFs.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sample-response">Sample Response<a class="headerlink" href="#sample-response" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"items"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operator A"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"pws_operator"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">}],</span>
+<span class="w">                </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"global_gnb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"gnb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"bit_length"</span><span class="p">:</span><span class="w"> </span><span class="mi">22</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"mmes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                    </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"tnl_addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"127.0.0.2"</span><span class="p">],</span>
+<span class="w">                        </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                            </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"up"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"since"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-11-13T16:31:55.645317884Z"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"primary_tnl_address"</span><span class="p">:</span><span class="w"> </span><span class="s2">"127.0.0.2"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"mme_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mme-a"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"served_gummeis"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                                </span><span class="p">{</span>
+<span class="w">                                    </span><span class="nt">"served_plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">}],</span>
+<span class="w">                                    </span><span class="nt">"served_group_ids"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+<span class="w">                                    </span><span class="nt">"served_mmecs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+<span class="w">                                </span><span class="p">}</span>
+<span class="w">                            </span><span class="p">],</span>
+<span class="w">                            </span><span class="nt">"relative_mme_capacity"</span><span class="p">:</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"overload"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                                </span><span class="p">{</span>
+<span class="w">                                    </span><span class="nt">"gummei"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                                        </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">                                        </span><span class="nt">"mme_group_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">                                        </span><span class="nt">"mme_code"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">                                    </span><span class="p">},</span>
+<span class="w">                                    </span><span class="nt">"overload_action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reject_non_emergency_mo_dt"</span><span class="p">,</span>
+<span class="w">                                    </span><span class="nt">"traffic_load_reduction_indication"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span>
+<span class="w">                                </span><span class="p">}</span>
+<span class="w">                            </span><span class="p">],</span>
+<span class="w">                            </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">                        </span><span class="p">}</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">],</span>
+<span class="w">                </span><span class="nt">"amfs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"tnl_addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"10.0.1.5"</span><span class="p">]}],</span>
+<span class="w">                </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operator B"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"pws_operator"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02"</span><span class="p">}],</span>
+<span class="w">                </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02"</span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"mmes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                    </span><span class="p">{</span>
+<span class="w">                        </span><span class="nt">"tnl_addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"127.0.0.3"</span><span class="p">],</span>
+<span class="w">                        </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                            </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"up"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"since"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-11-13T16:31:55.645358627Z"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"primary_tnl_address"</span><span class="p">:</span><span class="w"> </span><span class="s2">"127.0.0.3"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"mme_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mme-b"</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"served_gummeis"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                                </span><span class="p">{</span>
+<span class="w">                                    </span><span class="nt">"served_plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02"</span><span class="p">}],</span>
+<span class="w">                                    </span><span class="nt">"served_group_ids"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+<span class="w">                                    </span><span class="nt">"served_mmecs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+<span class="w">                                </span><span class="p">}</span>
+<span class="w">                            </span><span class="p">],</span>
+<span class="w">                            </span><span class="nt">"relative_mme_capacity"</span><span class="p">:</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span>
+<span class="w">                            </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">                        </span><span class="p">}</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">],</span>
+<span class="w">                </span><span class="nt">"amfs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">                </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="mme-status">MME Status<a class="headerlink" href="#mme-status" title="Permanent link">&para;</a></h3>
+<p>The state of an MME, learned from its S1 association and not stored.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>state</code></td>
+<td>string</td>
+<td><code>disconnected</code>: no SCTP association. <code>connected</code>: SCTP association up, S1 Setup not completed. <code>up</code>: S1 Setup succeeded. <code>setup_failed</code>: the MME answered S1 SETUP FAILURE.</td>
+</tr>
+<tr>
+<td><code>since</code></td>
+<td>string</td>
+<td>When the MME entered its current state.</td>
+</tr>
+<tr>
+<td><code>primary_tnl_address</code></td>
+<td>string</td>
+<td>The MME address the SCTP association sends to. Absent without an association.</td>
+</tr>
+<tr>
+<td><code>mme_name</code></td>
+<td>string</td>
+<td>MME Name from the S1 SETUP RESPONSE or MME CONFIGURATION UPDATE. Absent when the MME sent none.</td>
+</tr>
+<tr>
+<td><code>served_gummeis</code></td>
+<td>array</td>
+<td>Served GUMMEIs from the S1 SETUP RESPONSE or MME CONFIGURATION UPDATE. Absent before the S1 Setup.</td>
+</tr>
+<tr>
+<td><code>served_gummeis[].served_plmns</code></td>
+<td>array</td>
+<td>Served PLMNs, each with <code>mcc</code> and <code>mnc</code>.</td>
+</tr>
+<tr>
+<td><code>served_gummeis[].served_group_ids</code></td>
+<td>array</td>
+<td>Served MME group IDs, <code>0</code> to <code>65535</code>.</td>
+</tr>
+<tr>
+<td><code>served_gummeis[].served_mmecs</code></td>
+<td>array</td>
+<td>Served MME codes, <code>0</code> to <code>255</code>.</td>
+</tr>
+<tr>
+<td><code>relative_mme_capacity</code></td>
+<td>int</td>
+<td>Relative MME Capacity, <code>0</code> to <code>255</code>. Absent before the S1 Setup.</td>
+</tr>
+<tr>
+<td><code>overload</code></td>
+<td>array</td>
+<td>The GUMMEIs of the MME with an ongoing overload action, from OVERLOAD START and OVERLOAD STOP. Absent when none. Cleared when the S1 association is lost.</td>
+</tr>
+<tr>
+<td><code>overload[].gummei</code></td>
+<td>object</td>
+<td>GUMMEI: <code>plmn</code>, <code>mme_group_id</code> (<code>0</code> to <code>65535</code>) and <code>mme_code</code> (<code>0</code> to <code>255</code>).</td>
+</tr>
+<tr>
+<td><code>overload[].overload_action</code></td>
+<td>string</td>
+<td>Overload Action from the last OVERLOAD START that applies to the GUMMEI: <code>reject_non_emergency_mo_dt</code>, <code>reject_rrc_cr_signalling</code>, <code>permit_emergency_sessions_and_mobile_terminated_services_only</code>, <code>permit_high_priority_sessions_and_mobile_terminated_services_only</code>, <code>reject_delay_tolerant_access</code>, <code>permit_high_priority_sessions_and_exception_reporting_and_mobile_terminated_services_only</code> or <code>not_accept_mo_data_or_delay_tolerant_access_from_cp_ciot</code>.</td>
+</tr>
+<tr>
+<td><code>overload[].traffic_load_reduction_indication</code></td>
+<td>int</td>
+<td>Traffic Load Reduction Indication from the same OVERLOAD START: the percentage of the traffic to reject, <code>1</code> to <code>99</code>. Absent when the MME did not include it.</td>
+</tr>
+<tr>
+<td><code>ue_connections</code></td>
+<td>int</td>
+<td>UE-associated logical S1-connections relayed to the MME.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="user-plane-status">User-Plane Status<a class="headerlink" href="#user-plane-status" title="Permanent link">&para;</a></h3>
+<p>The state of the operator's user plane, derived from the host's routes and not stored.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>state</code></td>
+<td>string</td>
+<td><code>ready</code>: Ella MOCN relays the operator's new sessions. <code>unavailable</code>: user-plane aggregation is on, but Ella MOCN refuses the operator's new sessions; UEs still register. <code>off</code>: user-plane aggregation is off for the operator.</td>
+</tr>
+<tr>
+<td><code>reason</code></td>
+<td>string</td>
+<td>Why the user plane is unavailable. Absent otherwise. <code>not_connected</code>: no association with the operator's MMEs or AMFs. <code>no_route</code>: no route to an MME or AMF. <code>route_mismatch</code>: the route to an MME or AMF no longer leaves by the interface its association uses, or two of them use different interfaces or addresses. <code>no_address</code>: the route to an MME or AMF no longer has the association's address as its source. <code>interface_error</code>: Ella MOCN cannot attach to the interface. <code>too_many_operators</code>: more operators use user-plane aggregation than Ella MOCN supports.</td>
+</tr>
+<tr>
+<td><code>interface</code></td>
+<td>string</td>
+<td>The interface the host routes the operator's MMEs and AMFs through. Absent without an association.</td>
+</tr>
+<tr>
+<td><code>addresses</code></td>
+<td>array</td>
+<td>Ella MOCN's addresses toward the operator, at most one IPv4 and one IPv6: the source addresses of its associations with the operator's MMEs and AMFs.</td>
+</tr>
+<tr>
+<td><code>since</code></td>
+<td>string</td>
+<td>When the user plane entered its current state.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="amf-status">AMF Status<a class="headerlink" href="#amf-status" title="Permanent link">&para;</a></h3>
+<p>The state of an AMF, learned from its NG association and not stored.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>state</code></td>
+<td>string</td>
+<td><code>disconnected</code>: no SCTP association. <code>connected</code>: SCTP association up, NG Setup not completed. <code>up</code>: NG Setup succeeded. <code>setup_failed</code>: the AMF answered NG SETUP FAILURE.</td>
+</tr>
+<tr>
+<td><code>since</code></td>
+<td>string</td>
+<td>When the AMF entered its current state.</td>
+</tr>
+<tr>
+<td><code>primary_tnl_address</code></td>
+<td>string</td>
+<td>The AMF address the SCTP association sends to. Absent without an association.</td>
+</tr>
+<tr>
+<td><code>amf_name</code></td>
+<td>string</td>
+<td>AMF Name from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE. Absent before the NG Setup.</td>
+</tr>
+<tr>
+<td><code>served_guamis</code></td>
+<td>array</td>
+<td>Served GUAMI List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE, each with <code>plmn</code>, <code>amf_region_id</code> (<code>0</code> to <code>255</code>), <code>amf_set_id</code> (<code>0</code> to <code>1023</code>) and <code>amf_pointer</code> (<code>0</code> to <code>63</code>). Absent before the NG Setup.</td>
+</tr>
+<tr>
+<td><code>plmn_support</code></td>
+<td>array</td>
+<td>PLMN Support List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE. Absent before the NG Setup.</td>
+</tr>
+<tr>
+<td><code>plmn_support[].plmn</code></td>
+<td>object</td>
+<td>PLMN, with <code>mcc</code> and <code>mnc</code>.</td>
+</tr>
+<tr>
+<td><code>plmn_support[].snssais</code></td>
+<td>array</td>
+<td>S-NSSAIs, each with <code>sst</code> (<code>0</code> to <code>255</code>) and <code>sd</code> (6 hex digits, absent when none).</td>
+</tr>
+<tr>
+<td><code>relative_amf_capacity</code></td>
+<td>int</td>
+<td>Relative AMF Capacity, <code>0</code> to <code>255</code>. Absent before the NG Setup.</td>
+</tr>
+<tr>
+<td><code>unavailable_guamis</code></td>
+<td>array</td>
+<td>GUAMIs that an AMF STATUS INDICATION marked unavailable, in the format of <code>served_guamis</code>. Absent when none. Cleared by NG Setup and by an AMF CONFIGURATION UPDATE with a Served GUAMI List.</td>
+</tr>
+<tr>
+<td><code>overload</code></td>
+<td>array</td>
+<td>The ongoing overload actions of the AMF, from OVERLOAD START and OVERLOAD STOP. A GUAMI is in at most one item: a later OVERLOAD START replaces the earlier one for its GUAMIs. Absent when none. Cleared by NG Setup and the loss of the NG association.</td>
+</tr>
+<tr>
+<td><code>overload[].guamis</code></td>
+<td>array</td>
+<td>GUAMI List of the OVERLOAD START, in the format of <code>served_guamis</code>. The served GUAMIs of the operator's PLMNs when the OVERLOAD START has no GUAMI List.</td>
+</tr>
+<tr>
+<td><code>overload[].overload_action</code></td>
+<td>string</td>
+<td>Overload Action of the AMF Overload Response: <code>reject_non_emergency_mo_dt</code>, <code>reject_rrc_cr_signalling</code>, <code>permit_emergency_sessions_and_mobile_terminated_services_only</code> or <code>permit_high_priority_sessions_and_mobile_terminated_services_only</code>. Absent when the AMF did not include it.</td>
+</tr>
+<tr>
+<td><code>overload[].traffic_load_reduction_indication</code></td>
+<td>int</td>
+<td>AMF Traffic Load Reduction Indication: the percentage of the traffic to reject, <code>1</code> to <code>99</code>. Absent when the AMF did not include it.</td>
+</tr>
+<tr>
+<td><code>overload[].slices</code></td>
+<td>array</td>
+<td>Overload Start NSSAI List: each with <code>snssais</code>, and <code>overload_action</code> (Slice Overload Response) and <code>traffic_load_reduction_indication</code> (Slice Traffic Load Reduction Indication) when the AMF included them. Absent when none.</td>
+</tr>
+<tr>
+<td><code>ue_connections</code></td>
+<td>int</td>
+<td>UE-associated logical NG-connections relayed to the AMF.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="get-an-operator">Get an Operator<a class="headerlink" href="#get-an-operator" title="Permanent link">&para;</a></h2>
+<p>This path returns an operator, with the state of its MMEs and AMFs and its UE connections by radio.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/operators/{name}</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="path-parameters">Path Parameters<a class="headerlink" href="#path-parameters" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Operator name.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="response-fields_1">Response Fields<a class="headerlink" href="#response-fields_1" title="Permanent link">&para;</a></h3>
+<p>The fields of <a href="#list-operators">List Operators</a>, plus:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ue_connections_by_radio</code></td>
+<td>array</td>
+<td>UE-associated logical S1-connections and NG-connections of the operator, by radio. Lists every radio that broadcasts one of the operator's PLMNs, and every other radio with UE connections of the operator, sorted by name, or by <code>ref</code> for a radio without a name.</td>
+</tr>
+<tr>
+<td><code>ue_connections_by_radio[].ref</code></td>
+<td>string</td>
+<td>The radio's <a href="../radios/#list-radios"><code>ref</code></a>.</td>
+</tr>
+<tr>
+<td><code>ue_connections_by_radio[].type</code></td>
+<td>string</td>
+<td>The radio's <code>type</code>: <code>eNB</code> or <code>gNB</code>.</td>
+</tr>
+<tr>
+<td><code>ue_connections_by_radio[].global_enb_id</code></td>
+<td>object</td>
+<td>The radio's <code>global_enb_id</code>. Absent when the radio has none.</td>
+</tr>
+<tr>
+<td><code>ue_connections_by_radio[].global_gnb_id</code></td>
+<td>object</td>
+<td>The radio's <code>global_gnb_id</code>. Absent when the radio has none.</td>
+</tr>
+<tr>
+<td><code>ue_connections_by_radio[].name</code></td>
+<td>string</td>
+<td>The radio's <code>name</code>. Absent when the radio sent none.</td>
+</tr>
+<tr>
+<td><code>ue_connections_by_radio[].ue_connections</code></td>
+<td>int</td>
+<td>UE-associated logical S1-connections or NG-connections.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sample-response_1">Sample Response<a class="headerlink" href="#sample-response_1" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operator B"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"pws_operator"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02"</span><span class="p">}],</span>
+<span class="w">        </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02"</span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nt">"mmes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"tnl_addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"127.0.0.3"</span><span class="p">],</span>
+<span class="w">                </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"up"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"since"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-11-13T16:31:55.645358627Z"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"primary_tnl_address"</span><span class="p">:</span><span class="w"> </span><span class="s2">"127.0.0.3"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"mme_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mme-b"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"served_gummeis"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">                        </span><span class="p">{</span>
+<span class="w">                            </span><span class="nt">"served_plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02"</span><span class="p">}],</span>
+<span class="w">                            </span><span class="nt">"served_group_ids"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+<span class="w">                            </span><span class="nt">"served_mmecs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+<span class="w">                        </span><span class="p">}</span>
+<span class="w">                    </span><span class="p">],</span>
+<span class="w">                    </span><span class="nt">"relative_mme_capacity"</span><span class="p">:</span><span class="w"> </span><span class="mi">255</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="nt">"amfs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">        </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"ue_connections_by_radio"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eNB:001-01:MacroeNB-0019b"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eNB"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">411</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"enb-north"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eNB:001-01:MacroeNB-0019c"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eNB"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">412</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"enb-south"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="create-an-operator">Create an Operator<a class="headerlink" href="#create-an-operator" title="Permanent link">&para;</a></h2>
+<p>This path returns the operator as <a href="#get-an-operator">Get an Operator</a> returns it.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/operators</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="request-body">Request Body<a class="headerlink" href="#request-body" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>1 to 64 characters, after leading and trailing spaces are removed. Unique.</td>
+</tr>
+<tr>
+<td><code>pws_operator</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>Default <code>false</code>. At most one operator has <code>true</code>.</td>
+</tr>
+<tr>
+<td><code>plmns</code></td>
+<td>array</td>
+<td>Yes</td>
+<td>1 to 12 PLMNs, each listed once, and owned by no other operator. Operators with MMEs have at most 32 PLMNs in total, and operators with AMFs at most 12.</td>
+</tr>
+<tr>
+<td><code>plmns[].mcc</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>3 digits.</td>
+</tr>
+<tr>
+<td><code>plmns[].mnc</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>2 or 3 digits.</td>
+</tr>
+<tr>
+<td><code>global_enb_id</code></td>
+<td>object</td>
+<td>No</td>
+<td>Absent for none. Required with <code>mmes</code>.</td>
+</tr>
+<tr>
+<td><code>global_enb_id.plmn</code></td>
+<td>object</td>
+<td>Yes</td>
+<td>One of <code>plmns</code>.</td>
+</tr>
+<tr>
+<td><code>global_enb_id.enb_id_type</code></td>
+<td>string</td>
+<td>Yes</td>
+<td><code>macro</code>, <code>short_macro</code> or <code>long_macro</code>.</td>
+</tr>
+<tr>
+<td><code>global_enb_id.enb_id</code></td>
+<td>int</td>
+<td>Yes</td>
+<td><code>0</code> to <code>1048575</code> for <code>macro</code>, <code>262143</code> for <code>short_macro</code>, <code>2097151</code> for <code>long_macro</code>.</td>
+</tr>
+<tr>
+<td><code>global_gnb_id</code></td>
+<td>object</td>
+<td>No</td>
+<td>Absent for none. Required with <code>amfs</code>.</td>
+</tr>
+<tr>
+<td><code>global_gnb_id.plmn</code></td>
+<td>object</td>
+<td>Yes</td>
+<td>One of <code>plmns</code>.</td>
+</tr>
+<tr>
+<td><code>global_gnb_id.gnb_id</code></td>
+<td>int</td>
+<td>Yes</td>
+<td><code>0</code> to 2^<code>bit_length</code> - 1.</td>
+</tr>
+<tr>
+<td><code>global_gnb_id.bit_length</code></td>
+<td>int</td>
+<td>Yes</td>
+<td><code>22</code> to <code>32</code>.</td>
+</tr>
+<tr>
+<td><code>mmes</code></td>
+<td>array</td>
+<td>No</td>
+<td>MMEs.</td>
+</tr>
+<tr>
+<td><code>mmes[].tnl_addresses</code></td>
+<td>array</td>
+<td>Yes</td>
+<td>At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's MMEs. Returned in canonical form.</td>
+</tr>
+<tr>
+<td><code>amfs</code></td>
+<td>array</td>
+<td>No</td>
+<td>AMFs.</td>
+</tr>
+<tr>
+<td><code>amfs[].tnl_addresses</code></td>
+<td>array</td>
+<td>Yes</td>
+<td>At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's AMFs. Returned in canonical form.</td>
+</tr>
+<tr>
+<td><code>user_plane</code></td>
+<td>object</td>
+<td>No</td>
+<td>Absent for the defaults.</td>
+</tr>
+<tr>
+<td><code>user_plane.aggregation</code></td>
+<td>boolean</td>
+<td>No</td>
+<td>Default <code>true</code> when <code>ran.user_plane.enabled</code> is <code>true</code> in the configuration file, <code>false</code> otherwise. <code>true</code> gets <code>400</code> when it is <code>false</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The read-only fields of the responses, <code>mmes[].status</code>, <code>amfs[].status</code>, <code>user_plane.status</code>, <code>ue_connections</code> and <code>ue_connections_by_radio</code>, are ignored. Other unknown fields get <code>400</code>.</p>
+<h3 id="sample-request">Sample Request<a class="headerlink" href="#sample-request" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operator A"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"pws_operator"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">}],</span>
+<span class="w">    </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span><span class="w"> </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span><span class="w"> </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"global_gnb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span><span class="w"> </span><span class="nt">"gnb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">"bit_length"</span><span class="p">:</span><span class="w"> </span><span class="mi">22</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"mmes"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"tnl_addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"127.0.0.2"</span><span class="p">]}],</span>
+<span class="w">    </span><span class="nt">"amfs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"tnl_addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"10.0.1.5"</span><span class="p">]}]</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="sample-response_2">Sample Response<a class="headerlink" href="#sample-response_2" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operator A"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"pws_operator"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">}],</span>
+<span class="w">        </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nt">"global_gnb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"gnb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"bit_length"</span><span class="p">:</span><span class="w"> </span><span class="mi">22</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nt">"mmes"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"tnl_addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"127.0.0.2"</span><span class="p">],</span>
+<span class="w">                </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disconnected"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"since"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-11-13T16:31:55.645317884Z"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="nt">"amfs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"tnl_addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"10.0.1.5"</span><span class="p">],</span>
+<span class="w">                </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"disconnected"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"since"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-11-13T16:31:55.645320112Z"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">        </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"ue_connections_by_radio"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eNB:001-01:MacroeNB-0019b"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eNB"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">411</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"enb-north"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eNB:001-01:MacroeNB-0019c"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eNB"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"global_enb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"enb_id_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"macro"</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"enb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">412</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"enb-south"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gNB:001-01:000001@22"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gNB"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"global_gnb_id"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nt">"plmn"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"01"</span><span class="p">},</span>
+<span class="w">                    </span><span class="nt">"gnb_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">                    </span><span class="nt">"bit_length"</span><span class="p">:</span><span class="w"> </span><span class="mi">22</span>
+<span class="w">                </span><span class="p">},</span>
+<span class="w">                </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gnb-east"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="update-an-operator">Update an Operator<a class="headerlink" href="#update-an-operator" title="Permanent link">&para;</a></h2>
+<p>This path replaces the whole operator. A different <code>name</code> renames it. It takes the request body of <a href="#create-an-operator">Create an Operator</a>, and returns the operator the same way.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PUT</td>
+<td><code>/api/v1/operators/{name}</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="sample-request_1">Sample Request<a class="headerlink" href="#sample-request_1" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operator D"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"04"</span><span class="p">}]</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="sample-response_3">Sample Response<a class="headerlink" href="#sample-response_3" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operator D"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"pws_operator"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"plmns"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"mcc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"001"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mnc"</span><span class="p">:</span><span class="w"> </span><span class="s2">"04"</span><span class="p">}],</span>
+<span class="w">        </span><span class="nt">"mmes"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">        </span><span class="nt">"amfs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">        </span><span class="nt">"ue_connections"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"ue_connections_by_radio"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h2 id="delete-an-operator">Delete an Operator<a class="headerlink" href="#delete-an-operator" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DELETE</td>
+<td><code>/api/v1/operators/{name}</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="sample-response_4">Sample Response<a class="headerlink" href="#sample-response_4" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Operator deleted successfully"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../users/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Users">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Users
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../radios/" class="md-footer__link md-footer__link--next" aria-label="Next: Radios">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Radios
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2026 Ella Networks
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://www.ellanetworks.com" target="_blank" rel="noopener" title="Ella Networks website" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M351.9 280H161c2.9 64.5 17.2 123.9 37.5 167.4 11.4 24.5 23.7 41.8 35.1 52.4 11.2 10.5 18.9 12.2 22.9 12.2s11.7-1.7 22.9-12.2c11.4-10.6 23.7-28 35.1-52.4 20.3-43.5 34.6-102.9 37.5-167.4zm-191-48h190.9c-2.8-64.5-17.1-123.9-37.4-167.4-11.4-24.4-23.7-41.8-35.1-52.4C268.1 1.7 260.4 0 256.4 0s-11.7 1.7-22.9 12.2c-11.4 10.6-23.7 28-35.1 52.4-20.3 43.5-34.6 102.9-37.5 167.4m-48 0c3.5-85.6 25.6-165.1 57.9-217.3C78.7 47.3 10.9 131.2 1.5 232zM1.5 280c9.4 100.8 77.2 184.7 169.3 217.3-32.3-52.2-54.4-131.7-57.9-217.3zm398.4 0c-3.5 85.6-25.6 165.1-57.9 217.3 92.1-32.7 159.9-116.5 169.3-217.3zm111.4-48C501.9 131.2 434.1 47.3 342 14.7c32.3 52.2 54.4 131.7 57.9 217.3z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://www.youtube.com/@ellanetworks" target="_blank" rel="noopener" title="Ella Networks on YouTube" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M549.7 124.1c-6.2-23.7-24.8-42.3-48.3-48.6C458.9 64 288.1 64 288.1 64S117.3 64 74.7 75.5c-23.5 6.3-42 24.9-48.3 48.6C15 167 15 256.4 15 256.4s0 89.4 11.4 132.3c6.3 23.6 24.8 41.5 48.3 47.8C117.3 448 288.1 448 288.1 448s170.8 0 213.4-11.5c23.5-6.3 42-24.2 48.3-47.8 11.4-42.9 11.4-132.3 11.4-132.3s0-89.4-11.4-132.3zM232.2 337.6V175.2l142.7 81.2z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://www.linkedin.com/company/ellanetworks" target="_blank" rel="noopener" title="Ella Networks on LinkedIn" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://www.github.com/ellanetworks/mocn" target="_blank" rel="noopener" title="Ella Networks on GitHub" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.sections","navigation.footer","navigation.indexes","content.code.copy","content.tabs.link"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      
+    
+  </body>
+</html>

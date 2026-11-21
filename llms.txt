@@ -1,0 +1,52 @@
+# Ella MOCN Documentation
+
+> A MOCN gateway that integrates your neutral host radio network with mobile operators.
+
+A MOCN gateway that integrates your neutral host radio network with mobile operators.
+
+## Home
+
+- [Home](<https://docs.ellanetworks.com/mocn/index.md>)
+
+## Tutorials
+
+- [Connect Your First Radio](<https://docs.ellanetworks.com/mocn/tutorials/connect_your_first_radio/index.md>)
+- [Tutorials](<https://docs.ellanetworks.com/mocn/tutorials/index.md>)
+
+## How-to Guides
+
+- [Back Up and Restore](<https://docs.ellanetworks.com/mocn/how_to/back_up_and_restore/index.md>)
+- [Connect a Radio](<https://docs.ellanetworks.com/mocn/how_to/connect_a_radio/index.md>)
+- [Connect an Operator](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator/index.md>)
+- [Connect an Operator over IPsec](<https://docs.ellanetworks.com/mocn/how_to/connect_an_operator_over_ipsec/index.md>)
+- [Enable User-Plane Aggregation](<https://docs.ellanetworks.com/mocn/how_to/enable_user_plane_aggregation/index.md>)
+- [How-to Guides](<https://docs.ellanetworks.com/mocn/how_to/index.md>)
+- [Install](<https://docs.ellanetworks.com/mocn/how_to/install/index.md>)
+- [Upgrade](<https://docs.ellanetworks.com/mocn/how_to/upgrade/index.md>)
+
+## Reference
+
+- [3GPP Compliance](<https://docs.ellanetworks.com/mocn/reference/3gpp_compliance/index.md>)
+- [Authentication](<https://docs.ellanetworks.com/mocn/reference/api/auth/index.md>)
+- [API](<https://docs.ellanetworks.com/mocn/reference/api/index.md>)
+- [Initialize](<https://docs.ellanetworks.com/mocn/reference/api/initialize/index.md>)
+- [Metrics](<https://docs.ellanetworks.com/mocn/reference/api/metrics/index.md>)
+- [Operators](<https://docs.ellanetworks.com/mocn/reference/api/operators/index.md>)
+- [Pprof](<https://docs.ellanetworks.com/mocn/reference/api/pprof/index.md>)
+- [Radios](<https://docs.ellanetworks.com/mocn/reference/api/radios/index.md>)
+- [Status](<https://docs.ellanetworks.com/mocn/reference/api/status/index.md>)
+- [UE Connections](<https://docs.ellanetworks.com/mocn/reference/api/ue_connections/index.md>)
+- [Users](<https://docs.ellanetworks.com/mocn/reference/api/users/index.md>)
+- [Configuration File](<https://docs.ellanetworks.com/mocn/reference/config_file/index.md>)
+- [Connectivity](<https://docs.ellanetworks.com/mocn/reference/connectivity/index.md>)
+- [Reference](<https://docs.ellanetworks.com/mocn/reference/index.md>)
+- [Observability](<https://docs.ellanetworks.com/mocn/reference/observability/index.md>)
+- [Performance](<https://docs.ellanetworks.com/mocn/reference/performance/index.md>)
+- [System Requirements](<https://docs.ellanetworks.com/mocn/reference/system_reqs/index.md>)
+
+## Explanation
+
+- [Architecture](<https://docs.ellanetworks.com/mocn/explanation/architecture/index.md>)
+- [Explanation](<https://docs.ellanetworks.com/mocn/explanation/index.md>)
+- [Security](<https://docs.ellanetworks.com/mocn/explanation/security/index.md>)
+- [User-Plane Aggregation with eBPF](<https://docs.ellanetworks.com/mocn/explanation/user_plane_aggregation_with_ebpf/index.md>)
