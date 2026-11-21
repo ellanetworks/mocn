@@ -1,0 +1,549 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "image",
+    "ran",
+    "service",
+    "persistence"
+  ],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": [
+        "repository"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Image repository."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Image tag. Defaults to the chart appVersion."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^(sha256:[a-f0-9]{64})?$",
+          "description": "Image digest. Takes precedence over tag."
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ],
+          "description": "Image pull policy."
+        }
+      },
+      "description": "Ella MOCN container image."
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "description": "Image pull secrets."
+    },
+    "nameOverride": {
+      "type": "string",
+      "description": "Overrides the chart name."
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Overrides the resource name prefix."
+    },
+    "ran": {
+      "type": "object",
+      "required": [
+        "interface",
+        "networkAttachment",
+        "service"
+      ],
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^([^/]+/[0-9]{1,3})?$",
+          "description": "S1 and NG address of the pod on a Multus network, in CIDR notation. Empty listens on the pod network and exposes S1 and NG through a Service."
+        },
+        "interface": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 15,
+          "description": "Name of the Multus interface in the pod."
+        },
+        "networkAttachment": {
+          "type": "object",
+          "properties": {
+            "create": {
+              "type": "boolean",
+              "description": "Create a macvlan NetworkAttachmentDefinition. Set to false to use your own, which must enable net.ipv4.ip_forward and net.ipv6.conf.all.forwarding in the pod when userPlane.enabled is true."
+            },
+            "name": {
+              "type": "string",
+              "description": "Name of the NetworkAttachmentDefinition."
+            },
+            "master": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Host interface that connects to the radios."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "bridge",
+                "private",
+                "vepa",
+                "passthru"
+              ],
+              "description": "macvlan mode."
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "dst"
+                ],
+                "properties": {
+                  "dst": {
+                    "type": "string"
+                  },
+                  "gw": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "description": "Routes through the Multus interface, for radios behind a router."
+            }
+          },
+          "description": "NetworkAttachmentDefinition of the Multus interface, used when address is set."
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "ClusterIP",
+                "NodePort",
+                "LoadBalancer"
+              ],
+              "description": "Service type."
+            },
+            "s1NodePort": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Node port of S1, when type is NodePort or LoadBalancer."
+            },
+            "ngNodePort": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Node port of NG, when type is NodePort or LoadBalancer."
+            },
+            "annotations": {
+              "type": "object",
+              "description": "Service annotations."
+            }
+          },
+          "description": "Service that exposes S1 and NG, when address is empty."
+        }
+      },
+      "description": "Network that radios connect to."
+    },
+    "userPlane": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable user-plane aggregation on ran.address. Requires ran.address. The pod then runs as root with the BPF, PERFMON, NET_ADMIN and NET_RAW capabilities, and the NetworkAttachmentDefinition the chart creates enables IP forwarding in the pod."
+        }
+      },
+      "description": "User-plane aggregation."
+    },
+    "ipsec": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Run a strongSwan sidecar that terminates route-based IPsec tunnels to the operators in the pod."
+        },
+        "secretName": {
+          "type": "string",
+          "description": "Secret with the swanctl configuration (*.conf files with connections and secrets), mounted at /etc/swanctl/conf.d. Certificates and keys in it are referenced by their path in that directory."
+        },
+        "interfaces": {
+          "type": "array",
+          "description": "xfrm interfaces created in the pod, one per operator.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "id",
+              "address",
+              "mtu",
+              "routes"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 15,
+                "description": "Interface name."
+              },
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295,
+                "description": "xfrm interface ID, matching if_id_in and if_id_out of the swanctl connection."
+              },
+              "address": {
+                "type": "string",
+                "pattern": "^[^/]+/[0-9]{1,3}$",
+                "description": "Ella MOCN's address toward the operator, in CIDR notation."
+              },
+              "mtu": {
+                "type": "integer",
+                "minimum": 1280,
+                "maximum": 9000,
+                "description": "Interface MTU: the MTU toward the operator's security gateway minus 100."
+              },
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Operator networks routed through the interface, from address."
+              }
+            }
+          }
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^(sha256:[a-f0-9]{64})?$"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
+            }
+          },
+          "description": "strongSwan image. digest takes precedence over tag."
+        }
+      },
+      "description": "IPsec to the operators."
+    },
+    "config": {
+      "type": "object",
+      "description": "Ella MOCN configuration file content, merged over the settings the chart manages."
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ],
+          "description": "Service type."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Service port."
+        },
+        "nodePort": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Node port, when type is NodePort."
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Service annotations."
+        }
+      },
+      "description": "Service that exposes the API and UI."
+    },
+    "api": {
+      "type": "object",
+      "description": "API and UI server settings.",
+      "properties": {
+        "tls": {
+          "type": "object",
+          "description": "TLS served by the pod itself.",
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "description": "Name of a kubernetes.io/tls Secret. When set, the API and UI are served over HTTPS with its tls.crt and tls.key, and the probes use HTTPS."
+            }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "description": "Ingress that exposes the API and UI over HTTPS, for a stable URL such as the single sign-on redirect URL.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Create the Ingress."
+        },
+        "className": {
+          "type": "string",
+          "description": "IngressClass name. Empty uses the cluster default."
+        },
+        "host": {
+          "type": "string",
+          "description": "Host name of the API and UI."
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Ingress annotations, e.g. for cert-manager."
+        },
+        "tls": {
+          "type": "array",
+          "description": "Ingress TLS entries, each with secretName and hosts."
+        }
+      },
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "host": {
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "size": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Size of the data volume."
+        },
+        "storageClassName": {
+          "type": "string",
+          "description": "StorageClass of the data volume. Empty uses the default StorageClass."
+        }
+      },
+      "description": "Data volume."
+    },
+    "resources": {
+      "type": "object",
+      "description": "Container resources."
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Create a service account."
+        },
+        "name": {
+          "type": "string",
+          "description": "Service account name."
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Service account annotations."
+        }
+      },
+      "description": "Service account of the pod."
+    },
+    "openshift": {
+      "type": "object",
+      "properties": {
+        "securityContextConstraints": {
+          "type": "object",
+          "properties": {
+            "create": {
+              "enum": [
+                "auto",
+                true,
+                false
+              ],
+              "description": "auto creates it on OpenShift with userPlane.enabled or ipsec.enabled."
+            }
+          },
+          "description": "SecurityContextConstraints that grants the pod its security context."
+        }
+      },
+      "description": "OpenShift settings."
+    },
+    "seLinuxOptions": {
+      "type": "object",
+      "description": "SELinux options of the Ella MOCN container. Defaults to type spc_t on OpenShift with user-plane aggregation."
+    },
+    "podAnnotations": {
+      "type": "object",
+      "description": "Extra pod annotations."
+    },
+    "podLabels": {
+      "type": "object",
+      "description": "Extra pod labels."
+    },
+    "nodeSelector": {
+      "type": "object",
+      "description": "Node selector."
+    },
+    "tolerations": {
+      "type": "array",
+      "description": "Tolerations."
+    },
+    "affinity": {
+      "type": "object",
+      "description": "Affinity."
+    },
+    "priorityClassName": {
+      "type": "string",
+      "description": "Priority class."
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Create the ServiceMonitor."
+        },
+        "interval": {
+          "type": "string",
+          "description": "Scrape interval."
+        },
+        "labels": {
+          "type": "object",
+          "description": "Extra ServiceMonitor labels."
+        }
+      },
+      "description": "Prometheus Operator ServiceMonitor for /api/v1/metrics."
+    },
+    "tests": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            }
+          },
+          "description": "Image of the test pod."
+        }
+      },
+      "description": "helm test settings."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "userPlane": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          }
+        },
+        "required": [
+          "userPlane"
+        ]
+      },
+      "then": {
+        "properties": {
+          "ran": {
+            "properties": {
+              "address": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "address"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ipsec": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          }
+        },
+        "required": [
+          "ipsec"
+        ]
+      },
+      "then": {
+        "properties": {
+          "ipsec": {
+            "properties": {
+              "secretName": {
+                "minLength": 1
+              },
+              "interfaces": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "secretName",
+              "interfaces"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -121,28 +121,38 @@ Choose one of the installation methods below.
 
 === "Kubernetes"
 
-    Ensure your Kubernetes cluster nodes meet the [system requirements](../reference/system_reqs.md).
+    Ensure your Kubernetes cluster meets the [Kubernetes requirements](../reference/system_reqs.md#kubernetes).
 
-    Download the Ella MOCN manifests:
+    Create `values.yaml`. To give Ella MOCN an S1 and NG address on the radios' network, set `address` to that address and `master` to the host interface that connects to your radios:
 
-    ```shell
-    git clone --depth 1 https://github.com/ellanetworks/mocn.git
+    ```yaml
+    ran:
+      address: 192.168.252.7/24
+      networkAttachment:
+        master: eth1
+    ```
+
+    To expose S1 and NG through a Service on the pod network instead, set the Service type:
+
+    ```yaml
+    ran:
+      service:
+        type: LoadBalancer
     ```
 
     Deploy Ella MOCN:
 
     ```shell
-    kubectl create namespace ella
-    kubectl apply -k mocn/k8s
+    helm install ella-mocn oci://ghcr.io/ellanetworks/charts/ella-mocn --version 0.0.1 --namespace ella --create-namespace -f values.yaml
     ```
 
     Open the UI and API on your machine:
 
     ```shell
-    kubectl port-forward -n ella svc/ella-mocn 5030:5030
+    kubectl -n ella port-forward service/ella-mocn 5030:5030
     ```
 
-    S1 is at `ella-mocn-s1.ella.svc.cluster.local:36412` and NG at `ella-mocn-ng.ella.svc.cluster.local:38412`.
+    The UI and API are at `http://localhost:5030`. See the [chart reference](https://github.com/ellanetworks/mocn/tree/main/charts/ella-mocn) for all values.
 
 Ella MOCN's UI and API are at `http://<host-ip>:5030`. Open the UI and create the first user.
 

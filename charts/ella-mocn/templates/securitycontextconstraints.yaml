@@ -1,0 +1,53 @@
+{{- if include "ella-mocn.openshiftSCC" . }}
+{{- $capabilities := list }}
+{{- if .Values.userPlane.enabled }}
+{{- $capabilities = concat $capabilities (list "BPF" "PERFMON" "NET_ADMIN" "NET_RAW") }}
+{{- end }}
+{{- if .Values.ipsec.enabled }}
+{{- $capabilities = concat $capabilities (list "NET_ADMIN" "NET_BIND_SERVICE") }}
+{{- end }}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ include "ella-mocn.fullname" . }}-{{ .Release.Namespace }}
+  labels:
+    {{- include "ella-mocn.labels" . | nindent 4 }}
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+{{- with $capabilities }}
+allowedCapabilities:
+  {{- toYaml (uniq .) | nindent 2 }}
+requiredDropCapabilities: []
+{{- else }}
+allowedCapabilities: []
+requiredDropCapabilities:
+  - ALL
+{{- end }}
+defaultAddCapabilities: []
+readOnlyRootFilesystem: false
+runAsUser:
+  type: {{ ternary "RunAsAny" "MustRunAsNonRoot" (or .Values.userPlane.enabled .Values.ipsec.enabled) }}
+seLinuxContext:
+  type: {{ ternary "RunAsAny" "MustRunAs" (or .Values.userPlane.enabled (not (empty .Values.seLinuxOptions))) }}
+fsGroup:
+  type: RunAsAny
+supplementalGroups:
+  type: RunAsAny
+seccompProfiles:
+  - runtime/default
+volumes:
+  - configMap
+  - persistentVolumeClaim
+  - projected
+  - secret
+  - emptyDir
+  - downwardAPI
+users: []
+groups: []
+priority: null
+{{- end }}

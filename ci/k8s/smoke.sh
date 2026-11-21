@@ -12,9 +12,9 @@ NET="${RAN_NET:-192.168.252}"
 SUBNET="${NET}.0/24"
 IP_RANGE="${NET}.128/25"
 GATEWAY="${NET}.1"
-SHIPPED_IP=192.168.252.7
 MOCN_IP="${NET}.7"
 NS=ella
+RELEASE=ella-mocn
 
 MULTUS_VERSION=v4.3.1
 CNI_PLUGINS_VERSION=v1.9.1
@@ -124,14 +124,18 @@ wait_api() {
 }
 
 deploy() {
-  docker tag "$1" ella-mocn:ci
-  kind load docker-image ella-mocn:ci --name "${CLUSTER}"
-  kubectl kustomize "${ROOT}/ci/k8s/${MODE}" | sed "s/${SHIPPED_IP//./\\.}/${MOCN_IP}/g" | kubectl apply -f -
-  local old=""
-  if [ "${2:-}" = restart ]; then
-    old="$(k get pod ella-mocn-0 -o jsonpath='{.metadata.uid}')"
-    k rollout restart statefulset/ella-mocn
+  docker tag "$1" "ella-mocn:ci-$2"
+  kind load docker-image "ella-mocn:ci-$2" --name "${CLUSTER}"
+  local old="" values=(--set image.repository=ella-mocn --set "image.tag=ci-$2" --set image.pullPolicy=Never --set service.type=NodePort)
+  if [ "${MODE}" = multus ]; then
+    values+=(--set "ran.address=${MOCN_IP}/24" --set ran.networkAttachment.master=eth1)
+  else
+    values+=(--set ran.service.type=NodePort)
   fi
+  if [ "$2" = upgrade ]; then
+    old="$(k get pod ella-mocn-0 -o jsonpath='{.metadata.uid}')"
+  fi
+  helm upgrade --install "${RELEASE}" "${ROOT}/charts/ella-mocn" --namespace "${NS}" "${values[@]}"
   wait_ready "${old}"
 
   MOCN_ADDR="$(kubectl get node "${NODE}" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')"
@@ -140,19 +144,14 @@ deploy() {
     S1_ADDR="${MOCN_IP}"
   else
     S1_ADDR="${MOCN_ADDR}"
-    S1_PORT="$(node_port ella-mocn-s1 s1)"
+    S1_PORT="$(node_port ella-mocn-ran sctp-s1)"
   fi
   wait_api
 }
 
 radios() { api /radios | jq -c '[.result.items[] | {state, tnl_addresses}]'; }
 
-step "Lint the manifests"
 version="$(cat "${ROOT}/version/VERSION")"
-for dir in k8s k8s/examples/multus ci/k8s/multus ci/k8s/pod-network; do
-  kubectl kustomize "${ROOT}/${dir}" | kubeconform -strict -summary -skip NetworkAttachmentDefinition
-done
-endstep
 
 step "Create the cluster"
 if [ "${MODE}" = multus ]; then
@@ -181,23 +180,28 @@ if [ "${MODE}" = multus ]; then
   endstep
 fi
 
+step "Create the namespace"
+kubectl create namespace "${NS}"
+kubectl label namespace "${NS}" pod-security.kubernetes.io/enforce=restricted pod-security.kubernetes.io/enforce-version=latest
+endstep
+
 if [ -n "${PREVIOUS_IMAGE}" ]; then
   step "Deploy the previous release, ${PREVIOUS_IMAGE}"
   docker image inspect "${PREVIOUS_IMAGE}" >/dev/null 2>&1 || docker pull "${PREVIOUS_IMAGE}"
-  deploy "${PREVIOUS_IMAGE}"
+  deploy "${PREVIOUS_IMAGE}" install
   log_in
   api /status
   echo
   endstep
 
   step "Upgrade to ${IMAGE}"
-  deploy "${IMAGE}" restart
+  deploy "${IMAGE}" upgrade
   api /status | jq -e '.result.initialized' >/dev/null || fail "the first admin is gone after the upgrade"
   log_in
   endstep
 else
   step "Deploy ${IMAGE}"
-  deploy "${IMAGE}"
+  deploy "${IMAGE}" install
   log_in
   endstep
 fi
@@ -209,6 +213,10 @@ sleep 30
 restarts="$(k get pod ella-mocn-0 -o jsonpath='{.status.containerStatuses[0].restartCount}')"
 [ "${restarts}" = 0 ] || fail "Ella MOCN restarted ${restarts} times"
 k get pod ella-mocn-0 -o wide
+endstep
+
+step "Run the chart tests"
+helm test "${RELEASE}" --namespace "${NS}" --logs --timeout 5m
 endstep
 
 step "Check the API through the Service"

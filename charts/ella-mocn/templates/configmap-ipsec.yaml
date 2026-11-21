@@ -1,0 +1,30 @@
+{{- if .Values.ipsec.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ella-mocn.fullname" . }}-ipsec
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ella-mocn.labels" . | nindent 4 }}
+data:
+  strongswan.conf: |
+    charon {
+      start-scripts {
+        swanctl = /usr/sbin/swanctl --load-all
+      }
+    }
+  start.sh: |
+    set -euo pipefail
+    {{- range .Values.ipsec.interfaces }}
+    {{- $name := .name }}
+    {{- $src := regexReplaceAll "/.*$" .address "" }}
+    ip link del {{ .name }} 2>/dev/null || true
+    ip link add {{ .name }} type xfrm if_id {{ .id }}
+    ip link set {{ .name }} mtu {{ .mtu }} up
+    ip addr add {{ .address }} dev {{ .name }}
+    {{- range .routes }}
+    ip route add {{ . }} dev {{ $name }} src {{ $src }}
+    {{- end }}
+    {{- end }}
+    exec /usr/libexec/ipsec/charon
+{{- end }}
