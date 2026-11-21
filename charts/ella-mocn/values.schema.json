@@ -169,6 +169,92 @@
       },
       "description": "User-plane aggregation."
     },
+    "ipsec": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Run a strongSwan sidecar that terminates route-based IPsec tunnels to the operators in the pod."
+        },
+        "secretName": {
+          "type": "string",
+          "description": "Secret with the swanctl configuration (*.conf files with connections and secrets), mounted at /etc/swanctl/conf.d. Certificates and keys in it are referenced by their path in that directory."
+        },
+        "interfaces": {
+          "type": "array",
+          "description": "xfrm interfaces created in the pod, one per operator.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "id",
+              "address",
+              "mtu",
+              "routes"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 15,
+                "description": "Interface name."
+              },
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4294967295,
+                "description": "xfrm interface ID, matching if_id_in and if_id_out of the swanctl connection."
+              },
+              "address": {
+                "type": "string",
+                "pattern": "^[^/]+/[0-9]{1,3}$",
+                "description": "Ella MOCN's address toward the operator, in CIDR notation."
+              },
+              "mtu": {
+                "type": "integer",
+                "minimum": 1280,
+                "maximum": 9000,
+                "description": "Interface MTU: the MTU toward the operator's security gateway minus 100."
+              },
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Operator networks routed through the interface, from address."
+              }
+            }
+          }
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string"
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^(sha256:[a-f0-9]{64})?$"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
+            }
+          },
+          "description": "strongSwan image. digest takes precedence over tag."
+        }
+      },
+      "description": "IPsec to the operators."
+    },
     "config": {
       "type": "object",
       "description": "Ella MOCN configuration file content, merged over the settings the chart manages."
@@ -393,6 +479,43 @@
             },
             "required": [
               "address"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ipsec": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          }
+        },
+        "required": [
+          "ipsec"
+        ]
+      },
+      "then": {
+        "properties": {
+          "ipsec": {
+            "properties": {
+              "secretName": {
+                "minLength": 1
+              },
+              "interfaces": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "secretName",
+              "interfaces"
             ]
           }
         }

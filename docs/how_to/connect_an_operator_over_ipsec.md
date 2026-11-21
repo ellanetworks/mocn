@@ -1,123 +1,210 @@
 ---
-description: Step-by-step instructions to reach an operator through a route-based IPsec tunnel on the Ella MOCN host.
+description: Step-by-step instructions to reach an operator through a route-based IPsec tunnel from Ella MOCN.
 ---
 
 # Connect an Operator over IPsec
 
-This guide connects the Ella MOCN host to an operator's security gateway through a route-based IPsec tunnel, using strongSwan.
+This guide connects Ella MOCN to an operator's security gateway through a route-based IPsec tunnel, using strongSwan.
 
-## Prerequisites
+=== "Host"
 
-- **Host**: Ubuntu Server 26.04, with a certificate and private key signed by a CA the operator trusts.
-- **Operator's security gateway**: its address and its CA certificate.
-- **Operator's networks**: the networks that hold the operator's MMEs, AMFs, S-GWs and UPFs.
+    ### Prerequisites
 
-## 1. Install strongSwan
+    - **Host**: Ubuntu Server 26.04, with a certificate and private key signed by a CA the operator trusts.
+    - **Operator's security gateway**: its address and its CA certificate.
+    - **Operator's networks**: the networks that hold the operator's MMEs, AMFs, S-GWs and UPFs.
 
-```shell
-sudo apt update
-sudo apt install -y strongswan-swanctl charon-systemd
-```
+    ### 1. Install strongSwan
 
-## 2. Create the xfrm Interface
+    ```shell
+    sudo apt update
+    sudo apt install -y strongswan-swanctl charon-systemd
+    ```
 
-Create one xfrm interface per operator. Set its MTU to the MTU of the interface that reaches the operator's security gateway, minus 100 bytes for IPsec.
+    ### 2. Create the xfrm Interface
 
-Create `/etc/systemd/network/50-xfrm-opa.netdev`:
+    Create one xfrm interface per operator. Set its MTU to the MTU of the interface that reaches the operator's security gateway, minus 100 bytes for IPsec.
 
-```ini
-[NetDev]
-Name=xfrm-opa
-Kind=xfrm
-MTUBytes=1400
+    Create `/etc/systemd/network/50-xfrm-opa.netdev`:
 
-[Xfrm]
-InterfaceId=1
-Independent=yes
-```
+    ```ini
+    [NetDev]
+    Name=xfrm-opa
+    Kind=xfrm
+    MTUBytes=1400
 
-Create `/etc/systemd/network/50-xfrm-opa.network`, with Ella MOCN's address toward the operator and a route to the operator's networks from that address:
+    [Xfrm]
+    InterfaceId=1
+    Independent=yes
+    ```
 
-```ini
-[Match]
-Name=xfrm-opa
+    Create `/etc/systemd/network/50-xfrm-opa.network`, with Ella MOCN's address toward the operator and a route to the operator's networks from that address:
 
-[Network]
-Address=192.0.2.10/32
+    ```ini
+    [Match]
+    Name=xfrm-opa
 
-[Route]
-Destination=10.45.0.0/16
-PreferredSource=192.0.2.10
-```
+    [Network]
+    Address=192.0.2.10/32
 
-Apply the configuration:
+    [Route]
+    Destination=10.45.0.0/16
+    PreferredSource=192.0.2.10
+    ```
 
-```shell
-sudo networkctl reload
-```
+    Apply the configuration:
 
-Check that the operator's networks are routed through the xfrm interface:
+    ```shell
+    sudo networkctl reload
+    ```
 
-```shell
-ip route get 10.45.0.1
-```
+    Check that the operator's networks are routed through the xfrm interface:
 
-## 3. Configure the Tunnel
+    ```shell
+    ip route get 10.45.0.1
+    ```
 
-Install the host's certificate and key, and the operator's CA certificate:
+    ### 3. Configure the Tunnel
 
-```shell
-sudo install -m 644 mocn.pem /etc/swanctl/x509/
-sudo install -m 600 mocn.key /etc/swanctl/private/
-sudo install -m 644 operator-a-ca.pem /etc/swanctl/x509ca/
-```
+    Install the host's certificate and key, and the operator's CA certificate:
 
-Create `/etc/swanctl/conf.d/operator-a.conf`:
+    ```shell
+    sudo install -m 644 mocn.pem /etc/swanctl/x509/
+    sudo install -m 600 mocn.key /etc/swanctl/private/
+    sudo install -m 644 operator-a-ca.pem /etc/swanctl/x509ca/
+    ```
 
-```
-connections {
-    operator-a {
-        version = 2
-        local_addrs = 198.51.100.10
-        remote_addrs = 203.0.113.1
-        local {
-            auth = pubkey
-            certs = mocn.pem
-        }
-        remote {
-            auth = pubkey
-            id = "CN=segw.operator-a.example"
-        }
-        if_id_in = 1
-        if_id_out = 1
-        children {
-            operator-a {
-                local_ts = 192.0.2.10/32
-                remote_ts = 10.45.0.0/16
-                start_action = start
-                dpd_action = restart
+    Create `/etc/swanctl/conf.d/operator-a.conf`:
+
+    ```
+    connections {
+        operator-a {
+            version = 2
+            local_addrs = 198.51.100.10
+            remote_addrs = 203.0.113.1
+            local {
+                auth = pubkey
+                certs = mocn.pem
+            }
+            remote {
+                auth = pubkey
+                id = "CN=segw.operator-a.example"
+            }
+            if_id_in = 1
+            if_id_out = 1
+            children {
+                operator-a {
+                    local_ts = 192.0.2.10/32
+                    remote_ts = 10.45.0.0/16
+                    start_action = start
+                    dpd_action = restart
+                }
             }
         }
     }
-}
-```
+    ```
 
-- `local_addrs` and `remote_addrs`: the host's address and the operator's security gateway.
-- `remote.id`: the identity in the operator's security gateway certificate.
-- `local_ts`: Ella MOCN's address toward the operator.
-- `remote_ts`: the operator's networks.
-- `if_id_in` and `if_id_out`: the `InterfaceId` of the xfrm interface.
+    - `local_addrs` and `remote_addrs`: the host's address and the operator's security gateway.
+    - `remote.id`: the identity in the operator's security gateway certificate.
+    - `local_ts`: Ella MOCN's address toward the operator.
+    - `remote_ts`: the operator's networks.
+    - `if_id_in` and `if_id_out`: the `InterfaceId` of the xfrm interface.
 
-## 4. Start the Tunnel
+    ### 4. Start the Tunnel
 
-```shell
-sudo swanctl --load-all
-```
+    ```shell
+    sudo swanctl --load-all
+    ```
 
-Check that the tunnel is up:
+    Check that the tunnel is up:
 
-```shell
-sudo swanctl --list-sas
-```
+    ```shell
+    sudo swanctl --list-sas
+    ```
 
-Then [connect the operator](connect_an_operator.md). Its MMEs and AMFs are reached through the tunnel.
+    Then [connect the operator](connect_an_operator.md). Its MMEs and AMFs are reached through the tunnel.
+
+=== "Kubernetes"
+
+    ### Prerequisites
+
+    - **Ella MOCN**: installed with the Helm chart, in a namespace that allows privileged pods.
+    - **Operator's security gateway**: its address, its identity and the credentials it accepts.
+    - **Operator's networks**: the networks that hold the operator's MMEs, AMFs, S-GWs and UPFs.
+
+    ### 1. Create the swanctl Configuration
+
+    Create `operator-a.conf`, with an `if_id_in` and `if_id_out` per operator:
+
+    ```
+    connections {
+        operator-a {
+            version = 2
+            remote_addrs = 203.0.113.1
+            local {
+                auth = psk
+                id = mocn.example
+            }
+            remote {
+                auth = psk
+                id = segw.operator-a.example
+            }
+            if_id_in = 1
+            if_id_out = 1
+            children {
+                operator-a {
+                    local_ts = 192.0.2.10/32
+                    remote_ts = 10.45.0.0/16
+                    start_action = start
+                    dpd_action = restart
+                }
+            }
+        }
+    }
+    secrets {
+        ike-operator-a {
+            id-1 = mocn.example
+            id-2 = segw.operator-a.example
+            secret = "<pre-shared key>"
+        }
+    }
+    ```
+
+    To authenticate with certificates instead, add them to the Secret below and reference them by their path in `/etc/swanctl/conf.d`.
+
+    ### 2. Create the Secret
+
+    ```shell
+    kubectl -n ella create secret generic ella-mocn-ipsec --from-file=operator-a.conf
+    ```
+
+    ### 3. Turn On IPsec
+
+    1. In `values.yaml`, add one xfrm interface per operator. Set `id` to the connection's `if_id_in` and `if_id_out`, `address` to Ella MOCN's address toward the operator, `mtu` to the MTU toward the operator's security gateway minus 100, and `routes` to the operator's networks:
+
+        ```yaml
+        ipsec:
+          enabled: true
+          secretName: ella-mocn-ipsec
+          interfaces:
+            - name: xfrm-opa
+              id: 1
+              address: 192.0.2.10/32
+              mtu: 1400
+              routes:
+                - 10.45.0.0/16
+        ```
+
+    2. Upgrade the chart:
+
+        ```shell
+        helm upgrade ella-mocn oci://ghcr.io/ellanetworks/charts/ella-mocn --version <version> --namespace ella -f values.yaml
+        ```
+
+    3. Check that the tunnel is up:
+
+        ```shell
+        kubectl -n ella exec ella-mocn-0 -c ipsec -- swanctl --list-sas
+        ```
+
+    Then [connect the operator](connect_an_operator.md). Its MMEs and AMFs are reached through the tunnel.

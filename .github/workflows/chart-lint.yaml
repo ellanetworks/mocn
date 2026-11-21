@@ -46,3 +46,6 @@ jobs:
           helm template ella-mocn charts/ella-mocn --namespace ella --set api.tls.secretName=api-tls > /dev/null
           helm template ella-mocn charts/ella-mocn --namespace ella --set ran.address=192.168.252.7/24 > /dev/null
           helm template ella-mocn charts/ella-mocn --namespace ella --set ran.address=192.168.252.7/24 --set userPlane.enabled=true > /dev/null
+          helm template ella-mocn charts/ella-mocn --namespace ella --set ran.address=192.168.252.7/24 --set userPlane.enabled=true \
+            --set ipsec.enabled=true --set ipsec.secretName=ella-mocn-ipsec \
+            --set-json 'ipsec.interfaces=[{"name":"xfrm-opa","id":1,"address":"192.0.2.10/32","mtu":1400,"routes":["10.45.0.0/16"]}]' > /dev/null

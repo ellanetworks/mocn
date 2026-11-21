@@ -27,6 +27,16 @@ ran:
 userPlane:
   enabled: false
 
+ipsec:
+  enabled: false
+  secretName: ""
+  interfaces: []
+  image:
+    repository: docker.io/strongx509/strongswan
+    tag: "6.1.0"
+    digest: sha256:b82d9013a4ae9199724115a3a43a248a5f878b6951b20ad559ab8f21380bb269
+    pullPolicy: IfNotPresent
+
 config:
   logging:
     level: info

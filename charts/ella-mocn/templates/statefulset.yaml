@@ -20,6 +20,9 @@ spec:
         {{- end }}
       annotations:
         checksum/config: {{ include "ella-mocn.config" . | sha256sum }}
+        {{- if .Values.ipsec.enabled }}
+        checksum/ipsec: {{ include (print $.Template.BasePath "/configmap-ipsec.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.ran.address }}
         k8s.v1.cni.cncf.io/networks: {{ list (dict "name" (include "ella-mocn.networkAttachmentName" $) "interface" $.Values.ran.interface "ips" (list .)) | toJson | quote }}
         {{- end }}
@@ -60,6 +63,37 @@ spec:
         fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      {{- if .Values.ipsec.enabled }}
+      initContainers:
+        - name: ipsec
+          image: {{ with .Values.ipsec.image }}{{ .repository }}{{ if .digest }}@{{ .digest }}{{ else }}:{{ .tag }}{{ end }}{{ end }}
+          imagePullPolicy: {{ .Values.ipsec.image.pullPolicy }}
+          restartPolicy: Always
+          command: ["/bin/bash", "/ipsec/start.sh"]
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_ADMIN", "NET_BIND_SERVICE"]
+          volumeMounts:
+            - name: ipsec
+              mountPath: /ipsec
+              readOnly: true
+            - name: ipsec
+              mountPath: /etc/strongswan.d/ella-mocn.conf
+              subPath: strongswan.conf
+              readOnly: true
+            - name: ipsec-config
+              mountPath: /etc/swanctl/conf.d
+              readOnly: true
+            - name: ipsec-run
+              mountPath: /run
+      {{- end }}
       containers:
         - name: mocn
           image: {{ include "ella-mocn.image" . }}
@@ -145,6 +179,16 @@ spec:
             name: {{ include "ella-mocn.fullname" . }}
         - name: tmp
           emptyDir: {}
+        {{- if .Values.ipsec.enabled }}
+        - name: ipsec
+          configMap:
+            name: {{ include "ella-mocn.fullname" . }}-ipsec
+        - name: ipsec-config
+          secret:
+            secretName: {{ .Values.ipsec.secretName }}
+        - name: ipsec-run
+          emptyDir: {}
+        {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: data
