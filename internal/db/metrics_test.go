@@ -70,7 +70,7 @@ func TestEveryCallIsObserved(t *testing.T) {
 	t.Parallel()
 
 	unobserved := map[string]bool{
-		"Close": true, "Collectors": true, "Ping": true, "JWTSecret": true,
+		"Close": true, "Collectors": true, "Ping": true, "JWTSecret": true, "OIDCCookieKey": true,
 	}
 
 	files, err := filepath.Glob("*.go")

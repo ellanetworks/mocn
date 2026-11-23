@@ -6,6 +6,8 @@ description: Step-by-step instructions to back up and restore Ella MOCN's databa
 
 This guide backs up Ella MOCN's database while Ella MOCN runs, and restores it.
 
+The backup holds user accounts and the single sign-on client secret. Store and transfer it encrypted.
+
 ## Prerequisites
 
 - **Ella MOCN**: installed, as in [Install](install.md).

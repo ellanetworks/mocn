@@ -75,12 +75,25 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+export function signInMethods(user: User): string[] {
+  const methods = [];
+  if (user.password_set) methods.push("Password");
+  if (user.oidc_linked) methods.push("Single sign-on");
+  return methods;
+}
+
 export function UserAccountCard({
   user,
+  fromGroups = false,
   onEditRole,
+  onUnlink,
+  link,
 }: {
   user: User;
+  fromGroups?: boolean;
   onEditRole?: () => void;
+  onUnlink?: () => void;
+  link?: { label: string; href: string; onClick?: () => void };
 }) {
   return (
     <Card variant="outlined" sx={{ height: "100%" }}>
@@ -100,15 +113,56 @@ export function UserAccountCard({
             color={roleChipColor(user.role_id)}
             variant="outlined"
           />
+          {fromGroups && (
+            <Tooltip title="Updated from the user's groups at each login.">
+              <Chip size="small" label="From groups" sx={{ ml: 1 }} />
+            </Tooltip>
+          )}
           <Box sx={{ flex: 1 }} />
           {onEditRole && (
-            <IconButton
-              size="small"
-              onClick={onEditRole}
-              aria-label="Edit role"
-            >
-              <EditIcon fontSize="small" color="primary" />
-            </IconButton>
+            <Tooltip title={fromGroups ? "Set by the user's groups." : ""}>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={onEditRole}
+                  disabled={fromGroups}
+                  aria-label="Edit role"
+                >
+                  <EditIcon
+                    fontSize="small"
+                    color={fromGroups ? "disabled" : "primary"}
+                  />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
+        </InfoRow>
+        <InfoRow label="Sign-in">
+          <Stack direction="row" spacing={1}>
+            {signInMethods(user).map((method) => (
+              <Chip
+                key={method}
+                size="small"
+                label={method}
+                variant="outlined"
+              />
+            ))}
+            {signInMethods(user).length === 0 && (
+              <Typography variant="body2" color="textSecondary">
+                Single sign-on, not linked yet
+              </Typography>
+            )}
+          </Stack>
+          <Box sx={{ flex: 1 }} />
+          {onUnlink && user.oidc_linked && (
+            <Button size="small" color="error" onClick={onUnlink}>
+              Unlink
+            </Button>
+          )}
+          {link && !user.oidc_linked && (
+            <Button size="small" href={link.href} onClick={link.onClick}>
+              {link.label}
+            </Button>
           )}
         </InfoRow>
       </CardContent>
@@ -119,10 +173,14 @@ export function UserAccountCard({
 export function UserPasswordCard({
   description,
   onChangePassword,
+  onRemovePassword,
+  changeLabel = "Change Password",
   disabledReason,
 }: {
   description: string;
-  onChangePassword: () => void;
+  onChangePassword?: () => void;
+  onRemovePassword?: () => void;
+  changeLabel?: string;
   disabledReason?: string;
 }) {
   return (
@@ -134,18 +192,27 @@ export function UserPasswordCard({
         <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
           {disabledReason ?? description}
         </Typography>
-        <Tooltip title={disabledReason ?? ""}>
-          <span>
-            <Button
-              variant="contained"
-              color="success"
-              onClick={onChangePassword}
-              disabled={disabledReason !== undefined}
-            >
-              Change Password
+        <Stack direction="row" spacing={1}>
+          {onChangePassword && (
+            <Tooltip title={disabledReason ?? ""}>
+              <span>
+                <Button
+                  variant="contained"
+                  color="success"
+                  onClick={onChangePassword}
+                  disabled={disabledReason !== undefined}
+                >
+                  {changeLabel}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+          {onRemovePassword && disabledReason === undefined && (
+            <Button variant="outlined" color="error" onClick={onRemovePassword}>
+              Remove Password
             </Button>
-          </span>
-        </Tooltip>
+          )}
+        </Stack>
       </CardContent>
     </Card>
   );

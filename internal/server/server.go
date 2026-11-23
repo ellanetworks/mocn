@@ -19,6 +19,7 @@ import (
 	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/metrics"
 	"github.com/ellanetworks/mocn/internal/ng"
+	"github.com/ellanetworks/mocn/internal/oidc"
 	"github.com/ellanetworks/mocn/internal/s1"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"github.com/ellanetworks/mocn/version"
@@ -88,9 +89,14 @@ func Run(ctx context.Context, cfg Config) (err error) {
 		}
 	}()
 
-	secret, err := database.JWTSecret(ctx)
+	secrets, err := database.InitSecrets(ctx)
 	if err != nil {
-		return fmt.Errorf("read the JWT secret: %w", err)
+		return fmt.Errorf("read the secrets: %w", err)
+	}
+
+	oidcSettings, err := database.GetOIDC(ctx)
+	if err != nil {
+		return fmt.Errorf("read the OIDC settings: %w", err)
 	}
 
 	requests := api.NewRequestMetrics()
@@ -141,13 +147,15 @@ func Run(ctx context.Context, cfg Config) (err error) {
 			Metrics:        newRegistry(database, requests, append(m.Collectors(s1Gateway, ngGateway), plane.Collectors()...)),
 			Requests:       requests,
 			Auth:           database,
+			OIDC:           oidc.NewLive(database, oidcSettings),
+			OIDCCookieKey:  func() []byte { return secrets.OIDCCookieKey },
 			Operators:      reconciling{DB: database, gateways: []reconciler{userPlane, s1Gateway, ngGateway}, logger: cfg.Logger},
 			UserPlane:      cfg.UserPlane.Enabled,
 			Plane:          plane,
 			S1:             s1Gateway,
 			NG:             ngGateway,
 			SecureCookie:   cfg.TLS != nil,
-			JWTSecret:      func() []byte { return secret },
+			JWTSecret:      func() []byte { return secrets.JWT },
 			BcryptCost:     cfg.BcryptCost,
 			TracerProvider: tp,
 			Now:            time.Now,

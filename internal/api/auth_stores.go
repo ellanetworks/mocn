@@ -13,9 +13,16 @@ type userStore interface {
 	GetUser(ctx context.Context, email string) (db.User, error)
 	GetUserByID(ctx context.Context, id int64) (db.User, error)
 	ListUsers(ctx context.Context, page, perPage int) ([]db.User, int, error)
-	UpdateUserRole(ctx context.Context, id int64, role db.Role, pinned bool) error
+	UpdateUserRole(ctx context.Context, id int64, role db.Role) error
 	UpdateUserPassword(ctx context.Context, id int64, passwordHash string, keepSession []byte) error
 	DeleteUser(ctx context.Context, id int64) error
+}
+
+type oidcStore interface {
+	DeleteIdentities(ctx context.Context, userID int64) error
+	LogInWithOIDC(ctx context.Context, l db.OIDCLogin) (db.OIDCLoginResult, error)
+	LinkOIDCIdentity(ctx context.Context, l db.OIDCLink) error
+	UseOIDCState(ctx context.Context, stateHash []byte, expiresAt, now time.Time) error
 }
 
 type sessionStore interface {
@@ -37,6 +44,7 @@ type apiTokenStore interface {
 
 type authStore interface {
 	userStore
+	oidcStore
 	sessionStore
 	apiTokenStore
 }

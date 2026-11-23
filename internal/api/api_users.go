@@ -20,21 +20,18 @@ const (
 type User struct {
 	Email       string  `json:"email"`
 	RoleID      db.Role `json:"role_id"`
-	RolePinned  bool    `json:"role_pinned"`
 	PasswordSet bool    `json:"password_set"`
 	OIDCLinked  bool    `json:"oidc_linked"`
 }
 
 type CreateUserParams struct {
-	Email      string  `json:"email"`
-	Password   string  `json:"password"`
-	RoleID     db.Role `json:"role_id"`
-	RolePinned bool    `json:"role_pinned"`
+	Email    string  `json:"email"`
+	Password string  `json:"password"`
+	RoleID   db.Role `json:"role_id"`
 }
 
 type updateUserParams struct {
-	RoleID     db.Role `json:"role_id"`
-	RolePinned *bool   `json:"role_pinned"`
+	RoleID db.Role `json:"role_id"`
 }
 
 type updateUserPasswordParams struct {
@@ -232,7 +229,7 @@ func createUser(a *auth) http.Handler {
 		}
 
 		_, err = cfg.Auth.CreateUser(r.Context(), db.NewUser{
-			Email: email, Role: params.RoleID, RolePinned: params.RolePinned, PasswordHash: hash,
+			Email: email, Role: params.RoleID, PasswordHash: hash,
 		}, MaxNumUsers)
 		if errors.Is(err, db.ErrDuplicate) {
 			writeError(r.Context(), w, http.StatusConflict, "User already exists", nil, cfg.Logger)
@@ -252,8 +249,7 @@ func createUser(a *auth) http.Handler {
 		}
 
 		p, _ := principalFrom(r.Context())
-		a.audit(r, "create_user", p.Email, fmt.Sprintf("User %s created with role %d, pinned %t", email, params.RoleID,
-			params.RolePinned))
+		a.audit(r, "create_user", p.Email, fmt.Sprintf("User %s created with role %d", email, params.RoleID))
 		writeResponse(r.Context(), w, successResponse{Message: "User created successfully"}, http.StatusCreated, cfg.Logger)
 	})
 }
@@ -291,12 +287,12 @@ func updateUser(a *auth) http.Handler {
 			return
 		}
 
-		pinned := u.RolePinned
-		if params.RolePinned != nil {
-			pinned = *params.RolePinned
+		if params.RoleID != u.Role && a.roleFromGroups(u) {
+			writeError(r.Context(), w, http.StatusConflict, "This user's role comes from their identity provider groups", nil, cfg.Logger)
+			return
 		}
 
-		err := cfg.Auth.UpdateUserRole(r.Context(), u.ID, params.RoleID, pinned)
+		err := cfg.Auth.UpdateUserRole(r.Context(), u.ID, params.RoleID)
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(r.Context(), w, http.StatusNotFound, "User not found", nil, cfg.Logger)
 			return
@@ -312,7 +308,7 @@ func updateUser(a *auth) http.Handler {
 			return
 		}
 
-		a.audit(r, "update_user", p.Email, fmt.Sprintf("Role of %s set to %d, pinned %t", u.Email, params.RoleID, pinned))
+		a.audit(r, "update_user", p.Email, fmt.Sprintf("Role of %s set to %d", u.Email, params.RoleID))
 		writeResponse(r.Context(), w, successResponse{Message: "User updated successfully"}, http.StatusOK, cfg.Logger)
 	})
 }
@@ -384,9 +380,15 @@ const lastPasswordAdmin = "At least one admin must keep a password" // #nosec G1
 
 func userResponse(u db.User) User {
 	return User{
-		Email: u.Email, RoleID: u.Role, RolePinned: u.RolePinned, PasswordSet: u.PasswordHash != "",
+		Email: u.Email, RoleID: u.Role, PasswordSet: u.PasswordHash != "",
 		OIDCLinked: u.HasIdentity,
 	}
+}
+
+func (a *auth) roleFromGroups(u db.User) bool {
+	o := a.cfg.OIDC.Get()
+
+	return o.Enabled && len(o.GroupRoles) > 0 && u.HasIdentity
 }
 
 func deleteUserPassword(a *auth) http.Handler {
@@ -422,6 +424,32 @@ func deleteUserPassword(a *auth) http.Handler {
 		p, _ := principalFrom(r.Context())
 		a.audit(r, "delete_user_password", p.Email, "Password of "+u.Email+" removed")
 		writeResponse(r.Context(), w, successResponse{Message: "Password removed successfully"}, http.StatusOK, cfg.Logger)
+	})
+}
+
+func deleteUserOIDCLink(a *auth) http.Handler {
+	cfg := a.cfg
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, ok := otherUser(w, r, cfg)
+		if !ok {
+			return
+		}
+
+		err := cfg.Auth.DeleteIdentities(r.Context(), u.ID)
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(r.Context(), w, http.StatusNotFound, "The user is not linked to the identity provider", nil, cfg.Logger)
+			return
+		}
+
+		if err != nil {
+			writeError(r.Context(), w, http.StatusInternalServerError, "Failed to unlink the user", err, cfg.Logger)
+			return
+		}
+
+		p, _ := principalFrom(r.Context())
+		a.audit(r, "delete_user_oidc_link", p.Email, "User "+u.Email+" unlinked from the identity provider")
+		writeResponse(r.Context(), w, successResponse{Message: "User unlinked successfully"}, http.StatusOK, cfg.Logger)
 	})
 }
 

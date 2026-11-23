@@ -26,6 +26,8 @@ export const roleDescriptions: Record<RoleID, string> = {
 export interface User {
   email: string;
   role_id: RoleID;
+  password_set: boolean;
+  oidc_linked: boolean;
 }
 
 export const MIN_PASSWORD_LENGTH = 8;
@@ -69,6 +71,12 @@ export const updateUserRole = (email: string, roleId: RoleID) =>
     method: "PUT",
     body: { role_id: roleId },
   });
+
+export const removeUserPassword = (email: string) =>
+  apiFetch<void>(`${userPath(email)}/password`, { method: "DELETE" });
+
+export const unlinkUser = (email: string) =>
+  apiFetch<void>(`${userPath(email)}/oidc`, { method: "DELETE" });
 
 export const updateUserPassword = (email: string, password: string) =>
   apiFetch<void>(`${userPath(email)}/password`, {

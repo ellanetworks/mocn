@@ -1,0 +1,4 @@
+services:
+  ella-mocn:
+    volumes:
+      - ${ELLA_E2E_MOCN_BINARY:-../.build/mocn}:/bin/mocn:ro

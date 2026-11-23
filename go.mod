@@ -4,10 +4,12 @@ go 1.27.3
 
 require (
 	github.com/cilium/ebpf v0.22.0
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/ellanetworks/core/ngap v0.0.0-20261116132157-d3610fa894ba
 	github.com/ellanetworks/core/per v0.0.0-20261116132157-d3610fa894ba
 	github.com/ellanetworks/core/s1ap v0.0.0-20261116132157-d3610fa894ba
 	github.com/ellanetworks/core/sctp v0.0.0-20261116132157-d3610fa894ba
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/prometheus/client_golang v1.25.0
@@ -20,6 +22,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.62.0
+	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sys v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
 )

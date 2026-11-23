@@ -1,26 +1,66 @@
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Box, CircularProgress, TextField } from "@mui/material";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Divider,
+  TextField,
+} from "@mui/material";
 import AuthLayout, { AuthFrame } from "@/components/AuthLayout";
 import { useSnackbar } from "@/contexts/SnackbarContext";
 import PasswordField from "@/components/PasswordField";
 import { login, refresh } from "@/queries/auth";
+import {
+  getOIDCLogin,
+  OIDC_LOGIN_PATH,
+  oidcLoginError,
+  type OIDCLogin,
+} from "@/queries/oidc";
 import { getStatus } from "@/queries/status";
 import { decodeAccessToken } from "@/utils/jwt";
+import {
+  forgetReturnPath,
+  rememberReturnPath,
+  returnPath,
+} from "@/utils/returnPath";
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [from] = useState(
-    () => (location.state as { from?: string } | null)?.from ?? "/",
+    () =>
+      (location.state as { from?: string } | null)?.from ?? returnPath() ?? "/",
   );
+  const [params, setParams] = useSearchParams();
+  const [oidcError] = useState(() => params.get("error"));
+
+  useEffect(() => {
+    if (params.has("error")) {
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete("error");
+          return next;
+        },
+        { replace: true, state: location.state },
+      );
+    }
+  }, [params, setParams, location.state]);
 
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [touched, setTouched] = useState({ email: false, password: false });
   const [submitting, setSubmitting] = useState(false);
+  const [oidc, setOIDC] = useState<OIDCLogin>({ enabled: false });
   const { showSnackbar } = useSnackbar();
+  const ssoButton = useRef<HTMLAnchorElement>(null);
+
+  useLayoutEffect(() => {
+    if (!checking && oidc.enabled) ssoButton.current?.focus();
+  }, [checking, oidc.enabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,14 +71,21 @@ export default function Login() {
           navigate("/initialize", { replace: true });
           return;
         }
+        const oidcLogin = getOIDCLogin().catch((): OIDCLogin => ({
+          enabled: false,
+        }));
         const session = await refresh()
           .then(({ token }) => decodeAccessToken(token) !== null)
           .catch(() => false);
         if (cancelled) return;
         if (session) {
+          forgetReturnPath();
           navigate(from, { replace: true });
           return;
         }
+        const o = await oidcLogin;
+        if (cancelled) return;
+        setOIDC(o);
         setChecking(false);
       } catch {
         if (!cancelled) setChecking(false);
@@ -53,6 +100,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       await login(email, password);
+      forgetReturnPath();
       navigate(from, { replace: true });
     } catch (err) {
       showSnackbar(
@@ -77,10 +125,39 @@ export default function Login() {
     <AuthLayout
       title="Login"
       submitLabel="Login"
+      submitVariant={oidc.enabled ? "outlined" : "contained"}
       submitting={submitting}
       valid={email !== "" && password !== ""}
       onSubmit={submit}
     >
+      {oidcError && (
+        <Alert severity="error">
+          {oidcLoginError(oidcError, oidc.display_name)}
+        </Alert>
+      )}
+      {oidc.enabled && (
+        <>
+          <Button
+            variant="contained"
+            color="success"
+            fullWidth
+            disableFocusRipple
+            sx={{
+              "&.Mui-focusVisible": {
+                outline: "2px solid",
+                outlineColor: "success.main",
+                outlineOffset: 2,
+              },
+            }}
+            href={OIDC_LOGIN_PATH}
+            onClick={() => rememberReturnPath(from)}
+            ref={ssoButton}
+          >
+            Log in with {oidc.display_name}
+          </Button>
+          <Divider>or</Divider>
+        </>
+      )}
       <TextField
         label="Email"
         type="email"
@@ -93,7 +170,7 @@ export default function Login() {
         }
         fullWidth
         required
-        autoFocus
+        autoFocus={!oidc.enabled}
         autoComplete="email"
       />
       <PasswordField

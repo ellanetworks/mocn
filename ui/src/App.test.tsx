@@ -6,8 +6,9 @@ import { RoleID } from "@/queries/users";
 import { page } from "@/test/fixtures";
 import { makeToken } from "@/test/jwt";
 import { json, renderWithClient, stubApi } from "@/test/render";
+import { rememberReturnPath, returnPath } from "@/utils/returnPath";
 
-const serve = (role: RoleID | null = RoleID.Admin) => {
+const serve = (role: RoleID | null = RoleID.Admin, logoutURL?: string) => {
   let session = role;
   vi.stubGlobal(
     "fetch",
@@ -21,7 +22,9 @@ const serve = (role: RoleID | null = RoleID.Admin) => {
               }),
         "/api/v1/auth/logout": () => {
           session = null;
-          return new Response(null, { status: 204 });
+          return logoutURL
+            ? json(200, { result: { redirect_url: logoutURL } })
+            : new Response(null, { status: 204 });
         },
         "/api/v1/status": () =>
           json(200, { result: { version: "v0.0.1", initialized: true } }),
@@ -49,6 +52,7 @@ const renderAt = (path: string) =>
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  sessionStorage.clear();
 });
 
 describe("App", () => {
@@ -69,6 +73,7 @@ describe("App", () => {
       ["Radios", "/radios"],
       ["Operators", "/operators"],
       ["Users", "/users"],
+      ["Single Sign-On", "/single-sign-on"],
     ]);
     const nav = within(screen.getByRole("navigation", { name: "Main" }));
     const system = nav.getByText("System");
@@ -95,6 +100,45 @@ describe("App", () => {
 
   it("opens the Dashboard by default", async () => {
     serve();
+    renderAt("/");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Dashboard" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(document.title).toBe("Dashboard · Ella MOCN");
+  });
+
+  it("returns to the page asked for before single sign-on", async () => {
+    serve();
+    rememberReturnPath("/operators");
+    renderAt("/");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Operators (0)" }),
+    ).toBeInTheDocument();
+    expect(returnPath()).toBeUndefined();
+  });
+
+  it("opens the home page when the page asked for is not allowed", async () => {
+    serve(RoleID.ReadOnly);
+    rememberReturnPath("/users");
+    renderAt("/");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Dashboard" }),
+    ).toBeInTheDocument();
+  });
+
+  it("forgets a page asked for long ago", async () => {
+    serve();
+    sessionStorage.setItem(
+      "mocn.returnPath",
+      JSON.stringify({ path: "/operators", at: Date.now() - 11 * 60_000 }),
+    );
     renderAt("/");
 
     expect(
@@ -176,6 +220,28 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "Profile" }),
     ).toBeInTheDocument();
+  });
+
+  it("logs out at the identity provider after a single sign-on session", async () => {
+    const assign = vi.fn();
+    vi.spyOn(window, "location", "get").mockReturnValue({
+      ...window.location,
+      assign,
+    });
+    serve(RoleID.Admin, "https://idp.example.com/logout?client_id=mocn");
+    renderAt("/users");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Account menu" }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Log Out" }));
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith(
+        "https://idp.example.com/logout?client_id=mocn",
+      ),
+    );
+    vi.restoreAllMocks();
   });
 
   it("logs out from the account menu", async () => {

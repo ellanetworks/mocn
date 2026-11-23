@@ -16,6 +16,7 @@
 - **4G and 5G Compliant**: Ella MOCN integrates with 4G and 5G networks following 3GPP standards. It has been validated with commercial radios, phones and cores.
 - **User-Plane Aggregation**: Optionally carry subscriber traffic through Ella MOCN's eBPF-based data plane, so Ella MOCN acts as a single point of contact for operators.
 - **Lightweight**: A single binary with an embedded UI, API and database. Install with snap, Docker or Kubernetes, or from source.
+- **Single Sign-On**: Users log in through an identity provider, such as Google, Microsoft or Okta, over OpenID Connect.
 - **Easy to Operate**: Manage operators and radios through a web interface or a RESTful API with an OpenAPI specification. Monitor every radio, MME and AMF, and each operator's traffic, with logs, metrics (Prometheus), traces (OTel) and profiles.
 
 ## Quick Links
