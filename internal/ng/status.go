@@ -68,13 +68,14 @@ func (g *Gateway) amfStatusIndication(ctx context.Context, a *amfAssoc, log *slo
 
 		drained = !(amfCandidate{served: c.Info.served, unavailable: c.Info.unavailable}).available()
 
-		return true
+		return false
 	}) {
 		return
 	}
 
 	log.InfoContext(ctx, "AMF Status Indication from AMF", slog.Int("guamis", len(unavailable)))
 	g.relay.unbind(ctx, a, unavailable, drained)
+	g.core.UpdateCore(ctx, a, func(*amfClient) bool { return true })
 }
 
 // TS 38.413 clause 8.7.6

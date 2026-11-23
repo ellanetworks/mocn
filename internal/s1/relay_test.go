@@ -831,6 +831,10 @@ func TestInitialUEMessageForAnUnknownPLMN(t *testing.T) {
 
 	attach(t, enb, mme, 1, 200)
 
+	h.eventually(t, "the relayed INITIAL UE MESSAGE counted", func() bool {
+		return testutil.ToFloat64(h.metrics.InitialUE.WithLabelValues("s1", "relayed")) == 1
+	})
+
 	registry := prometheus.NewPedanticRegistry()
 	registry.MustRegister(h.metrics.Collectors(h.gw)...)
 
