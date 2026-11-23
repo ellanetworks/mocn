@@ -13,7 +13,7 @@ Security is one of Ella MOCN's core tenets. From the UI to the database, securit
 
 Ella MOCN enforces authentication on API requests towards most endpoints. Two authentication methods are supported:
 
-- **Session-based authentication.** Users authenticate with email and password. A session cookie and a short-lived access token are issued. The login endpoint limits attempts per client address and per account.
+- **Session-based authentication.** Users authenticate with email and password, or through [single sign-on](single_sign_on.md). A session cookie and a short-lived access token are issued. The login endpoint limits attempts per client address and per account.
 - **API tokens.** Per-user tokens that can expire and be revoked individually. A token has its user's role, but cannot create API tokens, change a password or manage users. Recommended for programmatic access.
 
 ### Role-Based Access Control

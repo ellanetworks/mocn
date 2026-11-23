@@ -70,6 +70,11 @@ const ROUTES: RouteCase[] = [
     route: `/users/${encodeURIComponent(ADMIN_EMAIL)}`,
     heading: new RegExp(`^Users\\s*/\\s*${ADMIN_EMAIL.replace(/\./g, "\\.")}$`),
   },
+  {
+    label: "Single Sign-On",
+    route: "/single-sign-on",
+    heading: "Single Sign-On",
+  },
   { label: "Profile", route: "/profile", heading: "Profile" },
 ];
 

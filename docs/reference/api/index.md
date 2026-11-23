@@ -17,7 +17,7 @@ The token is either:
 - an access token, from [log in](auth.md#log-in), [refresh the access token](auth.md#refresh-the-access-token) or [initialize](initialize.md), valid for 15 minutes;
 - an [API token](users.md#create-an-api-token), which starts with `ellamocn_`.
 
-These paths take no token: `GET /api/v1/livez`, `GET /api/v1/readyz`, `GET /api/v1/status`, `GET /api/v1/metrics`, `GET /api/v1/openapi.yaml`, `POST /api/v1/init`, and `POST /api/v1/auth/login`, `/refresh` and `/logout`.
+These paths take no token: `GET /api/v1/livez`, `GET /api/v1/readyz`, `GET /api/v1/status`, `GET /api/v1/metrics`, `GET /api/v1/openapi.yaml`, `POST /api/v1/init`, `POST /api/v1/auth/login`, `/refresh` and `/logout`, and `GET /api/v1/auth/oidc`, `/oidc/login` and `/oidc/callback`.
 
 ### Roles
 
@@ -27,9 +27,9 @@ These paths take no token: `GET /api/v1/livez`, `GET /api/v1/readyz`, `GET /api/
 | Read Only       | `2`       | Reading [operators](operators.md), [radios](radios.md) and [UE connections](ue_connections.md). |
 | Network Manager | `3`       | Read Only, plus creating, updating and deleting operators. |
 
-Only an Admin manages [users](users.md) and reads [profiles](pprof.md). Every user reads its own user, changes its own password, and manages its own API tokens.
+Only an Admin manages [users](users.md) and [single sign-on](oidc.md), and reads [profiles](pprof.md). Every user reads its own user, changes its own password, and manages its own API tokens.
 
-An API token has the role of its user, but cannot create API tokens, change a password, or manage users.
+An API token has the role of its user, but cannot create API tokens, change a password, manage users, or update the [single sign-on](oidc.md#update-the-oidc-settings) settings.
 
 ## Responses
 
@@ -49,7 +49,7 @@ A failed response carries an `error`:
 }
 ```
 
-`GET /api/v1/livez` and `POST /api/v1/auth/logout` answer 204 with no body. `GET /api/v1/readyz` answers 200 when ready and 503 when not, with the same body in both cases. `GET /api/v1/metrics` returns text in the [Prometheus exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-format-details), `GET /api/v1/openapi.yaml` returns YAML, and unknown paths and methods answer in plain text.
+`GET /api/v1/livez` answers 204 with no body, and `POST /api/v1/auth/logout` too, except for a [single sign-on session](auth.md#log-out). `GET /api/v1/readyz` answers 200 when ready and 503 when not, with the same body in both cases. `GET /api/v1/metrics` returns text in the [Prometheus exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-format-details), `GET /api/v1/openapi.yaml` returns YAML, and unknown paths and methods answer in plain text.
 
 Times are RFC 3339, in UTC.
 
@@ -74,4 +74,5 @@ GET /api/v1/openapi.yaml
 - 409 - Conflict.
 - 429 - Too many requests. `Retry-After` is the seconds to wait.
 - 500 - Internal server error.
+- 502 - The identity provider cannot be reached or used. See [Update the OIDC settings](oidc.md#update-the-oidc-settings).
 - 503 - Not ready. See [Check readiness](status.md#check-readiness).

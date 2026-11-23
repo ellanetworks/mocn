@@ -40,6 +40,9 @@ jobs:
     uses: ./.github/workflows/ui-test.yaml
   ui-e2e:
     uses: ./.github/workflows/ui-e2e.yaml
+  ui-e2e-oidc:
+    needs: [image-build]
+    uses: ./.github/workflows/ui-e2e-oidc.yaml
   e2e-s1:
     permissions:
       contents: read
@@ -59,7 +62,7 @@ jobs:
     uses: ./.github/workflows/k8s-smoke.yaml
   image-publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [go-unit-test, bench-smoke, go-lint, go-sec, gtpu-ebpf-tests, bpf-generate, clang-format, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, image-build, chart-lint, k8s-smoke]
+    needs: [go-unit-test, bench-smoke, go-lint, go-sec, gtpu-ebpf-tests, bpf-generate, clang-format, ui-lint, ui-typecheck, ui-test, ui-e2e, ui-e2e-oidc, e2e-s1, image-build, chart-lint, k8s-smoke]
     permissions:
       contents: read
       packages: write
@@ -68,7 +71,7 @@ jobs:
       release: false
   snap-publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [go-unit-test, bench-smoke, go-lint, go-sec, gtpu-ebpf-tests, bpf-generate, clang-format, ui-lint, ui-typecheck, ui-test, ui-e2e, e2e-s1, snap-build, snap-strict-test]
+    needs: [go-unit-test, bench-smoke, go-lint, go-sec, gtpu-ebpf-tests, bpf-generate, clang-format, ui-lint, ui-typecheck, ui-test, ui-e2e, ui-e2e-oidc, e2e-s1, snap-build, snap-strict-test]
     uses: ./.github/workflows/snap-publish.yaml
     secrets:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}

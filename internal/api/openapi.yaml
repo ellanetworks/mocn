@@ -23,6 +23,7 @@ tags:
   - name: Radios
   - name: UE connections
   - name: Users
+  - name: Single sign-on
   - name: Status
   - name: Metrics
   - name: Profiling
@@ -115,10 +116,135 @@ paths:
       operationId: logout
       security: []
       summary: Log out
-      description: Ends the session of the cookie, if any, and clears the cookie.
+      description: >-
+        Ends the session of the cookie, if any, and clears the cookie. For a single sign-on session, when the
+        identity provider has an end_session_endpoint, returns the URL that logs out of the identity provider.
       responses:
+        "200":
+          description: Logged out of a single sign-on session
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: object
+                    required: [redirect_url]
+                    properties:
+                      redirect_url:
+                        type: string
+                        description: >-
+                          The identity provider's end_session_endpoint, with client_id and
+                          post_logout_redirect_uri.
         "204":
           description: Logged out
+
+  /api/v1/auth/oidc:
+    get:
+      tags: [Auth]
+      operationId: getOIDCLogin
+      summary: Get the single sign-on option of the login page
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: object
+                    required: [enabled]
+                    properties:
+                      enabled:
+                        type: boolean
+                      display_name:
+                        type: string
+                        description: The name on the login button. Absent when OIDC is off.
+
+  /api/v1/auth/oidc/login:
+    get:
+      tags: [Auth]
+      operationId: startOIDCLogin
+      summary: Sign in through the identity provider
+      description: >-
+        For a browser. Redirects to the identity provider with the authorization code flow, PKCE, a state and a
+        nonce, which a short-lived encrypted cookie keeps. When OIDC is off or the provider cannot be reached, it
+        redirects to /login with an error. With link=1 and the session cookie, it links the identity provider
+        account to the session's user instead of logging in, and returns to /profile.
+      security: []
+      parameters:
+        - {name: link, in: query, schema: {type: string, enum: ["1"]}}
+      responses:
+        "303":
+          $ref: "#/components/responses/OIDCRedirect"
+
+  /api/v1/auth/oidc/callback:
+    get:
+      tags: [Auth]
+      operationId: oidcCallback
+      summary: Return from the identity provider
+      description: >-
+        The redirect URL registered with the identity provider. Each login completes once. On success, it sets the
+        session cookie and redirects to /. Otherwise it redirects to /login?error= with one of rate_limited,
+        unavailable, failed, denied, not_set_up, email_not_verified, linked_elsewhere, no_group, groups_overage,
+        too_many_users, link_required, or error. A link redirects to /profile, or /profile?error=.
+      security: []
+      parameters:
+        - {name: code, in: query, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: iss, in: query, schema: {type: string}}
+        - {name: error, in: query, schema: {type: string}}
+        - {name: error_description, in: query, schema: {type: string}}
+      responses:
+        "303":
+          $ref: "#/components/responses/OIDCRedirect"
+
+  /api/v1/oidc:
+    get:
+      tags: [Single sign-on]
+      operationId: getOIDC
+      summary: Get the OIDC settings
+      description: The client secret is never returned.
+      responses:
+        "200":
+          $ref: "#/components/responses/OIDCSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags: [Single sign-on]
+      operationId: updateOIDC
+      summary: Update the OIDC settings
+      description: >-
+        Replaces all the settings. An empty or missing client_secret keeps the current one, unless the issuer or
+        the client ID changes (400). Enabling OIDC fetches the provider's OpenID configuration and signing keys
+        first, and answers 502 when the provider cannot be used, including when its token endpoint accepts neither
+        client_secret_basic nor client_secret_post. Disabling OIDC or changing the issuer ends all OIDC sessions.
+        Needs a login, not an API token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOIDCParams"
+      responses:
+        "200":
+          $ref: "#/components/responses/OIDCSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
 
   /api/v1/users/me:
     get:
@@ -515,7 +641,8 @@ paths:
       operationId: updateUser
       summary: Change the role of a user
       description: >-
-        A role change ends the sessions of the user. An admin cannot change its own role.
+        A role change ends the sessions of the user. An admin cannot change its own role. When OIDC group mapping
+        is on, the role of a linked user comes from their groups and cannot be changed (409).
       parameters:
         - $ref: "#/components/parameters/Email"
       requestBody:
@@ -595,8 +722,8 @@ paths:
       operationId: deleteUserPassword
       summary: Remove the password of a user
       description: >-
-        The user can then no longer sign in with a password. Ends the sessions of the user. The last admin with a
-        password keeps it. 409 when the user has no password.
+        The user can then sign in only through OIDC. Ends the sessions of the user. The last admin with a password
+        keeps it. 409 when the user has no password.
       parameters:
         - $ref: "#/components/parameters/Email"
       responses:
@@ -610,6 +737,28 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/users/{email}/oidc:
+    delete:
+      tags: [Users]
+      operationId: deleteUserOIDCLink
+      summary: Unlink a user from their identity provider account
+      description: >-
+        Ends the OIDC sessions of the user. Their next OIDC login links them again by verified email. 404 when the
+        user is not linked to the current issuer.
+      parameters:
+        - $ref: "#/components/parameters/Email"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1206,24 +1355,19 @@ components:
 
     User:
       type: object
-      required: [email, role_id, role_pinned, password_set, oidc_linked]
+      required: [email, role_id, password_set, oidc_linked]
       properties:
         email:
           type: string
           format: email
         role_id:
           $ref: "#/components/schemas/RoleID"
-        role_pinned:
-          type: boolean
-          description: >-
-            The role was set by an admin and will not be updated from identity provider groups. Stored, but without
-            effect until single sign-on is supported.
         password_set:
           type: boolean
           description: The user can sign in with a password.
         oidc_linked:
           type: boolean
-          description: Always false until single sign-on is supported.
+          description: The user is linked to an account at the current identity provider.
 
     ListUsersResponse:
       type: object
@@ -1257,9 +1401,6 @@ components:
           description: 8 to 72 bytes. Empty or missing for a user without a password.
         role_id:
           $ref: "#/components/schemas/RoleID"
-        role_pinned:
-          type: boolean
-          description: Keeps the role from being updated from identity provider groups. Missing means false.
 
     UpdateUserParams:
       type: object
@@ -1268,9 +1409,137 @@ components:
       properties:
         role_id:
           $ref: "#/components/schemas/RoleID"
-        role_pinned:
+
+    OIDCGroupRole:
+      type: object
+      required: [group, role_id]
+      additionalProperties: false
+      properties:
+        group:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: A value of the groups claim, matched exactly.
+        role_id:
+          $ref: "#/components/schemas/RoleID"
+
+    OIDCSettings:
+      type: object
+      required: [enabled, external_url, redirect_url, post_logout_redirect_url, issuer, client_id, client_secret_set,
+        display_name, scopes, session_lifetime_seconds, trust_unverified_email, ca_certificate, ca_certificates,
+        groups_claim, group_roles]
+      properties:
+        enabled:
           type: boolean
-          description: Keeps the role from being updated from identity provider groups. Missing keeps the current value.
+        external_url:
+          type: string
+          description: The https URL users reach Ella MOCN at.
+          examples: ["https://mocn.example.com"]
+        redirect_url:
+          type: string
+          description: The redirect URL to register with the identity provider. Empty without an external URL.
+          examples: ["https://mocn.example.com/api/v1/auth/oidc/callback"]
+        post_logout_redirect_url:
+          type: string
+          description: The post-logout redirect URL to register with the identity provider. Empty without an external URL.
+          examples: ["https://mocn.example.com/login"]
+        issuer:
+          type: string
+          examples: ["https://idp.example.com/realms/mocn"]
+        client_id:
+          type: string
+        client_secret_set:
+          type: boolean
+        display_name:
+          type: string
+          description: The name on the login button.
+          examples: [Keycloak]
+        scopes:
+          type: array
+          items:
+            type: string
+          examples: [[openid, email, profile]]
+        session_lifetime_seconds:
+          type: integer
+          format: int64
+        trust_unverified_email:
+          type: boolean
+          description: >-
+            Links accounts by email when the provider does not send email_verified. An email_verified of false is
+            always refused.
+        ca_certificate:
+          type: string
+          description: PEM certificates that the provider's TLS certificate must chain to. Empty uses the system's.
+        ca_certificates:
+          type: array
+          description: The certificates in ca_certificate.
+          items:
+            type: object
+            required: [subject, not_after]
+            properties:
+              subject:
+                type: string
+              not_after:
+                type: string
+                format: date-time
+        groups_claim:
+          type: string
+          examples: [groups]
+        group_roles:
+          type: array
+          description: A user in several mapped groups gets the highest of their roles.
+          items:
+            $ref: "#/components/schemas/OIDCGroupRole"
+
+    UpdateOIDCParams:
+      type: object
+      required: [enabled, scopes, session_lifetime_seconds]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        external_url:
+          type: string
+          description: An https URL with no path. Stored as scheme://host[:port]. Required when enabled.
+        issuer:
+          type: string
+          description: An https URL with no query or fragment, exactly as the provider names itself. Required when enabled.
+        client_id:
+          type: string
+          maxLength: 255
+        client_secret:
+          type: string
+          maxLength: 255
+          description: >-
+            Write-only. Empty or missing keeps the current secret. Required when the issuer or the client ID
+            changes.
+        display_name:
+          type: string
+          maxLength: 64
+        scopes:
+          type: array
+          maxItems: 20
+          description: Must include openid and email.
+          items:
+            type: string
+        session_lifetime_seconds:
+          type: integer
+          format: int64
+          minimum: 300
+          maximum: 2592000
+        trust_unverified_email:
+          type: boolean
+        ca_certificate:
+          type: string
+        groups_claim:
+          type: string
+          maxLength: 255
+          description: Required with group_roles.
+        group_roles:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/OIDCGroupRole"
 
     UpdatePasswordParams:
       type: object
@@ -2319,6 +2588,31 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    OIDCRedirect:
+      description: See Other
+      headers:
+        Location:
+          schema:
+            type: string
+        Set-Cookie:
+          schema:
+            type: string
+    BadGateway:
+      description: The identity provider cannot be reached or cannot be used.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    OIDCSettings:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [result]
+            properties:
+              result:
+                $ref: "#/components/schemas/OIDCSettings"
     InternalError:
       description: Internal error
       content:

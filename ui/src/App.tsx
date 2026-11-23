@@ -1,5 +1,5 @@
-import type { ReactElement } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect, type ReactElement } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { AuthProvider, useAuth, type Permission } from "@/contexts/AuthContext";
 import Dashboard from "@/pages/Dashboard";
@@ -10,8 +10,10 @@ import Operators from "@/pages/Operators";
 import Profile from "@/pages/Profile";
 import RadioDetail from "@/pages/RadioDetail";
 import Radios from "@/pages/Radios";
+import SingleSignOn from "@/pages/SingleSignOn";
 import UserDetail from "@/pages/UserDetail";
 import Users from "@/pages/Users";
+import { forgetReturnPath, returnPath } from "@/utils/returnPath";
 
 export default function App() {
   return (
@@ -57,6 +59,11 @@ const pages: { path: string; element: ReactElement; permission: Permission }[] =
     },
     { path: "/users", element: <Users />, permission: "user:admin" },
     {
+      path: "/single-sign-on",
+      element: <SingleSignOn />,
+      permission: "oidc:read",
+    },
+    {
       path: "/users/:email",
       element: <UserDetail />,
       permission: "user:admin",
@@ -74,7 +81,16 @@ function Pages() {
           <Route key={path} path={path} element={element} />
         ))}
       <Route path="/profile" element={<Profile />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Home />} />
     </Routes>
   );
+}
+
+function Home() {
+  const { pathname } = useLocation();
+  const target = (pathname === "/" && returnPath()) || "/dashboard";
+
+  useEffect(() => forgetReturnPath(), []);
+
+  return <Navigate to={target} replace />;
 }

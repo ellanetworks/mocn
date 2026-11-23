@@ -21,7 +21,6 @@ type User struct {
 	ID           int64
 	Email        string
 	Role         Role
-	RolePinned   bool
 	PasswordHash string
 	HasIdentity  bool
 }
@@ -29,7 +28,6 @@ type User struct {
 type NewUser struct {
 	Email        string
 	Role         Role
-	RolePinned   bool
 	PasswordHash string
 }
 
@@ -62,8 +60,8 @@ func createUser(ctx context.Context, tx querier, u NewUser, maxUsers int) (int64
 		return 0, ErrTooManyUsers
 	}
 
-	res, err := tx.ExecContext(ctx, `INSERT INTO users (email, role_id, role_pinned, password_hash) VALUES (?, ?, ?, ?)`,
-		u.Email, u.Role, u.RolePinned, nullableString(u.PasswordHash))
+	res, err := tx.ExecContext(ctx, `INSERT INTO users (email, role_id, password_hash) VALUES (?, ?, ?)`, u.Email,
+		u.Role, nullableString(u.PasswordHash))
 	if isConstraint(err, sqlite3.ErrConstraintUnique) {
 		return 0, ErrDuplicate
 	}
@@ -117,14 +115,14 @@ func (d *DB) ListUsers(ctx context.Context, page, perPage int) (_ []User, _ int,
 	return users, total, nil
 }
 
-func (d *DB) UpdateUserRole(ctx context.Context, id int64, role Role, pinned bool) (err error) {
+func (d *DB) UpdateUserRole(ctx context.Context, id int64, role Role) (err error) {
 	ctx, done := d.observe(ctx, "UpdateUserRole", poolWrite)
 	defer done(&err)
 
-	return d.exec(ctx, "update user role", func(tx querier) error { return updateUserRole(ctx, tx, id, role, pinned) })
+	return d.exec(ctx, "update user role", func(tx querier) error { return updateUserRole(ctx, tx, id, role) })
 }
 
-func updateUserRole(ctx context.Context, tx querier, id int64, role Role, pinned bool) error {
+func updateUserRole(ctx context.Context, tx querier, id int64, role Role) error {
 	var current Role
 
 	err := tx.QueryRowContext(ctx, `SELECT role_id FROM users WHERE id = ?`, id).Scan(&current)
@@ -142,8 +140,7 @@ func updateUserRole(ctx context.Context, tx querier, id int64, role Role, pinned
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `UPDATE users SET role_id = ?, role_pinned = ? WHERE id = ?`, role, pinned,
-		id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET role_id = ? WHERE id = ?`, role, id); err != nil {
 		return err
 	}
 
@@ -234,8 +231,9 @@ func keepPasswordAdmin(ctx context.Context, tx querier, id int64) error {
 	return nil
 }
 
-const userColumns = `id, email, role_id, role_pinned, password_hash,
-	EXISTS (SELECT 1 FROM user_identities WHERE user_identities.user_id = users.id)`
+const userColumns = `id, email, role_id, password_hash,
+	EXISTS (SELECT 1 FROM user_identities JOIN oidc ON oidc.issuer = user_identities.issuer
+		WHERE user_identities.user_id = users.id)`
 
 func getUser(row scanner) (User, error) {
 	u, err := scanUser(row)
@@ -256,7 +254,7 @@ func scanUser(row scanner) (User, error) {
 		hash sql.NullString
 	)
 
-	err := row.Scan(&u.ID, &u.Email, &u.Role, &u.RolePinned, &hash, &u.HasIdentity)
+	err := row.Scan(&u.ID, &u.Email, &u.Role, &hash, &u.HasIdentity)
 	u.PasswordHash = hash.String
 
 	return u, err

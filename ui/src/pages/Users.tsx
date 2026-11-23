@@ -9,11 +9,18 @@ import { useQuery } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import QueryAlert from "@/components/QueryAlert";
+import { signInMethods } from "@/components/UserCards";
 import { CreateUserDialog } from "@/components/UserDialogs";
+import { getOIDC, roleFromGroups, type OIDCSettings } from "@/queries/oidc";
 import { listUsers, roleLabels, type User } from "@/queries/users";
 import { GRID_SX } from "@/utils/layout";
 
-const columns: GridColDef<User>[] = [
+const roleSource = (user: User, oidc?: OIDCSettings) => {
+  if (roleFromGroups(user, oidc)) return " (from groups)";
+  return "";
+};
+
+const columns = (oidc?: OIDCSettings): GridColDef<User>[] => [
   {
     field: "email",
     headerName: "Email",
@@ -34,8 +41,17 @@ const columns: GridColDef<User>[] = [
     field: "role_id",
     headerName: "Role",
     flex: 0.6,
-    minWidth: 120,
-    valueGetter: (_value, row) => roleLabels[row.role_id],
+    minWidth: 240,
+    valueGetter: (_value, row) =>
+      roleLabels[row.role_id] + roleSource(row, oidc),
+  },
+  {
+    field: "sign_in",
+    headerName: "Sign-in",
+    flex: 1,
+    minWidth: 280,
+    valueGetter: (_value, row) =>
+      signInMethods(row).join(", ") || "Single sign-on, not linked yet",
   },
 ];
 
@@ -53,6 +69,7 @@ export default function Users() {
     placeholderData: (prev) => prev,
   });
   const { data } = users;
+  const oidc = useQuery({ queryKey: ["oidc"], queryFn: getOIDC });
 
   return (
     <Box component="section" aria-labelledby="users-title">
@@ -77,7 +94,7 @@ export default function Users() {
         <DataGrid
           aria-label="Users"
           rows={data.items}
-          columns={columns}
+          columns={columns(oidc.data)}
           getRowId={(row) => row.email}
           paginationMode="server"
           rowCount={data.total_count}

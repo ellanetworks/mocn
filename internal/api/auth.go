@@ -51,6 +51,8 @@ const (
 	permSelf            permission = "user:self"
 	permManageUsers     permission = "user:admin"
 	permReadProfiles    permission = "pprof:read"
+	permReadOIDC        permission = "oidc:read"
+	permUpdateOIDC      permission = "oidc:update"
 )
 
 var readPermissions = []permission{permReadOperators, permSelf}
@@ -58,7 +60,7 @@ var readPermissions = []permission{permReadOperators, permSelf}
 var operatePermissions = []permission{permUpdateOperators}
 
 var permissions = map[db.Role][]permission{
-	db.RoleAdmin:          slices.Concat(readPermissions, operatePermissions, []permission{permManageUsers, permReadProfiles}),
+	db.RoleAdmin:          slices.Concat(readPermissions, operatePermissions, []permission{permManageUsers, permReadProfiles, permReadOIDC, permUpdateOIDC}),
 	db.RoleReadOnly:       readPermissions,
 	db.RoleNetworkManager: slices.Concat(readPermissions, operatePermissions),
 }
@@ -428,6 +430,24 @@ func randIntN(n int) int {
 }
 
 const maxActorLength = 254
+
+func (a *auth) cookieSession(r *http.Request) (db.Session, error) {
+	hash := a.sessionHash(r)
+	if hash == nil {
+		return db.Session{}, errors.New("no session cookie")
+	}
+
+	s, err := a.cfg.Auth.GetSessionByTokenHash(r.Context(), hash)
+	if err != nil {
+		return db.Session{}, err
+	}
+
+	if !a.cfg.Now().Before(s.ExpiresAt) {
+		return db.Session{}, errors.New("the session expired")
+	}
+
+	return s, nil
+}
 
 func (a *auth) audit(r *http.Request, action, actor, details string) {
 	if len(actor) > maxActorLength {

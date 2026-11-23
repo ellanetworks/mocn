@@ -11,6 +11,7 @@ import (
 
 	"github.com/ellanetworks/mocn/internal/gtpu"
 	"github.com/ellanetworks/mocn/internal/ng"
+	"github.com/ellanetworks/mocn/internal/oidc"
 	"github.com/ellanetworks/mocn/internal/s1"
 	"github.com/ellanetworks/mocn/internal/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,6 +26,8 @@ type Config struct {
 	Metrics        prometheus.Gatherer
 	Requests       *RequestMetrics
 	Auth           authStore
+	OIDC           oidcProvider
+	OIDCCookieKey  func() []byte
 	Operators      operatorStore
 	UserPlane      bool
 	Plane          PlaneView
@@ -135,12 +138,18 @@ func routes(cfg Config, a *auth) []route {
 		{"POST /api/v1/auth/login", public, login(a)},
 		{"POST /api/v1/auth/refresh", public, refresh(a)},
 		{"POST /api/v1/auth/logout", public, logout(a)},
+		{"GET /api/v1/auth/oidc", public, getOIDCLogin(cfg)},
+		{"GET /api/v1/auth/oidc/login", public, startOIDCLogin(a)},
+		{"GET " + oidc.CallbackPath, public, oidcCallback(a)},
 
 		{"GET /api/v1/users/me", permSelf, getMyUser(a)},
 		{"PUT /api/v1/users/me/password", permSelf, a.needsLogin(updateMyPassword(a))},
 		{"GET /api/v1/users/me/api-tokens", permSelf, listAPITokens(a, myself(cfg))},
 		{"POST /api/v1/users/me/api-tokens", permSelf, a.needsLogin(createAPIToken(a, myself(cfg)))},
 		{"DELETE /api/v1/users/me/api-tokens/{id}", permSelf, deleteAPIToken(a, myself(cfg))},
+
+		{"GET /api/v1/oidc", permReadOIDC, getOIDC(cfg)},
+		{"PUT /api/v1/oidc", permUpdateOIDC, a.needsLogin(updateOIDC(a))},
 
 		{"GET /api/v1/operators", permReadOperators, listOperators(cfg)},
 		{"POST /api/v1/operators", permUpdateOperators, createOperator(a)},
@@ -159,6 +168,7 @@ func routes(cfg Config, a *auth) []route {
 		{"DELETE /api/v1/users/{email}", permManageUsers, a.needsLogin(deleteUser(a))},
 		{"PUT /api/v1/users/{email}/password", permManageUsers, a.needsLogin(updateUserPassword(a))},
 		{"DELETE /api/v1/users/{email}/password", permManageUsers, a.needsLogin(deleteUserPassword(a))},
+		{"DELETE /api/v1/users/{email}/oidc", permManageUsers, a.needsLogin(deleteUserOIDCLink(a))},
 		{"GET /api/v1/users/{email}/api-tokens", permManageUsers, a.needsLogin(listAPITokens(a, userOfPath(cfg)))},
 		{"POST /api/v1/users/{email}/api-tokens", permManageUsers, a.needsLogin(createAPIToken(a, userOfPath(cfg)))},
 		{"DELETE /api/v1/users/{email}/api-tokens/{id}", permManageUsers, a.needsLogin(deleteAPIToken(a, userOfPath(cfg)))},

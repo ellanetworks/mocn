@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { TextField } from "@mui/material";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { FormControlLabel, Switch, TextField } from "@mui/material";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import EditDialog from "@/components/EditDialog";
 import { useSnackbar } from "@/contexts/SnackbarContext";
 import PasswordField from "@/components/PasswordField";
 import { useTouched } from "@/hooks/useTouched";
 import RoleField from "@/components/RoleField";
+import { getOIDC } from "@/queries/oidc";
 import {
   createUser,
   passwordError,
@@ -18,15 +19,22 @@ import {
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
 
+const useOIDC = () => useQuery({ queryKey: ["oidc"], queryFn: getOIDC });
+
 export function CreateUserDialog({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const { showSnackbar } = useSnackbar();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState(RoleID.ReadOnly);
+  const [withPassword, setWithPassword] = useState(true);
+  const oidc = useOIDC().data;
+  const ssoConfigured =
+    oidc !== undefined && oidc.issuer !== "" && oidc.client_id !== "";
+  const needsPassword = !ssoConfigured || withPassword;
 
   const mutation = useMutation({
-    mutationFn: () => createUser(email, password, role),
+    mutationFn: () => createUser(email, needsPassword ? password : "", role),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
       showSnackbar("User created successfully.", "success");
@@ -44,7 +52,10 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
   return (
     <EditDialog
       title="Create User"
-      valid={EMAIL.test(email) && passwordError(password) === undefined}
+      valid={
+        EMAIL.test(email) &&
+        (!needsPassword || passwordError(password) === undefined)
+      }
       pending={mutation.isPending}
       error={mutation.error}
       onSubmit={() => mutation.mutate()}
@@ -64,16 +75,29 @@ export function CreateUserDialog({ onClose }: { onClose: () => void }) {
         required
         autoFocus
       />
-      <PasswordField
-        label="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        onBlur={touch("password")}
-        error={newPasswordError !== undefined}
-        helperText={newPasswordError ?? "8 to 72 characters."}
-        required
-        autoComplete="new-password"
-      />
+      {ssoConfigured && (
+        <FormControlLabel
+          control={
+            <Switch
+              checked={withPassword}
+              onChange={(e) => setWithPassword(e.target.checked)}
+            />
+          }
+          label="Password"
+        />
+      )}
+      {needsPassword && (
+        <PasswordField
+          label="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onBlur={touch("password")}
+          error={newPasswordError !== undefined}
+          helperText={newPasswordError ?? "8 to 72 characters."}
+          required
+          autoComplete="new-password"
+        />
+      )}
       <RoleField value={role} onChange={setRole} />
     </EditDialog>
   );

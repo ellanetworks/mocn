@@ -16,5 +16,7 @@ Initial setup and configuration of Ella MOCN.
 
 Ongoing management and maintenance of a running Ella MOCN deployment.
 
+- [Configure Single Sign-On](configure_single_sign_on.md)
+- [Manage Single Sign-On Users](manage_single_sign_on_users.md)
 - [Back Up and Restore](back_up_and_restore.md)
 - [Upgrade](upgrade.md)

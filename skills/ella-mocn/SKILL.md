@@ -6,7 +6,7 @@ description: >
   through its REST API. Use when the user asks about operators, their PLMNs, Global eNB and
   gNB IDs, MMEs, AMFs and their state, connected radios, radios down or failing setup, how
   many phones or UEs each operator or radio serves, UE connections, user-plane aggregation,
-  core overload, users and API tokens, or metrics of an Ella MOCN instance.
+  core overload, users and API tokens, single sign-on (OIDC), or metrics of an Ella MOCN instance.
 ---
 
 # Ella MOCN
@@ -87,5 +87,7 @@ Before any `POST`, `PUT` or `DELETE`, say what will change and get the user's ap
 - An operator needs `name` and 1 to 12 `plmns`. MMEs need a `global_enb_id`, AMFs a `global_gnb_id`, each with a PLMN of the operator. MMEs are reached on SCTP port `36412`, AMFs on `38412`.
 - `409`: another operator already has that name or PLMN, or is already the `pws_operator` (at most one).
 - An API token is shown once, in the response to `POST /api/v1/users/me/api-tokens` (`{"name": "..."}`, optional `expires_at`).
+- Users have `email`, `role_id`, `password_set` and `oidc_linked`; at most 50, including those created at login from group mappings. Without `password`, `POST /api/v1/users` creates a user who logs in only through the identity provider. `DELETE /api/v1/users/{email}/password` removes a password, `DELETE /api/v1/users/{email}/oidc` unlinks the identity provider account and ends those sessions, and `DELETE /api/v1/users/{email}` also deletes the API tokens. `409` when the role comes from identity provider groups, or for the last Admin with a password. An Admin cannot change, unlink, remove the password of, or delete its own user (`403`).
+- `GET`/`PUT /api/v1/oidc` hold the single sign-on settings (Admin, access token for `PUT`). `PUT` replaces them all: `GET` first and send back every field; an empty `client_secret` keeps the stored one.
 
 Request bodies and constraints are in the spec, or at `https://docs.ellanetworks.com/mocn/reference/api/`.

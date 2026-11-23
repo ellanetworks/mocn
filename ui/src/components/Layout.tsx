@@ -27,6 +27,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import HubIcon from "@mui/icons-material/Hub";
 import InfoIcon from "@mui/icons-material/Info";
+import KeyIcon from "@mui/icons-material/Key";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -112,6 +113,12 @@ const navSections: { title?: string; items: NavItem[] }[] = [
         label: "Users",
         icon: <AdminPanelSettingsIcon color="primary" />,
         permission: "user:admin",
+      },
+      {
+        to: "/single-sign-on",
+        label: "Single Sign-On",
+        icon: <KeyIcon color="primary" />,
+        permission: "oidc:read",
       },
     ],
   },

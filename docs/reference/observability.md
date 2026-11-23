@@ -27,7 +27,7 @@ Audit events are logs at level `info` with `msg` set to `audit event`.
 
 | Field | Description |
 | --- | --- |
-| `action` | What was done, such as `auth_login` or `create_operator`. |
+| `action` | What was done, such as `auth_login`, `auth_oidc_login` or `create_operator`. |
 | `actor` | Email of the user who did it. Empty when unknown. |
 | `ip` | Address the request came from. |
 | `details` | What was done, in words. |
@@ -49,6 +49,7 @@ Ella MOCN exposes Prometheus metrics at [`GET /api/v1/metrics`](api/metrics.md).
 | `ellamocn_pws_messages_total` | Counter | `interface`, `procedure` (`write_replace_warning`, `kill`, `pws_cancel`, `pws_restart_indication`, `pws_failure_indication`), `result` (`relayed`, `no_radio`, `timeout`, …) | Public warning requests from MMEs and AMFs and indications from radios, by result. |
 | `ellamocn_ue_connections` | Gauge | `interface`, `operator` | UE connections relayed, by operator. |
 | `ellamocn_api_request_duration_seconds` | Histogram | `method`, `route`, `code` | Duration of API requests. |
+| `ellamocn_oidc_logins_total` | Counter | `outcome` (`success`, or a [login error](api/auth.md#errors)) | Logins through the identity provider, by outcome. |
 | `ellamocn_database_query_duration_seconds` | Histogram | `pool` (`write`, `read`) | Duration of database queries. |
 | `ellamocn_database_query_errors_total` | Counter | `pool` (`write`, `read`) | Failed database queries. |
 | `ellamocn_database_storage_bytes` | Gauge | `file` (`main`, `wal`) | Size of the database on disk. |
