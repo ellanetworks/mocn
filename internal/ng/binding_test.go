@@ -237,9 +237,9 @@ func TestOverloadReplayedAndClearedOnAMFLoss(t *testing.T) {
 		}
 	}
 
-	if got := testutil.ToFloat64(h.gw.OverloadCounter().WithLabelValues("ng", "overload_start", "relayed")); got != 2 {
-		t.Fatalf("relayed Overload Start = %v, want 2", got)
-	}
+	h.eventually(t, "both Overload Starts counted as relayed", func() bool {
+		return testutil.ToFloat64(h.gw.OverloadCounter().WithLabelValues("ng", "overload_start", "relayed")) == 2
+	})
 
 	_ = amf.Conn.Abort()
 
