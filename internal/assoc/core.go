@@ -308,14 +308,15 @@ func (g *Gateway[S, R, I, C]) runClient(ctx context.Context, c *Client[I, C]) {
 
 		c.Assoc = nil
 		c.State, c.Since, c.Info = Disconnected, g.cfg.Now(), none
-
-		if wasUp {
-			g.changedLocked(ctx)
-		}
-
 		g.mu.Unlock()
 
 		lost(context.WithoutCancel(ctx))
+
+		if wasUp {
+			g.mu.Lock()
+			g.changedLocked(ctx)
+			g.mu.Unlock()
+		}
 
 		if ctx.Err() != nil {
 			return
