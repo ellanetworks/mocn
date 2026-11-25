@@ -68,6 +68,7 @@ See [Install](https://docs.ellanetworks.com/mocn/how_to/install/).
 | `config` | `logging.level: info` | [Configuration file](https://docs.ellanetworks.com/mocn/reference/config_file/) content, merged over the database, API and signalling settings that the chart sets. |
 | `image.repository` | `ghcr.io/ellanetworks/ella-mocn` | Image repository. |
 | `image.tag` | chart `appVersion` | Image tag. |
+| `image.tagSuffix` | | Suffix appended to the image tag. `-ubi` selects the image based on the Red Hat Universal Base Image. |
 | `image.digest` | | Image digest. Takes precedence over `image.tag`. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `imagePullSecrets` | `[]` | Image pull secrets. |

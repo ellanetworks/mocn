@@ -33,6 +33,19 @@ jobs:
     uses: ./.github/workflows/image-publish.yaml
     with:
       release: true
+  image-build-ubi:
+    needs: [check-version]
+    uses: ./.github/workflows/image-build-ubi.yaml
+  image-publish-ubi:
+    needs: [image-build-ubi]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image-publish.yaml
+    with:
+      release: true
+      artifact: ellamocn-ubi-image
+      tag-suffix: -ubi
   image-scan:
     needs: [image-publish]
     permissions:
