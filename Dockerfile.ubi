@@ -31,7 +31,6 @@ LABEL name="ella-mocn" \
       url="https://docs.ellanetworks.com/mocn/"
 
 COPY LICENSE /licenses/
-COPY mocn.yaml /mocn.yaml
 COPY --from=build /mocn /usr/bin/mocn
 
 ENTRYPOINT ["/usr/bin/mocn"]
