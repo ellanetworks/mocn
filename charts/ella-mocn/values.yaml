@@ -1,6 +1,7 @@
 image:
   repository: ghcr.io/ellanetworks/ella-mocn
   tag: ""
+  tagSuffix: ""
   digest: ""
   pullPolicy: IfNotPresent
 

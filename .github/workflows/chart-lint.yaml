@@ -37,7 +37,9 @@ jobs:
           fi
 
       - name: Lint
-        run: helm lint --strict charts/ella-mocn
+        run: |
+          helm lint --strict charts/ella-mocn
+          helm lint --strict charts/ella-mocn -f charts/ella-mocn/values.openshift.yaml
 
       - name: Render the pod network, Multus and user-plane aggregation modes
         run: |
