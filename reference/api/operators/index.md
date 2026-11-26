@@ -1,0 +1,449 @@
+# Operators
+
+An operator is a core network that shares the radios through Ella MOCN: its PLMNs, the Global eNB ID and Global gNB ID with which Ella MOCN presents itself to its core, and its MMEs and AMFs.
+
+## List Operators
+
+This path returns the operators, sorted by name, with the state of their MMEs and AMFs.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/operators` |
+
+### Response Fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | string | Name. |
+| `pws_operator` | boolean | Whether the operator's core connects the common CBC, whose warnings (PWS) are broadcast to every cell. |
+| `plmns` | array | PLMNs, each with `mcc` and `mnc`. |
+| `global_enb_id` | object | Global eNB ID that Ella MOCN uses towards the operator's MMEs. Absent when unset. |
+| `global_enb_id.plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `global_enb_id.enb_id_type` | string | `macro`, `short_macro` or `long_macro`. |
+| `global_enb_id.enb_id` | int | eNB ID. |
+| `global_gnb_id` | object | Global gNB ID that Ella MOCN uses towards the operator's AMFs. Absent when unset. |
+| `global_gnb_id.plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `global_gnb_id.gnb_id` | int | gNB ID. |
+| `global_gnb_id.bit_length` | int | gNB ID length, in bits. |
+| `mmes` | array | MMEs. Empty when none. |
+| `mmes[].tnl_addresses` | array | Addresses of the MME, reached over one SCTP association to port 36412. |
+| `mmes[].status` | object | State of the MME. See [MME Status](<#mme-status>). |
+| `amfs` | array | AMFs. Empty when none. |
+| `amfs[].tnl_addresses` | array | Addresses of the AMF, reached over one SCTP association to port 38412. |
+| `amfs[].status` | object | State of the AMF. See [AMF Status](<#amf-status>). |
+| `user_plane.aggregation` | boolean | Whether user traffic goes through Ella MOCN ([user-plane aggregation](<https://docs.ellanetworks.com/mocn/explanation/user_plane_aggregation_with_ebpf/index.md>)). Always `false` when `ran.user_plane.enabled` is `false` in the configuration file. |
+| `user_plane.status` | object | State of the operator's user plane. See [User-Plane Status](<#user-plane-status>). |
+| `ue_connections` | int | UE-associated logical S1-connections and NG-connections across the operator's MMEs and AMFs. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "items": [
+            {
+                "name": "Operator A",
+                "pws_operator": true,
+                "plmns": [{"mcc": "001", "mnc": "01"}],
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 1
+                },
+                "global_gnb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "gnb_id": 1,
+                    "bit_length": 22
+                },
+                "mmes": [
+                    {
+                        "tnl_addresses": ["127.0.0.2"],
+                        "status": {
+                            "state": "up",
+                            "since": "2026-11-13T16:31:55.645317884Z",
+                            "primary_tnl_address": "127.0.0.2",
+                            "mme_name": "mme-a",
+                            "served_gummeis": [
+                                {
+                                    "served_plmns": [{"mcc": "001", "mnc": "01"}],
+                                    "served_group_ids": [1],
+                                    "served_mmecs": [1]
+                                }
+                            ],
+                            "relative_mme_capacity": 255,
+                            "overload": [
+                                {
+                                    "gummei": {
+                                        "plmn": {"mcc": "001", "mnc": "01"},
+                                        "mme_group_id": 1,
+                                        "mme_code": 1
+                                    },
+                                    "overload_action": "reject_non_emergency_mo_dt",
+                                    "traffic_load_reduction_indication": 50
+                                }
+                            ],
+                            "ue_connections": 2
+                        }
+                    }
+                ],
+                "amfs": [{"tnl_addresses": ["10.0.1.5"]}],
+                "ue_connections": 2
+            },
+            {
+                "name": "Operator B",
+                "pws_operator": false,
+                "plmns": [{"mcc": "001", "mnc": "02"}],
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "02"},
+                    "enb_id_type": "macro",
+                    "enb_id": 2
+                },
+                "mmes": [
+                    {
+                        "tnl_addresses": ["127.0.0.3"],
+                        "status": {
+                            "state": "up",
+                            "since": "2026-11-13T16:31:55.645358627Z",
+                            "primary_tnl_address": "127.0.0.3",
+                            "mme_name": "mme-b",
+                            "served_gummeis": [
+                                {
+                                    "served_plmns": [{"mcc": "001", "mnc": "02"}],
+                                    "served_group_ids": [2],
+                                    "served_mmecs": [1]
+                                }
+                            ],
+                            "relative_mme_capacity": 255,
+                            "ue_connections": 2
+                        }
+                    }
+                ],
+                "amfs": [],
+                "ue_connections": 2
+            }
+        ]
+    }
+}
+```
+
+### MME Status
+
+The state of an MME, learned from its S1 association and not stored.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `state` | string | `disconnected`: no SCTP association. `connected`: SCTP association up, S1 Setup not completed. `up`: S1 Setup succeeded. `setup_failed`: the MME answered S1 SETUP FAILURE. |
+| `since` | string | When the MME entered its current state. |
+| `primary_tnl_address` | string | The MME address the SCTP association sends to. Absent without an association. |
+| `mme_name` | string | MME Name from the S1 SETUP RESPONSE or MME CONFIGURATION UPDATE. Absent when the MME sent none. |
+| `served_gummeis` | array | Served GUMMEIs from the S1 SETUP RESPONSE or MME CONFIGURATION UPDATE. Absent before the S1 Setup. |
+| `served_gummeis[].served_plmns` | array | Served PLMNs, each with `mcc` and `mnc`. |
+| `served_gummeis[].served_group_ids` | array | Served MME group IDs, `0` to `65535`. |
+| `served_gummeis[].served_mmecs` | array | Served MME codes, `0` to `255`. |
+| `relative_mme_capacity` | int | Relative MME Capacity, `0` to `255`. Absent before the S1 Setup. |
+| `overload` | array | The GUMMEIs of the MME with an ongoing overload action, from OVERLOAD START and OVERLOAD STOP. Absent when none. Cleared when the S1 association is lost. |
+| `overload[].gummei` | object | GUMMEI: `plmn`, `mme_group_id` (`0` to `65535`) and `mme_code` (`0` to `255`). |
+| `overload[].overload_action` | string | Overload Action from the last OVERLOAD START that applies to the GUMMEI: `reject_non_emergency_mo_dt`, `reject_rrc_cr_signalling`, `permit_emergency_sessions_and_mobile_terminated_services_only`, `permit_high_priority_sessions_and_mobile_terminated_services_only`, `reject_delay_tolerant_access`, `permit_high_priority_sessions_and_exception_reporting_and_mobile_terminated_services_only` or `not_accept_mo_data_or_delay_tolerant_access_from_cp_ciot`. |
+| `overload[].traffic_load_reduction_indication` | int | Traffic Load Reduction Indication from the same OVERLOAD START: the percentage of the traffic to reject, `1` to `99`. Absent when the MME did not include it. |
+| `ue_connections` | int | UE-associated logical S1-connections relayed to the MME. |
+
+### User-Plane Status
+
+The state of the operator's user plane, derived from the host's routes and not stored.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `state` | string | `ready`: Ella MOCN relays the operator's new sessions. `unavailable`: user-plane aggregation is on, but Ella MOCN refuses the operator's new sessions; UEs still register. `off`: user-plane aggregation is off for the operator. |
+| `reason` | string | Why the user plane is unavailable. Absent otherwise. `not_connected`: no association with the operator's MMEs or AMFs. `no_route`: no route to an MME or AMF. `route_mismatch`: the route to an MME or AMF no longer leaves by the interface its association uses, or two of them use different interfaces or addresses. `no_address`: the route to an MME or AMF no longer has the association's address as its source. `interface_error`: Ella MOCN cannot attach to the interface. `too_many_operators`: more operators use user-plane aggregation than Ella MOCN supports. |
+| `interface` | string | The interface the host routes the operator's MMEs and AMFs through. Absent without an association. |
+| `addresses` | array | Ella MOCN's addresses toward the operator, at most one IPv4 and one IPv6: the source addresses of its associations with the operator's MMEs and AMFs. |
+| `since` | string | When the user plane entered its current state. |
+
+### AMF Status
+
+The state of an AMF, learned from its NG association and not stored.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `state` | string | `disconnected`: no SCTP association. `connected`: SCTP association up, NG Setup not completed. `up`: NG Setup succeeded. `setup_failed`: the AMF answered NG SETUP FAILURE. |
+| `since` | string | When the AMF entered its current state. |
+| `primary_tnl_address` | string | The AMF address the SCTP association sends to. Absent without an association. |
+| `amf_name` | string | AMF Name from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE. Absent before the NG Setup. |
+| `served_guamis` | array | Served GUAMI List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE, each with `plmn`, `amf_region_id` (`0` to `255`), `amf_set_id` (`0` to `1023`) and `amf_pointer` (`0` to `63`). Absent before the NG Setup. |
+| `plmn_support` | array | PLMN Support List from the NG SETUP RESPONSE or AMF CONFIGURATION UPDATE. Absent before the NG Setup. |
+| `plmn_support[].plmn` | object | PLMN, with `mcc` and `mnc`. |
+| `plmn_support[].snssais` | array | S-NSSAIs, each with `sst` (`0` to `255`) and `sd` (6 hex digits, absent when none). |
+| `relative_amf_capacity` | int | Relative AMF Capacity, `0` to `255`. Absent before the NG Setup. |
+| `unavailable_guamis` | array | GUAMIs that an AMF STATUS INDICATION marked unavailable, in the format of `served_guamis`. Absent when none. Cleared by NG Setup and by an AMF CONFIGURATION UPDATE with a Served GUAMI List. |
+| `overload` | array | The ongoing overload actions of the AMF, from OVERLOAD START and OVERLOAD STOP. A GUAMI is in at most one item: a later OVERLOAD START replaces the earlier one for its GUAMIs. Absent when none. Cleared by NG Setup and the loss of the NG association. |
+| `overload[].guamis` | array | GUAMI List of the OVERLOAD START, in the format of `served_guamis`. The served GUAMIs of the operator's PLMNs when the OVERLOAD START has no GUAMI List. |
+| `overload[].overload_action` | string | Overload Action of the AMF Overload Response: `reject_non_emergency_mo_dt`, `reject_rrc_cr_signalling`, `permit_emergency_sessions_and_mobile_terminated_services_only` or `permit_high_priority_sessions_and_mobile_terminated_services_only`. Absent when the AMF did not include it. |
+| `overload[].traffic_load_reduction_indication` | int | AMF Traffic Load Reduction Indication: the percentage of the traffic to reject, `1` to `99`. Absent when the AMF did not include it. |
+| `overload[].slices` | array | Overload Start NSSAI List: each with `snssais`, and `overload_action` (Slice Overload Response) and `traffic_load_reduction_indication` (Slice Traffic Load Reduction Indication) when the AMF included them. Absent when none. |
+| `ue_connections` | int | UE-associated logical NG-connections relayed to the AMF. |
+
+## Get an Operator
+
+This path returns an operator, with the state of its MMEs and AMFs and its UE connections by radio.
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/v1/operators/{name}` |
+
+### Path Parameters
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `name` | string | Operator name. |
+
+### Response Fields
+
+The fields of [List Operators](<#list-operators>), plus:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ue_connections_by_radio` | array | UE-associated logical S1-connections and NG-connections of the operator, by radio. Lists every radio that broadcasts one of the operator's PLMNs, and every other radio with UE connections of the operator, sorted by name, or by `ref` for a radio without a name. |
+| `ue_connections_by_radio[].ref` | string | The radio's [`ref`](<https://docs.ellanetworks.com/mocn/reference/api/radios/index.md#list-radios>). |
+| `ue_connections_by_radio[].type` | string | The radio's `type`: `eNB` or `gNB`. |
+| `ue_connections_by_radio[].global_enb_id` | object | The radio's `global_enb_id`. Absent when the radio has none. |
+| `ue_connections_by_radio[].global_gnb_id` | object | The radio's `global_gnb_id`. Absent when the radio has none. |
+| `ue_connections_by_radio[].name` | string | The radio's `name`. Absent when the radio sent none. |
+| `ue_connections_by_radio[].ue_connections` | int | UE-associated logical S1-connections or NG-connections. |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "name": "Operator B",
+        "pws_operator": false,
+        "plmns": [{"mcc": "001", "mnc": "02"}],
+        "global_enb_id": {
+            "plmn": {"mcc": "001", "mnc": "02"},
+            "enb_id_type": "macro",
+            "enb_id": 2
+        },
+        "mmes": [
+            {
+                "tnl_addresses": ["127.0.0.3"],
+                "status": {
+                    "state": "up",
+                    "since": "2026-11-13T16:31:55.645358627Z",
+                    "primary_tnl_address": "127.0.0.3",
+                    "mme_name": "mme-b",
+                    "served_gummeis": [
+                        {
+                            "served_plmns": [{"mcc": "001", "mnc": "02"}],
+                            "served_group_ids": [2],
+                            "served_mmecs": [1]
+                        }
+                    ],
+                    "relative_mme_capacity": 255,
+                    "ue_connections": 2
+                }
+            }
+        ],
+        "amfs": [],
+        "ue_connections": 2,
+        "ue_connections_by_radio": [
+            {
+                "ref": "eNB:001-01:MacroeNB-0019b",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 411
+                },
+                "name": "enb-north",
+                "ue_connections": 1
+            },
+            {
+                "ref": "eNB:001-01:MacroeNB-0019c",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 412
+                },
+                "name": "enb-south",
+                "ue_connections": 1
+            }
+        ]
+    }
+}
+```
+
+## Create an Operator
+
+This path returns the operator as [Get an Operator](<#get-an-operator>) returns it.
+
+| Method | Path |
+| --- | --- |
+| POST | `/api/v1/operators` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | Yes | 1 to 64 characters, after leading and trailing spaces are removed. Unique. |
+| `pws_operator` | boolean | No | Default `false`. At most one operator has `true`. |
+| `plmns` | array | Yes | 1 to 12 PLMNs, each listed once, and owned by no other operator. Operators with MMEs have at most 32 PLMNs in total, and operators with AMFs at most 12. |
+| `plmns[].mcc` | string | Yes | 3 digits. |
+| `plmns[].mnc` | string | Yes | 2 or 3 digits. |
+| `global_enb_id` | object | No | Absent for none. Required with `mmes`. |
+| `global_enb_id.plmn` | object | Yes | One of `plmns`. |
+| `global_enb_id.enb_id_type` | string | Yes | `macro`, `short_macro` or `long_macro`. |
+| `global_enb_id.enb_id` | int | Yes | `0` to `1048575` for `macro`, `262143` for `short_macro`, `2097151` for `long_macro`. |
+| `global_gnb_id` | object | No | Absent for none. Required with `amfs`. |
+| `global_gnb_id.plmn` | object | Yes | One of `plmns`. |
+| `global_gnb_id.gnb_id` | int | Yes | `0` to 2^`bit_length` - 1. |
+| `global_gnb_id.bit_length` | int | Yes | `22` to `32`. |
+| `mmes` | array | No | MMEs. |
+| `mmes[].tnl_addresses` | array | Yes | At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's MMEs. Returned in canonical form. |
+| `amfs` | array | No | AMFs. |
+| `amfs[].tnl_addresses` | array | Yes | At least one IPv4 or IPv6 address, without a zone. An address appears at most once across the operator's AMFs. Returned in canonical form. |
+| `user_plane` | object | No | Absent for the defaults. |
+| `user_plane.aggregation` | boolean | No | Default `true` when `ran.user_plane.enabled` is `true` in the configuration file, `false` otherwise. `true` gets `400` when it is `false`. |
+
+The read-only fields of the responses, `mmes[].status`, `amfs[].status`, `user_plane.status`, `ue_connections` and `ue_connections_by_radio`, are ignored. Other unknown fields get `400`.
+
+### Sample Request
+
+```
+{
+    "name": "Operator A",
+    "pws_operator": true,
+    "plmns": [{"mcc": "001", "mnc": "01"}],
+    "global_enb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "enb_id_type": "macro", "enb_id": 1},
+    "global_gnb_id": {"plmn": {"mcc": "001", "mnc": "01"}, "gnb_id": 1, "bit_length": 22},
+    "mmes": [{"tnl_addresses": ["127.0.0.2"]}],
+    "amfs": [{"tnl_addresses": ["10.0.1.5"]}]
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "name": "Operator A",
+        "pws_operator": true,
+        "plmns": [{"mcc": "001", "mnc": "01"}],
+        "global_enb_id": {
+            "plmn": {"mcc": "001", "mnc": "01"},
+            "enb_id_type": "macro",
+            "enb_id": 1
+        },
+        "global_gnb_id": {
+            "plmn": {"mcc": "001", "mnc": "01"},
+            "gnb_id": 1,
+            "bit_length": 22
+        },
+        "mmes": [
+            {
+                "tnl_addresses": ["127.0.0.2"],
+                "status": {
+                    "state": "disconnected",
+                    "since": "2026-11-13T16:31:55.645317884Z",
+                    "ue_connections": 0
+                }
+            }
+        ],
+        "amfs": [
+            {
+                "tnl_addresses": ["10.0.1.5"],
+                "status": {
+                    "state": "disconnected",
+                    "since": "2026-11-13T16:31:55.645320112Z",
+                    "ue_connections": 0
+                }
+            }
+        ],
+        "ue_connections": 0,
+        "ue_connections_by_radio": [
+            {
+                "ref": "eNB:001-01:MacroeNB-0019b",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 411
+                },
+                "name": "enb-north",
+                "ue_connections": 0
+            },
+            {
+                "ref": "eNB:001-01:MacroeNB-0019c",
+                "type": "eNB",
+                "global_enb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "enb_id_type": "macro",
+                    "enb_id": 412
+                },
+                "name": "enb-south",
+                "ue_connections": 0
+            },
+            {
+                "ref": "gNB:001-01:000001@22",
+                "type": "gNB",
+                "global_gnb_id": {
+                    "plmn": {"mcc": "001", "mnc": "01"},
+                    "gnb_id": 1,
+                    "bit_length": 22
+                },
+                "name": "gnb-east",
+                "ue_connections": 0
+            }
+        ]
+    }
+}
+```
+
+## Update an Operator
+
+This path replaces the whole operator. A different `name` renames it. It takes the request body of [Create an Operator](<#create-an-operator>), and returns the operator the same way.
+
+| Method | Path |
+| --- | --- |
+| PUT | `/api/v1/operators/{name}` |
+
+### Sample Request
+
+```
+{
+    "name": "Operator D",
+    "plmns": [{"mcc": "001", "mnc": "04"}]
+}
+```
+
+### Sample Response
+
+```
+{
+    "result": {
+        "name": "Operator D",
+        "pws_operator": false,
+        "plmns": [{"mcc": "001", "mnc": "04"}],
+        "mmes": [],
+        "amfs": [],
+        "ue_connections": 0,
+        "ue_connections_by_radio": []
+    }
+}
+```
+
+## Delete an Operator
+
+| Method | Path |
+| --- | --- |
+| DELETE | `/api/v1/operators/{name}` |
+
+### Sample Response
+
+```
+{
+    "result": {
+        "message": "Operator deleted successfully"
+    }
+}
+```
